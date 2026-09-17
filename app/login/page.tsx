@@ -1,0 +1,140 @@
+"use client";
+
+import { Suspense, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Lock, TriangleAlert, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/lib/auth";
+import GoogleSignInButton from "@/components/GoogleSignInButton";
+
+function LoginForm() {
+  const searchParams = useSearchParams();
+  const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const next = searchParams.get("next") || "";
+  const reason = searchParams.get("reason");
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setError("Please fill in all fields.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await login(email, password, next ? { next } : undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid email or password.");
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-[80vh] items-center justify-center bg-gradient-to-br from-green-deep via-green-dark to-green-mid px-4 py-14">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="bg-gradient-to-br from-green-dark to-green-mid p-9 text-center">
+          <span className="font-display text-3xl tracking-[4px] text-gold">MABUHAY HOMES</span>
+          <p className="mt-1.5 text-[11px] uppercase tracking-[1.5px] text-white/55">Community Portal</p>
+        </div>
+        <div className="p-8">
+          <h2 className="font-serif text-2xl font-bold text-green-dark">Welcome Back</h2>
+          <p className="mt-1.5 mb-6 text-sm text-muted">
+            {reason === "book"
+              ? "Please log in to book an amenity reservation."
+              : reason === "reserve"
+              ? "Please log in to reserve or inquire about a property."
+              : "Log in to access the portal"}
+          </p>
+
+          {reason === "book" && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl bg-gold/10 px-4 py-3 text-sm font-semibold text-gold-muted">
+              <Lock className="h-4 w-4 flex-shrink-0" /> You need to sign in before you can book an amenity.
+            </div>
+          )}
+
+          {reason === "reserve" && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl bg-gold/10 px-4 py-3 text-sm font-semibold text-gold-muted">
+              <Lock className="h-4 w-4 flex-shrink-0" /> You need to sign in before you can reserve a property.
+            </div>
+          )}
+
+          {error && (
+            <div className="mb-4 flex items-start gap-2 rounded-xl bg-danger-bg p-3 text-sm text-danger">
+              <TriangleAlert className="mt-0.5 h-4 w-4 flex-shrink-0" /> <span>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <label className="field-label">Email Address</label>
+              <input
+                type="email"
+                className="field"
+                placeholder="your@email.com"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="field-label">Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  className="field !pr-10"
+                  placeholder="Enter your password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted transition hover:text-green-dark"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Link href="/forgot-password" className="text-sm font-semibold text-green-mid hover:underline">
+                Forgot password?
+              </Link>
+            </div>
+            <button type="submit" disabled={submitting} className="btn-green w-full disabled:opacity-60">
+              {submitting ? "Signing in…" : "Log In →"}
+            </button>
+          </form>
+
+          <div className="my-4 flex items-center gap-3 text-xs text-muted">
+            <span className="h-px flex-1 bg-cream-2" /> or <span className="h-px flex-1 bg-cream-2" />
+          </div>
+          <GoogleSignInButton redirectTo={next || undefined} />
+
+          <p className="mt-6 text-center text-sm text-muted">
+            No account yet? <Link href="/register" className="font-semibold text-green-mid hover:underline">Sign Up here</Link>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}

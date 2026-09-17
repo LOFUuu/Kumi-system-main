@@ -1,0 +1,156 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Mabuhay Homes — Design System
+   Mirrors the PHP style.css: green/gold palette + serif/sans
+   ============================================================ */
+
+@theme {
+  --color-green-deep: #0d1b12;
+  --color-green-dark: #1b4332;
+  --color-green-mid: #2d6a4f;
+  --color-green-light: #52b788;
+  --color-gold: #f4c430;
+  --color-gold-muted: #e9b84a;
+  --color-cream: #fdf8f0;
+  --color-cream-2: #f0ebe0;
+  --color-muted: #6b7a6e;
+  --color-danger: #b91c1c;
+  --color-danger-bg: #fef2f2;
+
+  --font-display: var(--font-bebas), "Bebas Neue", sans-serif;
+  --font-sans: var(--font-dm-sans), "DM Sans", sans-serif;
+  --font-serif: var(--font-fraunces), "Fraunces", serif;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #1b2b22;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer base {
+  /* Layered so utility text colors (e.g. `.btn-green` -> `text-white`) can
+     override anchor color instead of `color: inherit` always winning. */
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+@layer components {
+  /* Buttons */
+  .btn-gold {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gold px-5 py-3 font-semibold text-green-deep transition hover:opacity-90;
+  }
+  .btn-outline-w {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/40 px-5 py-3 font-semibold text-white transition hover:bg-white/10;
+  }
+  .btn-green {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-green-dark to-green-mid px-5 py-3 font-semibold text-white transition hover:opacity-90;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-cream-2 bg-cream px-5 py-3 font-semibold text-green-dark transition hover:bg-white;
+  }
+
+  /* Map marker pins (emoji divIcons) */
+  .kumi-pin {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 9999px;
+    border: 2px solid #fff;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+    font-size: 16px;
+    line-height: 1;
+    transition: transform 0.15s ease;
+  }
+  .kumi-pin.house {
+    background: #f4c430;
+  }
+  .kumi-pin.amenity {
+    background: #fdf8f0;
+  }
+  .kumi-pin.active {
+    outline: 3px solid #52b788;
+    transform: scale(1.18);
+  }
+
+  /* Cards */
+  .card {
+    @apply rounded-2xl border border-cream-2 bg-white p-6 shadow-sm;
+  }
+
+  /* Inputs */
+  .field {
+    @apply w-full rounded-xl border border-cream-2 bg-cream px-4 py-3 text-sm text-green-deep outline-none transition focus:border-green-mid focus:bg-white focus:ring-2 focus:ring-green-mid/10;
+  }
+  .field-label {
+    @apply mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-muted;
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold;
+  }
+  .badge-sale {
+    @apply bg-green-light/15 text-green-mid;
+  }
+  .badge-rent {
+    @apply bg-gold/20 text-green-deep;
+  }
+  .badge-gold {
+    @apply bg-gold/20 text-green-deep;
+  }
+  .badge-green {
+    @apply bg-green-light/15 text-green-mid;
+  }
+  .badge-danger {
+    @apply bg-danger-bg text-danger;
+  }
+  .badge-muted {
+    @apply bg-cream-2 text-muted;
+  }
+
+  /* Section helpers */
+  .section {
+    @apply mx-auto w-full max-w-7xl px-4 py-16;
+  }
+  .section-head {
+    @apply mb-10 text-center;
+  }
+  .section-head h2 {
+    @apply font-serif text-4xl font-bold text-green-dark;
+  }
+  .section-head p {
+    @apply mt-2 text-muted;
+  }
+}
+
+/* Thin scrollbars for inner scroll areas */
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: rgba(45, 106, 79, 0.25);
+  border-radius: 9999px;
+}

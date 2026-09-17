@@ -1,0 +1,174 @@
+import mongoose, { Schema, model, models } from "mongoose";
+import type {
+  HouseListing,
+  Amenity as AmenityType,
+  Announcement as AnnouncementType,
+  User as UserType,
+  Reservation as ReservationType,
+  DuesRecord as DuesType,
+  Transaction as TransactionType,
+} from "../lib/mock-data";
+
+const listingSchema = new Schema<HouseListing>(
+  {
+    _id: { type: Number },
+    houseName: { type: String, required: true },
+    address: { type: String, required: true },
+    blockNo: String,
+    lotNo: String,
+    price: { type: Number, required: true },
+    listingType: { type: String, enum: ["sale", "rent"], required: true },
+    bedrooms: Number,
+    bathrooms: Number,
+    sqm: Number,
+    status: { type: String, enum: ["available", "reserved", "sold"], required: true },
+    description: String,
+    ownerId: Number,
+    ownerName: String,
+    images: [String],
+    lat: Number,
+    lng: Number,
+    // ── Ownership verification ──────────────────────────────────────────────
+    verificationStatus: {
+      type: String,
+      enum: ["pending", "verified", "rejected"],
+      default: "pending",
+    },
+    proofDocuments: { type: [String], default: [] },
+    rejectionReason: { type: String, default: null },
+    uploadedBy: { type: Number, default: null },
+  } as any,
+  { timestamps: true }
+);
+
+
+const amenitySchema = new Schema<AmenityType>(
+  {
+    _id: { type: Number },
+    name: { type: String, required: true },
+    description: String,
+    maxCapacity: { type: Number, default: 50 },
+    rateWalkin: { type: Number, default: 0 },
+    rateWhole: { type: Number, default: 0 },
+    ratePrivate: { type: Number, default: 0 },
+    downpayment: { type: Number, default: 200 },
+    downpaymentPrivate: { type: Number, default: 500 },
+    isActive: { type: Boolean, default: true },
+    isArchived: { type: Boolean, default: false },
+    image: String,
+    lat: Number,
+    lng: Number,
+  } as any,
+  { timestamps: true }
+);
+
+const announcementSchema = new Schema<AnnouncementType>(
+  {
+    _id: { type: Number },
+    title: { type: String, required: true },
+    content: String,
+    postDate: String,
+    status: { type: String, enum: ["active", "archived"], required: true },
+    poster: String,
+  } as any,
+  { timestamps: true }
+);
+
+const userSchema = new Schema<UserType>(
+  {
+    _id: { type: Number },
+    fullName: { type: String, required: true },
+    email: { type: String, required: true },
+    role: { type: String, enum: ["admin", "counselor", "resident", "non_resident"], required: true },
+    isActive: { type: Boolean, default: true },
+    address: String,
+    blockNo: String,
+    lotNo: String,
+    phone: String,
+    gender: String,
+    householdMembers: Number,
+    householdHead: String,
+    password: String,
+    passwordHash: String,
+    resetToken: String,
+    resetTokenExpiry: Date,
+    emailVerified: Boolean,
+    verificationToken: String,
+    verificationTokenExpiry: Date,
+    cedula: String,
+  } as any,
+  { timestamps: true }
+);
+
+const reservationSchema = new Schema<ReservationType>(
+  {
+    _id: { type: Number },
+    amenityId: Number,
+    amenityName: String,
+    residentName: String,
+    phone: String,
+    bookingType: { type: String, enum: ["day", "night"], required: true },
+    reservationType: { type: String, enum: ["public", "private"], required: true },
+    date: String,
+    paxCount: { type: Number, default: 1 },
+    downpayment: { type: Number, default: 0 },
+    totalAmount: { type: Number, default: 0 },
+    status: { type: String, enum: ["pending", "approved", "declined"], required: true },
+    notes: String,
+    userEmail: String,
+    approvedAt: String,
+    gcashRef: String,
+    receiptPath: String,
+  } as any,
+  { timestamps: true }
+);
+
+const duesSchema = new Schema<DuesType>(
+  {
+    _id: { type: Number },
+    residentName: String,
+    blockNo: String,
+    lotNo: String,
+    dueMonth: String,
+    dueDate: String,
+    amountDue: Number,
+    amountPaid: { type: Number, default: 0 },
+    paidAt: String,
+    creditBalance: { type: Number, default: 0 },
+    status: { type: String, enum: ["paid", "unpaid", "delayed", "advance", "on_time"], required: true },
+  } as any,
+  { timestamps: true }
+);
+
+const transactionSchema = new Schema<TransactionType>(
+  {
+    _id: { type: Number },
+    residentName: String,
+    refType: { type: String, enum: ["amenity", "dues", "listing"] },
+    refId: Number,
+    userEmail: String,
+    amount: Number,
+    paymentMethod: { type: String, enum: ["cash", "gcash"], default: "gcash" },
+    gcashRef: String,
+    receiptPath: String,
+    status: { type: String, enum: ["approved", "pending", "voided"], required: true },
+    createdAt: String,
+    payment: {
+      provider: { type: String, default: "gcash" },
+      intentId: String,
+      qrPayload: String,
+      status: { type: String, enum: ["awaiting_payment", "paid", "expired", "failed"], default: "awaiting_payment" },
+      paidAt: String,
+      gcashRef: String,
+    },
+  } as any,
+  { timestamps: true }
+);
+
+export const Listing = (models.Listing as mongoose.Model<HouseListing>) || model<HouseListing>("Listing", listingSchema);
+export const Amenity = (models.Amenity as mongoose.Model<AmenityType>) || model<AmenityType>("Amenity", amenitySchema);
+export const Announcement = (models.Announcement as mongoose.Model<AnnouncementType>) || model<AnnouncementType>("Announcement", announcementSchema);
+export const User = (models.User as mongoose.Model<UserType>) || model<UserType>("User", userSchema);
+export const Reservation = (models.Reservation as mongoose.Model<ReservationType>) || model<ReservationType>("Reservation", reservationSchema);
+export const DuesRecord = (models.DuesRecord as mongoose.Model<DuesType>) || model<DuesType>("DuesRecord", duesSchema);
+export const Transaction = (models.Transaction as mongoose.Model<TransactionType>) || model<TransactionType>("Transaction", transactionSchema);

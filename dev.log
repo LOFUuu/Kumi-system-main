@@ -1,0 +1,45 @@
+
+> kumi-next@0.1.0 dev
+> next dev
+
+▲ Next.js 16.3.3 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://26.76.71.44:3000
+✓ Ready in 3.3s
+✓ Running next.config.ts took 323ms
+
+ GET / 200 in 2.8s (next.js: 1549ms, application-code: 1265ms)
+ GET / 200 in 3.0s (next.js: 1389ms, application-code: 1588ms)
+ GET / 200 in 3.0s (next.js: 1470ms, application-code: 1518ms)
+✓ Compiled in 522ms
+✓ Compiled in 336ms
+ GET / 200 in 498ms (next.js: 65ms, application-code: 433ms)
+ GET / 200 in 273ms (next.js: 40ms, application-code: 233ms)
+ GET / 200 in 203ms (next.js: 26ms, application-code: 177ms)
+ GET / 200 in 185ms (next.js: 15ms, application-code: 170ms)
+ GET /house-listing 200 in 184ms (next.js: 109ms, application-code: 75ms)
+ GET /reservation 200 in 144ms (next.js: 85ms, application-code: 59ms)
+ GET /map 200 in 172ms (next.js: 106ms, application-code: 66ms)
+ GET /announcements 200 in 176ms (next.js: 102ms, application-code: 74ms)
+ GET / 200 in 96ms (next.js: 14ms, application-code: 82ms)
+ GET /house-listing 200 in 144ms (next.js: 69ms, application-code: 75ms)
+ GET / 200 in 92ms (next.js: 14ms, application-code: 78ms)
+ GET / 200 in 569ms (next.js: 54ms, application-code: 516ms)
+ GET / 200 in 312ms (next.js: 95ms, application-code: 217ms)
+ GET / 200 in 325ms (next.js: 42ms, application-code: 284ms)
+ GET / 200 in 191ms (next.js: 33ms, application-code: 158ms)
+✓ Compiled in 625ms
+ GET / 200 in 380ms (next.js: 113ms, application-code: 267ms)
+ GET / 200 in 159ms (next.js: 44ms, application-code: 115ms)
+✓ Compiled in 878ms
+ GET / 200 in 286ms (next.js: 86ms, application-code: 200ms)
+ GET / 200 in 130ms (next.js: 33ms, application-code: 97ms)
+ GET / 200 in 230ms (next.js: 16ms, application-code: 214ms)
+ GET / 200 in 167ms (next.js: 14ms, application-code: 152ms)
+ GET / 200 in 166ms (next.js: 15ms, application-code: 151ms)
+ GET / 200 in 143ms (next.js: 12ms, application-code: 131ms)
+✓ Compiled in 543ms
+ GET / 200 in 273ms (next.js: 81ms, application-code: 192ms)
+ GET / 200 in 156ms (next.js: 28ms, application-code: 127ms)
+ GET / 200 in 241ms (next.js: 14ms, application-code: 227ms)
+[?25h
