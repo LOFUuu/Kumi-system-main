@@ -5,19 +5,16 @@ let transporter: Transporter | null = null;
 
 function getTransporter(): Transporter {
   const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
-  if (!user || !pass) {
-    throw new Error("EMAIL_USER/EMAIL_PASS are not configured");
+  const rawPass = process.env.EMAIL_PASS;
+  if (!user || !rawPass) {
+    throw new Error("EMAIL_USER/EMAIL_PASS are not configured in environment variables.");
   }
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: { user, pass },
-    });
-  }
-  return transporter;
+  const pass = rawPass.replace(/\s+/g, "");
+  
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: { user, pass },
+  });
 }
 
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {

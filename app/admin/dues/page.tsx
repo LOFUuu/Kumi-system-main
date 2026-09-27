@@ -13,21 +13,32 @@ import {
   ChevronsRight,
   Clock,
   Coins,
+  Download,
+  FileSpreadsheet,
+  History,
+  Info,
   RefreshCw,
   RotateCcw,
-  Settings,
+  Search,
   Sparkles,
   TrendingUp,
+  Upload,
+  UserCheck,
   Users,
   X,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
 import {
   computeDuesStatusForRecord,
   creditFor,
   outstandingFor,
+  parseDuesRow,
+  type ParsedExcelDuesRow,
+  MONTH_NAMES,
+  MONTH_ABBR,
 } from "@/lib/dues";
-import { formatPHP, type DuesRecord } from "@/lib/mock-data";
+import { formatPHP, type DuesRecord, type User } from "@/lib/mock-data";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
@@ -49,36 +60,6 @@ function StatusBadge({ status }: { status: string }) {
     </span>
   );
 }
-
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
-const MONTH_ABBR = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 
 // Generate years from 1990 to 2099 (covers all history to future)
 const MIN_YEAR = 1990;
@@ -120,7 +101,6 @@ function MonthYearPicker({
         return parsed;
       }
     }
-    // Default to the year of the latest recorded month, or current year
     if (recordedMonths.length > 0) {
       const latest = [...recordedMonths].sort().reverse()[0];
       const y = parseInt(latest.slice(0, 4), 10);
@@ -131,7 +111,6 @@ function MonthYearPicker({
 
   const [viewYear, setViewYear] = useState<number>(initialYear);
 
-  // Sync view year when value changes externally
   useEffect(() => {
     if (value && value.length >= 4) {
       const y = parseInt(value.slice(0, 4), 10);
@@ -139,7 +118,6 @@ function MonthYearPicker({
     }
   }, [value]);
 
-  // Click outside to close
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (
@@ -155,7 +133,6 @@ function MonthYearPicker({
     }
   }, [open]);
 
-  // Parse active month from value
   const selectedYear = value && value.length >= 4 ? parseInt(value.slice(0, 4), 10) : null;
   const selectedMonth =
     value && value.length === 7 ? parseInt(value.slice(5, 7), 10) : null;
@@ -183,7 +160,7 @@ function MonthYearPicker({
   return (
     <div className="relative" ref={containerRef}>
       {/* Trigger Button */}
-      <div className="flex items-center gap-2 rounded-xl border border-cream-2 bg-white px-3 py-2 shadow-sm text-xs min-w-[220px]">
+      <div className="flex items-center gap-2 rounded-xl border border-cream-2 bg-white px-3 py-2 shadow-sm text-xs min-w-[200px]">
         <button
           type="button"
           onClick={() => setOpen(!open)}
@@ -223,7 +200,6 @@ function MonthYearPicker({
       {/* Floating Calendar Popover */}
       {open && (
         <div className="absolute left-0 top-full z-50 mt-2 w-80 rounded-2xl border border-cream-2 bg-white p-4 shadow-xl animate-in fade-in zoom-in-95 duration-200">
-          {/* Header Controls: Year Navigation & Quick Jump */}
           <div className="mb-3 flex items-center justify-between border-b border-cream-2 pb-3">
             <div className="flex items-center gap-1">
               <button
@@ -246,7 +222,6 @@ function MonthYearPicker({
               </button>
             </div>
 
-            {/* Year Selector Dropdown (1990 – 2099) */}
             <div className="flex items-center gap-1">
               <select
                 value={viewYear}
@@ -283,9 +258,8 @@ function MonthYearPicker({
             </div>
           </div>
 
-          {/* Decade Jump shortcuts */}
           <div className="mb-3 flex items-center justify-between gap-1 overflow-x-auto pb-1 text-[10px] text-muted">
-            {[1990, 2000, 2010, 2020, 2026, 2030, 2040, 2050].map((yr) => (
+            {[1990, 2000, 2010, 2020, 2025, 2026, 2030, 2040].map((yr) => (
               <button
                 key={yr}
                 type="button"
@@ -301,7 +275,6 @@ function MonthYearPicker({
             ))}
           </div>
 
-          {/* 12 Months Grid */}
           <div className="grid grid-cols-3 gap-1.5 mb-3">
             {MONTH_ABBR.map((abbr, idx) => {
               const monthNum = idx + 1;
@@ -337,7 +310,6 @@ function MonthYearPicker({
             })}
           </div>
 
-          {/* Full Year & All Time Quick Actions */}
           <div className="space-y-1.5 border-t border-cream-2 pt-3 text-xs">
             <div className="grid grid-cols-2 gap-1.5">
               <button
@@ -383,37 +355,653 @@ function MonthYearPicker({
   );
 }
 
+// ── Excel Import Modal Component ─────────────────────────────────────────────
+interface ExcelImportModalProps {
+  users: User[];
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) {
+  const [file, setFile] = useState<File | null>(null);
+  const [parsedRows, setParsedRows] = useState<ParsedExcelDuesRow[]>([]);
+  const [parsing, setParsing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [resultSummary, setResultSummary] = useState<{
+    total: number;
+    imported: number;
+    updated: number;
+    duplicates: number;
+    message: string;
+  } | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const processFile = async (selectedFile: File) => {
+    setErrorMsg("");
+    setResultSummary(null);
+    setFile(selectedFile);
+    setParsing(true);
+
+    try {
+      const buffer = await selectedFile.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        throw new Error("The selected Excel file is empty.");
+      }
+
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rawJson = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
+
+      if (rawJson.length === 0) {
+        throw new Error("No data rows found in the Excel sheet.");
+      }
+
+      const rows = rawJson.map((row) => parseDuesRow(row, users));
+      setParsedRows(rows);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err?.message || "Failed to parse the Excel file. Please ensure it is a valid .xlsx, .xls, or .csv file.");
+      setParsedRows([]);
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processFile(e.target.files[0]);
+    }
+  };
+
+  const handleImport = async () => {
+    if (parsedRows.length === 0) return;
+    setImporting(true);
+    setErrorMsg("");
+
+    try {
+      const payload = parsedRows.map((r) => ({
+        residentId: r.residentId,
+        residentName: r.residentName,
+        blockNo: r.blockNo,
+        lotNo: r.lotNo,
+        dueMonth: r.dueMonth,
+        dueDate: r.dueDate,
+        amountDue: r.amountDue,
+        amountPaid: r.amountPaid,
+        creditBalance: r.creditBalance,
+        paidAt: r.paidAt,
+        status: r.status,
+        billingMonth: r.billingMonth,
+        billingYear: r.billingYear,
+      }));
+
+      const res = await api.importDues(payload);
+      setResultSummary({
+        total: res.summary.total,
+        imported: res.summary.imported,
+        updated: res.summary.updated,
+        duplicates: res.summary.duplicates,
+        message: res.message,
+      });
+      onSuccess();
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err?.message || "Import failed. Please check your data and try again.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const downloadSampleTemplate = () => {
+    const sampleData = [
+      {
+        "Resident ID": "RES-003",
+        "Resident Name": "Maria Santos",
+        "Block": "B-12",
+        "Lot": "34",
+        "Month": "January",
+        "Year": 2025,
+        "Due Amount": 100,
+        "Paid Amount": 100,
+        "Payment Date": "2025-01-10",
+        "Status": "Paid",
+      },
+      {
+        "Resident ID": "RES-004",
+        "Resident Name": "Jose Reyes",
+        "Block": "C-03",
+        "Lot": "11",
+        "Month": "January",
+        "Year": 2025,
+        "Due Amount": 100,
+        "Paid Amount": 100,
+        "Payment Date": "2025-01-12",
+        "Status": "Paid",
+      },
+      {
+        "Resident ID": "RES-004",
+        "Resident Name": "Jose Reyes",
+        "Block": "C-03",
+        "Lot": "11",
+        "Month": "February",
+        "Year": 2025,
+        "Due Amount": 100,
+        "Paid Amount": 100,
+        "Payment Date": "2025-02-14",
+        "Status": "Paid",
+      },
+      {
+        "Resident ID": "RES-004",
+        "Resident Name": "Jose Reyes",
+        "Block": "C-03",
+        "Lot": "11",
+        "Month": "March",
+        "Year": 2025,
+        "Due Amount": 100,
+        "Paid Amount": 0,
+        "Payment Date": "",
+        "Status": "Unpaid",
+      },
+      {
+        "Resident ID": "RES-005",
+        "Resident Name": "Linda Cruz",
+        "Block": "A-21",
+        "Lot": "7",
+        "Month": "January",
+        "Year": 2025,
+        "Due Amount": 100,
+        "Paid Amount": 200,
+        "Payment Date": "2025-01-08",
+        "Status": "Advance",
+      },
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Monthly Dues");
+    XLSX.writeFile(wb, "Mabuhay_Homes_Dues_Import_Template.xlsx");
+  };
+
+  const matchedCount = parsedRows.filter((r) => r.matchStatus === "matched").length;
+  const unmatchedCount = parsedRows.length - matchedCount;
+
+  return (
+    <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-4 bg-cream/40">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-green-light/20 text-green-mid">
+              <FileSpreadsheet className="h-5 w-5" />
+            </span>
+            <div>
+              <h3 className="font-serif text-lg font-bold text-green-dark leading-none">
+                Import Historical Dues Database
+              </h3>
+              <p className="mt-1 text-xs text-muted">
+                Upload your Excel or CSV file to import past and present dues records.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-cream text-muted hover:text-green-dark transition"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {resultSummary ? (
+            /* Success Summary View */
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-3">
+                  <CheckCircle2 className="h-8 w-8" />
+                </div>
+                <h4 className="font-serif text-xl font-bold text-emerald-900">
+                  Import Completed Successfully!
+                </h4>
+                <p className="mt-1 text-sm text-emerald-700">
+                  {resultSummary.message}
+                </p>
+                <div className="mt-4 grid grid-cols-3 gap-3 max-w-md mx-auto">
+                  <div className="rounded-xl bg-white p-3 border border-emerald-200 shadow-sm">
+                    <div className="text-[10px] uppercase font-bold text-muted">Total Processed</div>
+                    <div className="text-xl font-bold text-green-dark">{resultSummary.total}</div>
+                  </div>
+                  <div className="rounded-xl bg-white p-3 border border-emerald-200 shadow-sm">
+                    <div className="text-[10px] uppercase font-bold text-emerald-600">{resultSummary.imported}</div>
+                  </div>
+                  <div className="rounded-xl bg-white p-3 border border-emerald-200 shadow-sm">
+                    <div className="text-[10px] uppercase font-bold text-amber-600">{resultSummary.updated}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Upload & Preview Step */
+            <>
+              {/* Dropzone */}
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className="group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-cream-2 bg-cream/20 p-6 text-center cursor-pointer hover:border-green-mid hover:bg-green-light/5 transition"
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={handleFileInput}
+                  className="hidden"
+                />
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-sm text-green-mid group-hover:scale-110 transition-transform">
+                  <Upload className="h-6 w-6" />
+                </span>
+                <p className="mt-3 text-sm font-bold text-green-dark">
+                  {file ? file.name : "Drop Excel file here or Browse"}
+                </p>
+                <p className="mt-0.5 text-xs text-muted">
+                  Supports .xlsx, .xls, and .csv formats
+                </p>
+              </div>
+
+              {/* Template Helper and Required Columns */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cream-2 bg-cream/30 p-3 text-xs">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-green-dark">Supported Column Names:</span>
+                  <p className="text-[11px] text-muted">
+                    Resident ID (optional), Resident Name, Month, Year, Due Amount, Paid Amount, Payment Date, Status
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={downloadSampleTemplate}
+                  className="flex items-center gap-1.5 rounded-lg border border-green-mid/30 bg-white px-3 py-1.5 text-xs font-bold text-green-mid hover:bg-green-mid hover:text-white transition"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download Sample Template
+                </button>
+              </div>
+
+              {/* Parsing Indicator / Error */}
+              {parsing && (
+                <div className="flex items-center justify-center gap-2 py-4 text-xs font-semibold text-muted">
+                  <RefreshCw className="h-4 w-4 animate-spin text-green-mid" />
+                  Reading Excel sheets and matching residents…
+                </div>
+              )}
+
+              {errorMsg && (
+                <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+
+              {/* Parsed Rows Preview Table */}
+              {parsedRows.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-green-dark">
+                        Preview Parsed Records ({parsedRows.length} rows)
+                      </span>
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                        {matchedCount} Matched
+                      </span>
+                      {unmatchedCount > 0 && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                          {unmatchedCount} Unmatched / New
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="max-h-60 overflow-y-auto rounded-xl border border-cream-2">
+                    <table className="w-full text-left text-xs">
+                      <thead className="sticky top-0 bg-cream text-[10px] uppercase font-bold text-muted">
+                        <tr>
+                          <th className="p-2.5">Resident</th>
+                          <th className="p-2.5">Match Status</th>
+                          <th className="p-2.5">Period</th>
+                          <th className="p-2.5">Due</th>
+                          <th className="p-2.5">Paid</th>
+                          <th className="p-2.5">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-cream-2">
+                        {parsedRows.slice(0, 30).map((r, idx) => (
+                          <tr key={idx} className="hover:bg-cream/40">
+                            <td className="p-2.5 font-semibold text-green-dark">
+                              {r.residentName}
+                              {r.blockNo && (
+                                <span className="block text-[10px] font-normal text-muted">
+                                  {r.blockNo} / {r.lotNo}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-2.5">
+                              {r.matchStatus === "matched" ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                                  <UserCheck className="h-3 w-3" /> Matched
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
+                                  <Info className="h-3 w-3" /> New / Unmatched
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-medium text-green-dark">
+                              {r.billingMonth} {r.billingYear}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-bold text-green-dark">
+                              {formatPHP(r.amountDue)}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-bold text-green-mid">
+                              {formatPHP(r.amountPaid)}
+                            </td>
+                            <td className="p-2.5">
+                              <StatusBadge status={r.status} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {parsedRows.length > 30 && (
+                    <p className="text-[10px] text-muted text-center italic">
+                      Showing first 30 of {parsedRows.length} rows. All {parsedRows.length} rows will be imported.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 border-t border-cream-2 px-6 py-4 bg-cream/20">
+          {resultSummary ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-green !px-6 !py-2 text-xs font-bold"
+            >
+              Done & View Ledger
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-cream-2 bg-white px-4 py-2 text-xs font-semibold text-muted hover:bg-cream transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={parsedRows.length === 0 || importing || parsing}
+                onClick={handleImport}
+                className="btn-green flex items-center gap-2 !px-5 !py-2 text-xs font-bold disabled:opacity-50"
+              >
+                {importing ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    Importing Records…
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-3.5 w-3.5" />
+                    Import {parsedRows.length > 0 ? `${parsedRows.length} Records` : "Excel"}
+                  </>
+                )}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Resident History Modal Component ─────────────────────────────────────────
+interface ResidentHistoryModalProps {
+  residentName: string;
+  dues: DuesRecord[];
+  onClose: () => void;
+  onRefresh: () => void;
+}
+
+function ResidentHistoryModal({
+  residentName,
+  dues,
+  onClose,
+  onRefresh,
+}: ResidentHistoryModalProps) {
+  const residentDues = useMemo(() => {
+    return dues
+      .filter((d) => d.residentName === residentName)
+      .sort((a, b) => b.dueMonth.localeCompare(a.dueMonth));
+  }, [dues, residentName]);
+
+  const residentInfo = residentDues[0];
+  const totalPaid = residentDues.reduce((s, d) => s + d.amountPaid, 0);
+  const totalUnpaid = residentDues.reduce((s, d) => s + outstandingFor(d), 0);
+  const totalCredit = residentDues.reduce(
+    (s, d) => s + creditFor(d.amountDue, d.amountPaid),
+    0
+  );
+
+  return (
+    <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-4 bg-cream/40">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-green-mid text-white font-bold text-lg shadow-sm">
+              {residentName.slice(0, 1)}
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-serif text-xl font-bold text-green-dark">
+                  {residentName}
+                </h3>
+                {residentInfo?.residentId && (
+                  <span className="rounded-md bg-white border border-cream-2 px-2 py-0.5 text-[10px] font-mono font-bold text-muted">
+                    ID: RES-{String(residentInfo.residentId).padStart(3, "0")}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted">
+                Block {residentInfo?.blockNo || "—"} / Lot {residentInfo?.lotNo || "—"} • Mabuhay Homes Phase 5
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-cream text-muted hover:text-green-dark transition"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Stats Row */}
+        <div className="grid grid-cols-4 gap-3 border-b border-cream-2 bg-cream/10 p-5">
+          <div className="rounded-xl border border-cream-2 bg-white p-3 shadow-sm">
+            <span className="text-[10px] uppercase font-bold text-muted">Monthly Due</span>
+            <div className="text-lg font-serif font-bold text-green-dark mt-0.5">₱100.00</div>
+            <span className="text-[10px] text-muted">Fixed Monthly Rate</span>
+          </div>
+
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 shadow-sm">
+            <span className="text-[10px] uppercase font-bold text-emerald-700">Total Paid (All Time)</span>
+            <div className="text-lg font-serif font-bold text-emerald-800 mt-0.5">{formatPHP(totalPaid)}</div>
+            <span className="text-[10px] text-emerald-600">{residentDues.length} recorded months</span>
+          </div>
+
+          <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-3 shadow-sm">
+            <span className="text-[10px] uppercase font-bold text-rose-700">Current Balance</span>
+            <div className="text-lg font-serif font-bold text-rose-800 mt-0.5">{formatPHP(totalUnpaid)}</div>
+            <span className="text-[10px] text-rose-600">Outstanding Unpaid</span>
+          </div>
+
+          <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3 shadow-sm">
+            <span className="text-[10px] uppercase font-bold text-sky-700">Available Credit</span>
+            <div className="text-lg font-serif font-bold text-sky-800 mt-0.5">{formatPHP(totalCredit)}</div>
+            <span className="text-[10px] text-sky-600">Overpayment Balance</span>
+          </div>
+        </div>
+
+        {/* Table of Continuous Dues History */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-green-dark flex items-center gap-1.5">
+              <History className="h-4 w-4 text-green-mid" />
+              Continuous Dues & Payment Ledger ({residentDues.length} Records)
+            </h4>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-cream-2 bg-white shadow-sm">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-cream text-[10px] uppercase font-bold text-muted">
+                <tr>
+                  <th className="p-3">Billing Cycle</th>
+                  <th className="p-3">Due Date</th>
+                  <th className="p-3">Monthly Due</th>
+                  <th className="p-3">Amount Paid</th>
+                  <th className="p-3">Credit</th>
+                  <th className="p-3">Payment Date</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Source</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-cream-2">
+                {residentDues.map((d) => {
+                  const status = computeDuesStatusForRecord(d);
+                  const credit = creditFor(d.amountDue, d.amountPaid);
+                  return (
+                    <tr key={d.id} className="hover:bg-cream/40 transition-colors">
+                      <td className="p-3 font-semibold text-green-dark whitespace-nowrap">
+                        {fmtMonth(d.dueMonth)}
+                      </td>
+                      <td className="p-3 text-muted whitespace-nowrap">
+                        {d.dueDate
+                          ? new Date(d.dueDate + "T00:00:00").toLocaleDateString("en-PH", {
+                              month: "short",
+                              day: "2-digit",
+                              year: "numeric",
+                            })
+                          : "—"}
+                      </td>
+                      <td className="p-3 font-bold text-green-dark whitespace-nowrap">
+                        {formatPHP(d.amountDue)}
+                      </td>
+                      <td className="p-3 font-bold text-green-mid whitespace-nowrap">
+                        {formatPHP(d.amountPaid)}
+                      </td>
+                      <td className="p-3 font-semibold text-sky-600 whitespace-nowrap">
+                        {formatPHP(credit)}
+                      </td>
+                      <td className="p-3 text-muted whitespace-nowrap">
+                        {d.paidAt
+                          ? new Date(d.paidAt + "T00:00:00").toLocaleDateString("en-PH", {
+                              month: "short",
+                              day: "2-digit",
+                              year: "numeric",
+                            })
+                          : "—"}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        <StatusBadge status={status} />
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        <span className="rounded bg-cream px-2 py-0.5 text-[10px] font-medium text-muted capitalize">
+                          {d.source || "system"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end border-t border-cream-2 px-6 py-3 bg-cream/20">
+          <button
+            onClick={onClose}
+            className="rounded-xl border border-cream-2 bg-white px-4 py-2 text-xs font-semibold text-muted hover:bg-cream transition"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Admin Dues Page Component ────────────────────────────────────────────────
 export default function AdminDuesPage() {
   const [dues, setDues] = useState<DuesRecord[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [animIn, setAnimIn] = useState(false);
 
   // Filters — monthFilter: "" = All Time, "YYYY" = Year, "YYYY-MM" = Specific Month
   const [monthFilter, setMonthFilter] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
-  useEffect(() => {
-    setLoading(true);
-    api
-      .dues()
-      .then((data) => {
-        setDues(data);
-        // Default to the latest month with records if available, otherwise show all time
+  // Modals
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [selectedResidentHistory, setSelectedResidentHistory] = useState<string | null>(null);
+
+  const loadData = async () => {
+    try {
+      const [duesData, usersData] = await Promise.all([
+        api.dues(),
+        api.users().catch(() => []),
+      ]);
+      setDues(duesData);
+      setUsers(usersData);
+
+      // Default to the latest month with records if available, otherwise show all time
+      if (!monthFilter) {
         const recent = Array.from(
-          new Set(data.map((d) => d.dueMonth).filter(Boolean))
+          new Set(duesData.map((d) => d.dueMonth).filter(Boolean))
         )
           .sort()
           .reverse()[0];
         if (recent) {
           setMonthFilter(recent);
         }
-      })
-      .catch(() => setDues([]))
-      .finally(() => {
-        setLoading(false);
-        setTimeout(() => setAnimIn(true), 50);
-      });
+      }
+    } catch (err) {
+      console.error(err);
+      setDues([]);
+    } finally {
+      setLoading(false);
+      setTimeout(() => setAnimIn(true), 50);
+    }
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    loadData();
   }, []);
 
   // Recorded months for badges
@@ -424,6 +1012,7 @@ export default function AdminDuesPage() {
   const resetFilters = () => {
     setMonthFilter("");
     setStatusFilter("all");
+    setSearchQuery("");
   };
 
   // Filtered list
@@ -442,9 +1031,21 @@ export default function AdminDuesPage() {
       const displayStatus = status === "on_time" ? "paid" : status;
       const matchStatus =
         statusFilter === "all" || displayStatus === statusFilter;
-      return matchMonth && matchStatus;
+
+      let matchSearch = true;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const blockMatch = typeof d.blockNo === "string" && d.blockNo.toLowerCase().includes(q);
+        const lotMatch = typeof d.lotNo === "string" && d.lotNo.toLowerCase().includes(q);
+        matchSearch =
+          d.residentName.toLowerCase().includes(q) ||
+          blockMatch ||
+          lotMatch;
+      }
+
+      return matchMonth && matchStatus && matchSearch;
     });
-  }, [dues, monthFilter, statusFilter]);
+  }, [dues, monthFilter, statusFilter, searchQuery]);
 
   // Scope for summary statistics
   const scope = useMemo(() => {
@@ -487,14 +1088,25 @@ export default function AdminDuesPage() {
       }`}
     >
       {/* ── Header ── */}
-      <div className="mb-6">
-        <h1 className="font-serif text-3xl font-bold text-green-dark">
-          Dues Ledger
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          View and track residents&apos; dues payments from 1990 to the future.
-          Filter by year, month, or status to see payment records.
-        </p>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="font-serif text-3xl font-bold text-green-dark">
+            Dues Ledger
+          </h1>
+          <p className="mt-1 text-sm text-muted">
+            Track residents&apos; ₱100 monthly dues and historical records from 1990 to future. Click any resident to inspect their full payment history.
+          </p>
+        </div>
+
+        {/* Action Header Button */}
+        <button
+          type="button"
+          onClick={() => setShowImportModal(true)}
+          className="btn-green flex items-center gap-2 !px-4 !py-2.5 text-xs font-bold shadow-md hover:scale-105 transition"
+        >
+          <FileSpreadsheet className="h-4 w-4" />
+          Import Excel Database
+        </button>
       </div>
 
       {/* ── Layout: left (stats + table) + right (insights) ── */}
@@ -575,8 +1187,17 @@ export default function AdminDuesPage() {
             ))}
           </div>
 
-          {/* Filter Bar */}
+          {/* Filter Bar: [ Import Excel ] [ Billing Period ▼ ] [ Status ▼ ] [ Reset Filters ] */}
           <div className="mb-4 flex flex-wrap items-center gap-2">
+            {/* Import Excel Shortcut */}
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-green-mid/40 bg-green-light/15 px-3 py-2 text-xs font-bold text-green-dark shadow-sm hover:bg-green-mid hover:text-white transition cursor-pointer"
+            >
+              <FileSpreadsheet className="h-4 w-4 text-green-mid group-hover:text-white" />
+              Import Excel
+            </button>
+
             {/* Custom Month/Year Range Picker (1990 - 2099+) */}
             <MonthYearPicker
               value={monthFilter}
@@ -585,7 +1206,7 @@ export default function AdminDuesPage() {
             />
 
             {/* Status select */}
-            <div className="flex items-center gap-2 rounded-xl border border-cream-2 bg-white px-3 py-2 shadow-sm text-xs min-w-[140px]">
+            <div className="flex items-center gap-2 rounded-xl border border-cream-2 bg-white px-3 py-2 shadow-sm text-xs min-w-[130px]">
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
@@ -597,6 +1218,27 @@ export default function AdminDuesPage() {
                 <option value="delayed">Delayed</option>
                 <option value="advance">Advance</option>
               </select>
+            </div>
+
+            {/* Search resident input */}
+            <div className="flex items-center gap-2 rounded-xl border border-cream-2 bg-white px-3 py-2 shadow-sm text-xs min-w-[170px] flex-1 max-w-xs">
+              <Search className="h-3.5 w-3.5 text-muted flex-shrink-0" />
+              <input
+                type="text"
+                placeholder="Search resident or lot…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-transparent text-xs text-green-dark placeholder:text-muted outline-none"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="text-muted hover:text-green-dark"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
 
             {/* Reset */}
@@ -614,19 +1256,20 @@ export default function AdminDuesPage() {
               <table className="w-full text-sm">
                 <thead className="bg-cream text-left text-[11px] uppercase tracking-wider text-muted">
                   <tr>
-                    <th className="p-4">Resident</th>
+                    <th className="p-4">Resident (Click for History)</th>
                     <th className="p-4">Due Date</th>
                     <th className="p-4">Month</th>
                     <th className="p-4">Due</th>
                     <th className="p-4">Paid</th>
                     <th className="p-4">Credit</th>
                     <th className="p-4">Status</th>
+                    <th className="p-4 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="py-16 text-center text-muted">
+                      <td colSpan={8} className="py-16 text-center text-muted">
                         <Coins className="mx-auto mb-2 h-6 w-6 animate-pulse text-green-mid/40" />
                         Loading dues records…
                       </td>
@@ -634,16 +1277,22 @@ export default function AdminDuesPage() {
                   ) : filtered.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={8}
                         className="py-12 text-center text-sm text-muted"
                       >
                         No dues records found for {fmtMonth(monthFilter)}.
-                        <div className="mt-2">
+                        <div className="mt-2 flex items-center justify-center gap-3">
                           <button
                             onClick={() => setMonthFilter("")}
                             className="text-xs font-bold text-green-mid hover:underline"
                           >
                             View All Time Records →
+                          </button>
+                          <button
+                            onClick={() => setShowImportModal(true)}
+                            className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1"
+                          >
+                            <FileSpreadsheet className="h-3.5 w-3.5" /> Import Excel Database
                           </button>
                         </div>
                       </td>
@@ -655,21 +1304,30 @@ export default function AdminDuesPage() {
                       return (
                         <tr
                           key={d.id}
-                          className="group border-t border-cream-2 transition-colors duration-150 hover:bg-cream/40"
+                          onClick={() => setSelectedResidentHistory(d.residentName)}
+                          className="group border-t border-cream-2 transition-colors duration-150 hover:bg-cream/50 cursor-pointer"
                           style={{
                             opacity: animIn ? 1 : 0,
                             transform: animIn
                               ? "translateX(0)"
                               : "translateX(-8px)",
-                            transition: `opacity 0.3s ease ${idx * 40}ms, transform 0.3s ease ${idx * 40}ms`,
+                            transition: `opacity 0.3s ease ${idx * 30}ms, transform 0.3s ease ${idx * 30}ms`,
                           }}
                         >
                           <td className="p-4">
-                            <div className="font-semibold text-green-dark text-xs">
-                              {d.residentName}
-                            </div>
-                            <div className="text-[10px] text-muted">
-                              {d.blockNo} / {d.lotNo}
+                            <div className="flex items-center gap-2">
+                              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-green-light/20 text-green-dark font-bold text-xs group-hover:bg-green-mid group-hover:text-white transition-colors">
+                                {d.residentName.slice(0, 1)}
+                              </span>
+                              <div>
+                                <div className="font-semibold text-green-dark text-xs group-hover:text-green-mid transition-colors flex items-center gap-1">
+                                  {d.residentName}
+                                  <History className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity text-green-mid" />
+                                </div>
+                                <div className="text-[10px] text-muted">
+                                  {d.blockNo || "—"} / {d.lotNo || "—"}
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="p-4 text-xs text-muted whitespace-nowrap">
@@ -695,8 +1353,20 @@ export default function AdminDuesPage() {
                           <td className="p-4 text-xs font-semibold text-sky-600 whitespace-nowrap">
                             {formatPHP(credit)}
                           </td>
-                          <td className="p-4">
+                          <td className="p-4 whitespace-nowrap">
                             <StatusBadge status={status} />
+                          </td>
+                          <td className="p-4 text-center">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedResidentHistory(d.residentName);
+                              }}
+                              className="rounded-lg border border-cream-2 bg-white px-2.5 py-1 text-[11px] font-semibold text-green-dark hover:bg-green-mid hover:text-white hover:border-green-mid transition shadow-2xs"
+                            >
+                              History →
+                            </button>
                           </td>
                         </tr>
                       );
@@ -707,8 +1377,9 @@ export default function AdminDuesPage() {
             </div>
             {/* Footer row count */}
             {!loading && filtered.length > 0 && (
-              <div className="border-t border-cream-2 px-5 py-3 text-xs text-muted">
-                Showing 1–{filtered.length} of {filtered.length} residents
+              <div className="border-t border-cream-2 px-5 py-3 text-xs text-muted flex items-center justify-between">
+                <span>Showing 1–{filtered.length} of {filtered.length} dues records</span>
+                <span className="text-[11px] text-muted/70">Tip: Click on any resident to inspect their full payment history</span>
               </div>
             )}
           </div>
@@ -754,58 +1425,51 @@ export default function AdminDuesPage() {
 
               {/* Quick stats */}
               <div className="space-y-2">
-                {[
-                  {
-                    icon: Users,
-                    label: `Send reminders`,
-                    sub: `${unpaidResidents} unpaid residents`,
-                    color: "text-rose-500",
-                    bg: "bg-rose-50",
-                    border: "border-rose-100",
-                  },
-                  {
-                    icon: Clock,
-                    label: "View overdue",
-                    sub: `${overdueResidents} residents`,
-                    color: "text-amber-600",
-                    bg: "bg-amber-50",
-                    border: "border-amber-100",
-                  },
-                ].map((item) => (
-                  <button
-                    key={item.label}
-                    className={`group flex w-full items-center gap-3 rounded-xl border ${item.border} ${item.bg} px-3 py-2.5 text-left transition-all duration-200 hover:shadow-sm hover:-translate-y-0.5`}
-                  >
-                    <span
-                      className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white shadow-sm`}
-                    >
-                      <item.icon className={`h-4 w-4 ${item.color}`} />
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-semibold text-green-dark">
-                        {item.label}
-                      </div>
-                      <div className="text-[10px] text-muted">{item.sub}</div>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("unpaid")}
+                  className="group flex w-full items-center gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5 text-left transition-all duration-200 hover:shadow-sm hover:-translate-y-0.5"
+                >
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white shadow-sm">
+                    <Users className="h-4 w-4 text-rose-500" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-green-dark">
+                      Filter Unpaid
                     </div>
-                    <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted group-hover:text-green-mid transition" />
-                  </button>
-                ))}
+                    <div className="text-[10px] text-muted">{unpaidResidents} unpaid residents</div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted group-hover:text-green-mid transition" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("delayed")}
+                  className="group flex w-full items-center gap-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-left transition-all duration-200 hover:shadow-sm hover:-translate-y-0.5"
+                >
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white shadow-sm">
+                    <Clock className="h-4 w-4 text-amber-600" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-green-dark">
+                      View Overdue / Partial
+                    </div>
+                    <div className="text-[10px] text-muted">{overdueResidents} residents</div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted group-hover:text-green-mid transition" />
+                </button>
               </div>
             </div>
 
             {/* Tip card */}
             <div className="rounded-2xl border border-green-light/30 bg-green-light/8 p-4 text-xs text-green-dark">
               <div className="mb-2 flex items-center gap-1.5 font-bold">
-                <Bell className="h-3.5 w-3.5 text-green-mid" />
-                <span>Tip</span>
+                <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                <span>Automatic ₱100 Monthly Dues</span>
               </div>
-              <p className="leading-relaxed text-muted">
-                Enable automatic due-date reminders to reduce late payments
-                and keep your community on track.
+              <p className="leading-relaxed text-muted text-[11px]">
+                The system automatically creates a fixed ₱100 due for all active residents every month. Carried credit from overpayments is automatically applied.
               </p>
-              <button className="mt-3 flex items-center gap-1 font-semibold text-green-mid hover:underline transition">
-                <Settings className="h-3 w-3" /> Settings →
-              </button>
             </div>
 
             {/* Summary breakdown */}
@@ -857,6 +1521,27 @@ export default function AdminDuesPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Excel Import Modal ── */}
+      {showImportModal && (
+        <ExcelImportModal
+          users={users}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={() => {
+            loadData();
+          }}
+        />
+      )}
+
+      {/* ── Resident History Slide-over / Modal ── */}
+      {selectedResidentHistory && (
+        <ResidentHistoryModal
+          residentName={selectedResidentHistory}
+          dues={dues}
+          onClose={() => setSelectedResidentHistory(null)}
+          onRefresh={loadData}
+        />
+      )}
     </div>
   );
 }

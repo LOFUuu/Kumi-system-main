@@ -45,10 +45,19 @@ export async function POST(req: NextRequest) {
   const lotNo = String(body.lotNo || "").trim();
   const price = Number(body.price);
   const type = (body.listingType === "rent" ? "rent" : "sale") as "sale" | "rent";
+  const ownerContactNumber = String(body.ownerContactNumber || "").trim();
+  const ownerMessengerLink = String(body.ownerMessengerLink || "").trim();
 
   if (!blockNo || !lotNo || !Number.isFinite(price) || price <= 0) {
     return NextResponse.json(
       { error: "Block, lot, and a valid price are required." },
+      { status: 400 }
+    );
+  }
+
+  if (!ownerContactNumber) {
+    return NextResponse.json(
+      { error: "Owner contact number is required." },
       { status: 400 }
     );
   }
@@ -105,6 +114,9 @@ export async function POST(req: NextRequest) {
     bathrooms: Number(body.bathrooms) || 0,
     sqm: Number(body.sqm) || 0,
     status: "available",
+    transactionStatus: "available",
+    ownerContactNumber,
+    ownerMessengerLink,
     description: String(body.description || ""),
     ownerId: Number(body.ownerId) || 0,
     ownerName,

@@ -17,6 +17,15 @@ import type {
   DuesRecord as DuesType,
   Transaction as TransactionType,
 } from "./mock-data";
+import {
+  DEFAULT_MONTHLY_DUE,
+  getCurrentDueMonth,
+  getCycleDueDate,
+  prevDueMonth,
+  computeDuesStatus,
+  creditFor,
+  MONTH_NAMES,
+} from "./dues";
 
 // Convert a Mongoose doc (lean) to a plain object that matches the existing
 // app interfaces: expose the numeric _id we seeded as `id` and drop internals
@@ -47,9 +56,18 @@ function serializeAuth(doc: any): AuthUser {
 export async function getListings(filter?: {
   status?: HouseListing["status"];
   verificationStatus?: HouseListing["verificationStatus"];
+  includeArchived?: boolean;
+  isArchived?: boolean;
 }): Promise<HouseListing[]> {
   await dbConnect();
   const query: Record<string, unknown> = {};
+
+  if (filter?.isArchived !== undefined) {
+    query.isArchived = filter.isArchived;
+  } else if (!filter?.includeArchived) {
+    query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
+  }
+
   if (filter?.status) query.status = filter.status;
   if (filter?.verificationStatus) {
     if (filter.verificationStatus === "verified") {
@@ -60,20 +78,93 @@ export async function getListings(filter?: {
       query.verificationStatus = filter.verificationStatus;
     }
   }
-  const docs = await Listing.find(query).lean();
-  return docs.map((d) => serialize<HouseListing>(d));
+  const docs = await Listing.find(query).sort({ createdAt: -1, _id: -1 }).lean();
+  return docs.map((d: any) => ({
+    ...serialize<HouseListing>(d),
+    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+  }));
+}
+
+export async function getArchivedListings(): Promise<HouseListing[]> {
+  await dbConnect();
+  const docs = await Listing.find({
+    $or: [{ isArchived: true }, { isArchived: "true" }, { isArchived: 1 }],
+  } as any)
+    .sort({ updatedAt: -1, _id: -1 })
+    .lean();
+  return docs.map((d: any) => ({
+    ...serialize<HouseListing>(d),
+    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+  }));
+}
+
+export async function archiveListing(
+  id: number | string,
+  reason?: string,
+  archivedBy: "owner" | "admin" = "admin"
+): Promise<boolean> {
+  await dbConnect();
+  const numId = Number(id);
+  const filter = Number.isFinite(numId)
+    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+    : { _id: id };
+  const res = await Listing.updateOne(
+    filter as any,
+    {
+      $set: {
+        isArchived: true,
+        archiveReason: reason || (archivedBy === "owner" ? "Archived by Owner" : "Archived by Admin"),
+        archivedBy,
+        archivedAt: new Date().toISOString(),
+      },
+    }
+  );
+  return res.matchedCount > 0 || res.modifiedCount > 0;
+}
+
+export async function unarchiveListing(id: number | string): Promise<boolean> {
+  await dbConnect();
+  const numId = Number(id);
+  const filter = Number.isFinite(numId)
+    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+    : { _id: id };
+  const res = await Listing.updateOne(
+    filter as any,
+    {
+      $set: {
+        isArchived: false,
+        archiveReason: null,
+        archivedAt: null,
+      },
+    }
+  );
+  return res.matchedCount > 0 || res.modifiedCount > 0;
 }
 
 export async function getListing(id: number | string): Promise<HouseListing | null> {
   await dbConnect();
-  const doc = await Listing.findOne({ _id: Number(id) } as any).lean();
-  return doc ? serialize<HouseListing>(doc) : null;
+  const numId = Number(id);
+  const filter = Number.isFinite(numId)
+    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+    : { _id: id };
+  const doc = await Listing.findOne(filter as any).lean();
+  return doc
+    ? {
+        ...serialize<HouseListing>(doc),
+        createdAt: (doc as any).createdAt ? new Date((doc as any).createdAt).toISOString() : undefined,
+      }
+    : null;
 }
 
 export async function getListingsByOwner(uploadedBy: number): Promise<HouseListing[]> {
   await dbConnect();
-  const docs = await Listing.find({ uploadedBy } as any).lean();
-  return docs.map((d) => serialize<HouseListing>(d));
+  const docs = await Listing.find({ uploadedBy, $or: [{ isArchived: false }, { isArchived: { $exists: false } }] } as any)
+    .sort({ createdAt: -1, _id: -1 })
+    .lean();
+  return docs.map((d: any) => ({
+    ...serialize<HouseListing>(d),
+    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+  }));
 }
 
 
@@ -221,16 +312,81 @@ export async function getAnnouncements(activeOnly = false): Promise<Announcement
   return docs.map((d) => serialize<AnnouncementType>(d));
 }
 
+function userFilter(id: number | string) {
+  const numId = Number(id);
+  return Number.isFinite(numId)
+    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+    : { $or: [{ _id: String(id) }, { id: String(id) }] };
+}
+
 export async function getUsers(): Promise<UserType[]> {
   await dbConnect();
-  const docs = await User.find()
+  // Exclude archived residents from the normal residents list
+  const docs = await User.find({
+    $or: [{ isArchived: false }, { isArchived: "false" }, { isArchived: 0 }, { isArchived: { $exists: false } }],
+  } as any)
     .select("-password -passwordHash -resetToken -resetTokenExpiry -verificationToken -verificationTokenExpiry")
     .lean();
   return docs.map((d: any) => ({
     ...serialize<UserType>(d),
     emailVerified: d.emailVerified,
+    isArchived: d.isArchived === true || d.isArchived === "true" || d.isArchived === 1,
     createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
   }));
+}
+
+export async function getArchivedUsers(): Promise<UserType[]> {
+  await dbConnect();
+  const docs = await User.find({
+    $or: [{ isArchived: true }, { isArchived: "true" }, { isArchived: 1 }],
+  } as any)
+    .select("-password -passwordHash -resetToken -resetTokenExpiry -verificationToken -verificationTokenExpiry")
+    .sort({ updatedAt: -1, _id: -1 })
+    .lean();
+  return docs.map((d: any) => ({
+    ...serialize<UserType>(d),
+    emailVerified: d.emailVerified,
+    isArchived: true,
+    archiveReason: d.archiveReason ?? null,
+    archivedAt: d.archivedAt ?? null,
+    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+  }));
+}
+
+export async function archiveUser(id: number | string, reason?: string): Promise<boolean> {
+  await dbConnect();
+  const filter = userFilter(id);
+  const res = await User.updateOne(
+    filter as any,
+    {
+      $set: {
+        isArchived: true,
+        archiveReason: reason || "Archived by Admin",
+        archivedAt: new Date().toISOString(),
+        isActive: false,
+      },
+    },
+    { strict: false }
+  );
+  return res.matchedCount > 0 || res.modifiedCount > 0;
+}
+
+export async function unarchiveUser(id: number | string): Promise<boolean> {
+  await dbConnect();
+  const filter = userFilter(id);
+  const res = await User.updateOne(
+    filter as any,
+    {
+      $set: {
+        isArchived: false,
+        archiveReason: null,
+        archivedAt: null,
+        isActive: true,
+      },
+    },
+    { strict: false }
+  );
+  return res.matchedCount > 0 || res.modifiedCount > 0;
 }
 
 // Full user lookup (incl. password/reset fields) for server-side auth only.
@@ -302,9 +458,10 @@ export async function setEmailVerified(email: string, verified = true): Promise<
   );
 }
 
-export async function deleteUserById(id: number): Promise<void> {
+export async function deleteUserById(id: number | string): Promise<void> {
   await dbConnect();
-  await User.deleteOne({ _id: id });
+  const filter = userFilter(id);
+  await User.deleteOne(filter as any);
 }
 
 export async function createUser(data: {
@@ -391,6 +548,9 @@ export async function updateUserById(
   if (data.email !== undefined) update.email = data.email.toLowerCase().trim();
   if (data.role !== undefined) update.role = data.role;
   if (data.isActive !== undefined) update.isActive = Boolean(data.isActive);
+  if (data.isArchived !== undefined) update.isArchived = Boolean(data.isArchived);
+  if (data.archiveReason !== undefined) update.archiveReason = data.archiveReason;
+  if (data.archivedAt !== undefined) update.archivedAt = data.archivedAt;
   if (data.address !== undefined) update.address = data.address || null;
   if (data.blockNo !== undefined) update.blockNo = data.blockNo || null;
   if (data.lotNo !== undefined) update.lotNo = data.lotNo || null;
@@ -401,8 +561,9 @@ export async function updateUserById(
   if (data.cedula !== undefined) update.cedula = data.cedula || null;
   if (data.emailVerified !== undefined) update.emailVerified = Boolean(data.emailVerified);
 
+  const filter = userFilter(id);
   const doc = await User.findOneAndUpdate(
-    { _id: Number(id) } as any,
+    filter as any,
     { $set: update },
     { new: true }
   ).lean();
@@ -444,10 +605,211 @@ export async function getReservations(): Promise<ReservationType[]> {
   return docs.map((d) => serialize<ReservationType>(d));
 }
 
+export async function generateMonthlyDues(targetMonth?: string): Promise<{ createdCount: number }> {
+  await dbConnect();
+  const currentMonth = targetMonth || getCurrentDueMonth();
+  const [yStr, mStr] = currentMonth.split("-");
+  const billingYear = parseInt(yStr, 10);
+  const monthNum = parseInt(mStr, 10);
+  const billingMonth = MONTH_NAMES[monthNum - 1] || "Current Month";
+  const dueDate = getCycleDueDate(currentMonth);
+
+  // Find all active, non-archived residents
+  const activeResidents = await User.find({
+    role: { $in: ["resident", "counselor", "admin"] },
+    isActive: { $ne: false },
+    $or: [{ isArchived: false }, { isArchived: { $exists: false } }],
+  } as any).lean();
+
+  let createdCount = 0;
+  const previousMonth = prevDueMonth(currentMonth);
+
+  for (const res of activeResidents as any[]) {
+    // 1. Protection against duplicates: check if record already exists for this resident and month
+    const existing = await DuesRecord.findOne({
+      $or: [
+        { residentId: res._id, dueMonth: currentMonth },
+        { residentName: res.fullName, dueMonth: currentMonth },
+      ],
+    } as any).lean();
+
+    if (existing) {
+      continue; // Record exists, do not duplicate!
+    }
+
+    // 2. Check previous month for any carried credit
+    const prevRecord = await DuesRecord.findOne({
+      $or: [
+        { residentId: res._id, dueMonth: previousMonth },
+        { residentName: res.fullName, dueMonth: previousMonth },
+      ],
+    } as any)
+      .sort({ _id: -1 })
+      .lean();
+
+    const carriedCredit = (prevRecord as any)?.creditBalance || 0;
+    const amountDue = DEFAULT_MONTHLY_DUE;
+    let amountPaid = 0;
+    let paidAt: string | undefined = undefined;
+    let creditBalance = 0;
+
+    if (carriedCredit > 0) {
+      amountPaid = Math.min(carriedCredit, amountDue);
+      creditBalance = creditFor(amountDue, carriedCredit);
+      paidAt = (prevRecord as any)?.paidAt || new Date().toISOString().slice(0, 10);
+    }
+
+    const status = computeDuesStatus({
+      dueMonth: currentMonth,
+      dueDate,
+      amountDue,
+      amountPaid,
+      paidAt,
+    });
+
+    const newId = await getNextId(DuesRecord);
+    await DuesRecord.create({
+      _id: newId,
+      residentId: res._id,
+      residentName: res.fullName,
+      blockNo: res.blockNo || "",
+      lotNo: res.lotNo || "",
+      dueMonth: currentMonth,
+      dueDate,
+      amountDue,
+      amountPaid,
+      paidAt,
+      creditBalance,
+      status,
+      source: "system",
+      billingMonth,
+      billingYear,
+    } as any);
+
+    createdCount++;
+  }
+
+  return { createdCount };
+}
+
 export async function getDues(): Promise<DuesType[]> {
   await dbConnect();
-  const docs = await DuesRecord.find().lean();
+  // Ensure current month dues are generated automatically for all residents
+  try {
+    await generateMonthlyDues();
+  } catch (err) {
+    console.error("Error auto-generating monthly dues:", err);
+  }
+
+  const docs = await DuesRecord.find().sort({ dueMonth: -1, residentName: 1 }).lean();
   return docs.map((d) => serialize<DuesType>(d));
+}
+
+export async function importDuesRecords(
+  records: Array<{
+    residentId?: number;
+    residentName: string;
+    blockNo?: string;
+    lotNo?: string;
+    billingMonth?: string;
+    billingYear?: number;
+    dueMonth: string;
+    dueDate?: string;
+    amountDue?: number;
+    amountPaid?: number;
+    creditBalance?: number;
+    paidAt?: string;
+    status?: string;
+  }>
+): Promise<{
+  total: number;
+  imported: number;
+  updated: number;
+  skipped: number;
+  duplicates: number;
+}> {
+  await dbConnect();
+  let imported = 0;
+  let updated = 0;
+  let skipped = 0;
+  let duplicates = 0;
+
+  for (const row of records) {
+    if (!row.residentName || !row.dueMonth) {
+      skipped++;
+      continue;
+    }
+
+    const amountDue = row.amountDue !== undefined ? Number(row.amountDue) : DEFAULT_MONTHLY_DUE;
+    const amountPaid = row.amountPaid !== undefined ? Number(row.amountPaid) : 0;
+    const creditBalance = row.creditBalance !== undefined ? Number(row.creditBalance) : creditFor(amountDue, amountPaid);
+    const dueDate = row.dueDate || getCycleDueDate(row.dueMonth);
+    const paidAt = row.paidAt || undefined;
+    const status = (row.status as any) || computeDuesStatus({ dueMonth: row.dueMonth, dueDate, amountDue, amountPaid, paidAt });
+
+    // Check if record exists
+    const query: any = {
+      dueMonth: row.dueMonth,
+      $or: [
+        { residentName: row.residentName },
+        ...(row.residentId ? [{ residentId: row.residentId }] : []),
+      ],
+    };
+
+    const existing = await DuesRecord.findOne(query).lean() as any;
+
+    if (existing) {
+      duplicates++;
+      await DuesRecord.updateOne(
+        { _id: existing._id } as any,
+        {
+          $set: {
+            residentId: row.residentId || existing.residentId,
+            residentName: row.residentName,
+            blockNo: row.blockNo ?? existing.blockNo,
+            lotNo: row.lotNo ?? existing.lotNo,
+            amountDue,
+            amountPaid,
+            creditBalance,
+            paidAt,
+            status,
+            source: "imported",
+            billingMonth: row.billingMonth || existing.billingMonth,
+            billingYear: row.billingYear || existing.billingYear,
+          },
+        } as any
+      );
+      updated++;
+    } else {
+      const newId = await getNextId(DuesRecord);
+      await DuesRecord.create({
+        _id: newId,
+        residentId: row.residentId,
+        residentName: row.residentName,
+        blockNo: row.blockNo || "",
+        lotNo: row.lotNo || "",
+        dueMonth: row.dueMonth,
+        dueDate,
+        amountDue,
+        amountPaid,
+        paidAt,
+        creditBalance,
+        status,
+        source: "imported",
+        billingMonth: row.billingMonth,
+        billingYear: row.billingYear,
+      } as any);
+      imported++;
+    }
+  }
+
+  return {
+    total: records.length,
+    imported,
+    updated,
+    skipped,
+    duplicates,
+  };
 }
 
 export async function getDuesRecord(id: number | string): Promise<DuesType | null> {

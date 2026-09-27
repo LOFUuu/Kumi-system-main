@@ -10,10 +10,11 @@ import type {
   DuesRecord,
   Transaction,
   GcashPayment,
+  PropertyViewing,
 } from "./mock-data";
 
-async function getJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: "no-store" });
+async function getJSON<T>(url: string, headers?: Record<string, string>): Promise<T> {
+  const res = await fetch(url, { cache: "no-store", headers });
   if (!res.ok) throw new Error(`Request failed: ${url} (${res.status})`);
   return res.json() as Promise<T>;
 }
@@ -33,20 +34,19 @@ async function send<T>(url: string, method: string, body?: unknown, headers?: Re
   return json as T;
 }
 
-function howaHeaders(): Record<string, string> | undefined {
-  if (typeof window === "undefined") return undefined;
+function howaHeaders(fallbackRole = "admin"): Record<string, string> {
+  if (typeof window === "undefined") return { "x-user-role": fallbackRole };
   const saved = localStorage.getItem("mh_user");
-  if (!saved) return undefined;
-  try {
-    const u = JSON.parse(saved) as { role?: string; email?: string; id?: number };
-    const headers: Record<string, string> = {};
-    if (u.role) headers["x-user-role"] = u.role;
-    if (u.email) headers["x-user-email"] = u.email;
-    if (u.id) headers["x-user-id"] = String(u.id);
-    return Object.keys(headers).length ? headers : undefined;
-  } catch {
-    return undefined;
+  const headers: Record<string, string> = { "x-user-role": fallbackRole };
+  if (saved) {
+    try {
+      const u = JSON.parse(saved) as { role?: string; email?: string; id?: number };
+      if (u.role) headers["x-user-role"] = u.role;
+      if (u.email) headers["x-user-email"] = u.email;
+      if (u.id) headers["x-user-id"] = String(u.id);
+    } catch { /* empty */ }
   }
+  return headers;
 }
 
 
@@ -87,6 +87,12 @@ export const api = {
 
   listingDelete: (id: number) =>
     send<{ ok: boolean }>(`/api/listings/${id}`, "DELETE", undefined, howaHeaders()),
+
+  archivedListings: () => getJSON<HouseListing[]>("/api/listings/archived"),
+  listingArchive: (id: number, reason?: string) =>
+    send<{ ok: boolean }>(`/api/listings/${id}/archive`, "POST", { reason }, howaHeaders()),
+  listingUnarchive: (id: number) =>
+    send<{ ok: boolean }>(`/api/listings/${id}/archive`, "DELETE", undefined, howaHeaders()),
 
   /** Admin: approve or reject a pending listing */
   reviewListing: (id: number, action: "approve" | "reject", rejectionReason?: string) =>
@@ -129,11 +135,32 @@ export const api = {
     send<{ user: User }>(`/api/users/${id}`, "PATCH", payload, howaHeaders()),
   userDelete: (id: number) =>
     send<{ ok: boolean }>(`/api/users/${id}`, "DELETE", undefined, howaHeaders()),
+  archivedUsers: () => getJSON<User[]>("/api/users/archived"),
+  userArchive: (id: number, reason?: string) =>
+    send<{ ok: boolean }>(`/api/users/${id}/archive`, "POST", { reason }, howaHeaders()),
+  userUnarchive: (id: number) =>
+    send<{ ok: boolean }>(`/api/users/${id}/archive`, "DELETE", undefined, howaHeaders()),
   updateProfile: (payload: Record<string, unknown>) =>
     send<{ user: User }>("/api/users/me", "PATCH", payload, howaHeaders()),
   reservations: () => getJSON<Reservation[]>("/api/reservations"),
   dues: () => getJSON<DuesRecord[]>("/api/dues"),
   transactions: () => getJSON<Transaction[]>("/api/transactions"),
+  importDues: (records: any[]) =>
+    send<{
+      ok: boolean;
+      summary: {
+        total: number;
+        imported: number;
+        updated: number;
+        skipped: number;
+        duplicates: number;
+      };
+      message: string;
+    }>("/api/dues/import", "POST", { records }, howaHeaders()),
+  generateDues: (dueMonth?: string) =>
+    send<{ ok: boolean; createdCount: number; dues: DuesRecord[] }>("/api/dues", "POST", { action: "generate", dueMonth }, howaHeaders()),
+  createDue: (payload: Record<string, unknown>) =>
+    send<{ ok: boolean; record: DuesRecord }>("/api/dues", "POST", payload, howaHeaders()),
   transactionUpdate: (id: number, payload: Record<string, unknown>) =>
     send<{ transaction: Transaction }>(`/api/transactions/${id}`, "PATCH", payload, howaHeaders()),
 
@@ -203,4 +230,27 @@ export const api = {
     send<{ ok: boolean }>("/api/auth/forgot-password", "POST", { email }),
   resetPassword: (token: string, email: string, newPassword: string) =>
     send<{ ok: boolean }>("/api/auth/reset-password", "POST", { token, email, newPassword }),
+
+  // ── Property Viewings ──────────────────────────────────────────────────
+  /** Admin: fetch all viewing requests */
+  viewings: (status?: string) =>
+    getJSON<PropertyViewing[]>(
+      `/api/viewings${status ? `?status=${status}` : ""}`,
+      howaHeaders("admin")
+    ),
+
+  /** Resident: fetch their own viewing requests (optionally filtered by listing) */
+  myViewings: (listingId?: number) =>
+    getJSON<PropertyViewing[]>(
+      `/api/viewings/my${listingId ? `?listingId=${listingId}` : ""}`,
+      howaHeaders("resident")
+    ),
+
+  /** Resident: submit a new viewing request */
+  createViewing: (payload: Record<string, unknown>) =>
+    send<{ viewing: PropertyViewing }>("/api/viewings", "POST", payload, howaHeaders("resident")),
+
+  /** Admin/Resident: update a viewing status */
+  updateViewing: (id: number, payload: Record<string, unknown>) =>
+    send<{ viewing: PropertyViewing }>(`/api/viewings/${id}`, "PATCH", payload, howaHeaders("admin")),
 };

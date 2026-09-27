@@ -1,184 +1,219 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  CheckCircle2,
-  Clock,
-  XCircle,
-  FileText,
-  Upload,
-  X,
-  RefreshCw,
   LogIn,
   Lock,
-  Lightbulb,
   Plus,
   BedDouble,
   ShowerHead,
   Ruler,
+  Archive,
   ChevronDown,
-  ChevronUp,
+  Check,
+  Loader2,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
-import { formatPHP, type HouseListing, type VerificationStatus } from "@/lib/mock-data";
+import { formatPHP, type HouseListing } from "@/lib/mock-data";
 
-const ACCEPTED = ".pdf,.jpg,.jpeg,.png";
-type FilterTab = "all" | "pending" | "verified" | "rejected";
+type FilterTab = "all" | "sale" | "rent";
+type TxStatus = "available" | "reserved" | "sold_rented";
 
-function StatusPill({ status }: { status: VerificationStatus }) {
-  if (status === "verified") {
-    return (
-      <span className="rounded-full bg-green-light/20 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-green-dark">
-        Verified
-      </span>
-    );
-  }
-  if (status === "rejected") {
-    return (
-      <span className="rounded-full bg-danger-bg border border-danger/30 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-danger">
-        Rejected
-      </span>
-    );
-  }
+const TX_LABELS: Record<TxStatus, string> = {
+  available: "Available",
+  reserved: "Reserved",
+  sold_rented: "Sold / Rented Out",
+};
+
+const TX_COLORS: Record<TxStatus, string> = {
+  available: "bg-emerald-100 text-emerald-800",
+  reserved: "bg-amber-100 text-amber-800",
+  sold_rented: "bg-rose-100 text-rose-800",
+};
+
+function StatusPill({ listing }: { listing: HouseListing }) {
+  const isRent = listing.listingType === "rent";
   return (
-    <span className="rounded-full bg-gold/25 border border-gold/40 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-green-deep">
-      Pending Verification
+    <span className="rounded-full bg-green-light/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-green-dark">
+      {isRent ? "For Rent" : "For Sale"}
     </span>
   );
 }
 
-function ResubmitModal({
+function TxStatusDropdown({
+  listing,
+  onUpdate,
+}: {
+  listing: HouseListing;
+  onUpdate: (updated: HouseListing) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  // Map DB value to our dropdown keys
+  const current: TxStatus =
+    (listing.transactionStatus as TxStatus) ?? "available";
+
+  const handleSelect = async (val: TxStatus) => {
+    setOpen(false);
+    if (val === current) return;
+    setLoading(true);
+    try {
+      const { listing: updated } = await api.listingUpdate(listing.id, {
+        transactionStatus: val,
+      });
+      onUpdate(updated);
+    } catch {
+      /* silently ignore; user can retry */
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={loading}
+        className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold transition hover:opacity-80 ${TX_COLORS[current]}`}
+      >
+        {loading ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <Check className="h-3 w-3" />
+        )}
+        {TX_LABELS[current]}
+        <ChevronDown className="h-3 w-3" />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 bottom-full mb-1 z-30 min-w-[180px] overflow-hidden rounded-xl border border-[#e8e4da] bg-white shadow-xl">
+            {(Object.keys(TX_LABELS) as TxStatus[]).map((val) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => handleSelect(val)}
+                className={`flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs font-semibold transition hover:bg-[#f5f8f5] ${
+                  val === current ? "text-green-dark" : "text-[#143424]"
+                }`}
+              >
+                {val === current && (
+                  <Check className="h-3 w-3 shrink-0 text-green-mid" />
+                )}
+                <span className={val === current ? "" : "ml-5"}>
+                  {TX_LABELS[val]}
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ArchiveModal({
   listing,
   onClose,
-  onSuccess,
+  onArchived,
 }: {
   listing: HouseListing;
   onClose: () => void;
-  onSuccess: () => void;
+  onArchived: (id: number) => void;
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [files, setFiles] = useState<File[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const addFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const added = Array.from(e.target.files ?? []);
-    setFiles((prev) => {
-      const names = new Set(prev.map((f) => f.name));
-      return [...prev, ...added.filter((f) => !names.has(f.name))];
-    });
-    e.target.value = "";
-  };
-
-  const submit = async () => {
-    if (!files.length) {
-      setErr("Please upload at least one document to resubmit.");
-      return;
-    }
-    setErr("");
-    setBusy(true);
+  const handleArchive = async () => {
+    setLoading(true);
+    setError("");
     try {
-      const { paths } = await api.uploadListingDocs(files);
-      await api.resubmitListing(listing.id, paths);
-      onSuccess();
+      await api.listingArchive(listing.id, reason.trim() || undefined);
+      onArchived(listing.id);
+      onClose();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Resubmit failed.");
+      setError(e instanceof Error ? e.message : "Failed to archive listing.");
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   };
 
   return (
     <div
-      className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
+        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between border-b border-cream-2 pb-3">
-          <div>
-            <h3 className="font-serif text-xl font-bold text-green-dark">
-              Edit &amp; Resubmit Listing
-            </h3>
-            <p className="text-xs text-muted">{listing.houseName}</p>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <Archive className="h-5 w-5 text-amber-600" />
+              <h3 className="font-serif text-lg font-bold text-green-dark">
+                Archive Listing
+              </h3>
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              <strong>{listing.houseName}</strong> will be removed from the public
+              feed. You can restore it later from the archive page.
+            </p>
           </div>
-          <button onClick={onClose} className="text-muted hover:text-green-dark">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="my-4 rounded-xl border border-danger/30 bg-danger-bg p-3.5 text-xs text-danger">
-          <strong className="block mb-1">Rejection Reason from Moderator:</strong>
-          <span className="italic">
-            &ldquo;{listing.rejectionReason || "Uploaded documents were unclear or invalid."}&rdquo;
-          </span>
-        </div>
-
-        <div className="space-y-3">
-          <label className="field-label">Upload Replacement Ownership Documents</label>
           <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-green-mid/40 bg-cream/50 py-4 text-xs font-semibold text-green-mid hover:border-green-mid"
+            onClick={onClose}
+            className="ml-3 rounded-lg p-1.5 text-muted hover:bg-cream hover:text-green-dark"
           >
-            <Upload className="h-4 w-4" /> Click to upload updated document (PDF, JPG, PNG)
+            <X className="h-4 w-4" />
           </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept={ACCEPTED}
-            className="hidden"
-            onChange={addFiles}
-          />
-
-          {files.length > 0 && (
-            <ul className="space-y-1.5">
-              {files.map((f) => (
-                <li
-                  key={f.name}
-                  className="flex items-center justify-between rounded-lg border border-cream-2 bg-white px-3 py-2 text-xs"
-                >
-                  <span className="flex items-center gap-2 truncate text-green-dark">
-                    <FileText className="h-3.5 w-3.5 text-green-mid" />
-                    {f.name}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setFiles((p) => p.filter((x) => x.name !== f.name))}
-                    className="text-muted hover:text-danger ml-2"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {err && <p className="text-xs text-danger font-semibold">{err}</p>}
         </div>
 
-        <div className="flex gap-2 pt-5">
+        <div className="mt-4">
+          <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-muted">
+            Reason (optional)
+          </label>
+          <textarea
+            className="w-full rounded-xl border border-[#dde5de] bg-[#f5f8f5] px-3 py-2.5 text-sm text-[#143424] outline-none transition focus:border-[#2d6a4f] focus:ring-2 focus:ring-[#2d6a4f]/10 min-h-[80px] resize-none"
+            placeholder="e.g. Property is now rented, temporarily off market…"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </div>
+
+        {error && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {error}
+          </div>
+        )}
+
+        <div className="mt-4 flex gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="btn-ghost flex-1 justify-center !py-2.5 text-xs"
+            className="btn-ghost flex-1 justify-center text-sm"
           >
             Cancel
           </button>
           <button
             type="button"
-            disabled={busy}
-            onClick={submit}
-            className="btn-green flex-1 justify-center !py-2.5 text-xs disabled:opacity-60"
+            onClick={handleArchive}
+            disabled={loading}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-amber-600 py-2.5 text-sm font-bold text-white transition hover:bg-amber-700 disabled:opacity-60"
           >
-            <RefreshCw className={`h-3.5 w-3.5 mr-1 ${busy ? "animate-spin" : ""}`} />
-            {busy ? "Submitting…" : "Resubmit for Review"}
+            {loading ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Archiving…</>
+            ) : (
+              <><Archive className="h-4 w-4" /> Archive</>
+            )}
           </button>
         </div>
       </div>
@@ -191,8 +226,7 @@ export default function MyListingsPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState<FilterTab>("all");
   const [listings, setListings] = useState<HouseListing[]>([]);
-  const [resubmitTarget, setResubmitTarget] = useState<HouseListing | null>(null);
-  const [expandedDetails, setExpandedDetails] = useState<number | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<HouseListing | null>(null);
 
   const load = () => {
     api
@@ -200,8 +234,9 @@ export default function MyListingsPage() {
       .then((all) => {
         const mine = all.filter(
           (l) =>
-            (user?.id && l.uploadedBy === user.id) ||
-            l.ownerName === user?.fullName
+            !l.isArchived &&
+            ((user?.id && l.uploadedBy === user.id) ||
+              l.ownerName === user?.fullName)
         );
         setListings(mine);
       })
@@ -212,6 +247,14 @@ export default function MyListingsPage() {
     if (user && user.role !== "non_resident") load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  const handleUpdateListing = (updated: HouseListing) => {
+    setListings((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+  };
+
+  const handleArchived = (id: number) => {
+    setListings((prev) => prev.filter((l) => l.id !== id));
+  };
 
   if (!user) {
     return (
@@ -258,22 +301,28 @@ export default function MyListingsPage() {
   }
 
   const filtered = listings.filter((l) => {
-    const status = l.verificationStatus ?? "verified";
-    if (tab === "pending") return status === "pending";
-    if (tab === "verified") return status === "verified";
-    if (tab === "rejected") return status === "rejected";
+    if (tab === "sale") return l.listingType === "sale";
+    if (tab === "rent") return l.listingType === "rent";
     return true;
   });
 
   return (
     <div className="section">
+      {archiveTarget && (
+        <ArchiveModal
+          listing={archiveTarget}
+          onClose={() => setArchiveTarget(null)}
+          onArchived={handleArchived}
+        />
+      )}
+
       <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="font-serif text-3xl font-bold text-green-dark sm:text-4xl">
             My Listings
           </h1>
           <p className="text-sm text-muted">
-            Manage your submitted properties and track verification status.
+            Manage your submitted property listings.
           </p>
         </div>
         <Link href="/add-listing" className="btn-green !text-white flex items-center gap-1.5 shadow-sm">
@@ -281,26 +330,13 @@ export default function MyListingsPage() {
         </Link>
       </div>
 
-      {/* Tabs matching Section 2 */}
+      {/* Tabs */}
       <div className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-cream-2 bg-cream p-1">
         {(
           [
-            { key: "all", label: "All Listings", count: listings.length },
-            {
-              key: "pending",
-              label: "Pending Verification",
-              count: listings.filter((l) => (l.verificationStatus ?? "verified") === "pending").length,
-            },
-            {
-              key: "verified",
-              label: "Verified",
-              count: listings.filter((l) => (l.verificationStatus ?? "verified") === "verified").length,
-            },
-            {
-              key: "rejected",
-              label: "Rejected",
-              count: listings.filter((l) => l.verificationStatus === "rejected").length,
-            },
+            { key: "all", label: "All Properties", count: listings.length },
+            { key: "sale", label: "For Sale", count: listings.filter((l) => l.listingType === "sale").length },
+            { key: "rent", label: "For Rent", count: listings.filter((l) => l.listingType === "rent").length },
           ] as const
         ).map((t) => (
           <button
@@ -314,7 +350,7 @@ export default function MyListingsPage() {
           >
             {t.label}
             {t.count > 0 && (
-              <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${
+              <span className={`rounded-full px-1.5 text-[10px] ${
                 tab === t.key ? "bg-cream-2 text-green-dark" : "bg-white/60 text-muted"
               }`}>
                 {t.count}
@@ -336,19 +372,18 @@ export default function MyListingsPage() {
       ) : (
         <div className="space-y-6">
           {filtered.map((l) => {
-            const status: VerificationStatus = l.verificationStatus ?? "verified";
-            const cover = l.images && l.images[0] ? l.images[0] : "https://picsum.photos/seed/home/600/400";
-            const isExpanded = expandedDetails === l.id;
+            const cover = l.images && l.images[0]
+              ? l.images[0]
+              : "https://picsum.photos/seed/home/600/400";
 
             return (
               <div
                 key={l.id}
-                className="overflow-hidden rounded-2xl border border-cream-2 bg-white shadow-sm transition hover:shadow-md"
+                className="rounded-2xl border border-cream-2 bg-white shadow-sm transition hover:shadow-md"
               >
-                {/* Horizontal Card Layout matching Section 2 */}
                 <div className="flex flex-col sm:flex-row">
                   <div
-                    className="h-48 w-full sm:h-auto sm:w-64 flex-shrink-0 bg-cover bg-center"
+                    className="h-48 w-full sm:h-auto sm:w-64 flex-shrink-0 bg-cover bg-center rounded-t-2xl sm:rounded-l-2xl sm:rounded-tr-none overflow-hidden"
                     style={{ backgroundImage: `url(${cover})` }}
                   />
 
@@ -363,7 +398,7 @@ export default function MyListingsPage() {
                             Block {l.blockNo}, Lot {l.lotNo}, Mabuhay Homes
                           </p>
                         </div>
-                        <StatusPill status={status} />
+                        <StatusPill listing={l} />
                       </div>
 
                       <div className="mt-3 font-serif text-2xl font-bold text-green-mid">
@@ -386,100 +421,41 @@ export default function MyListingsPage() {
                       </div>
                     </div>
 
+                    {/* Footer row */}
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-cream-2 pt-3 text-[11px] text-muted">
-                      <span>Status: <strong className="capitalize text-green-dark">{l.status}</strong></span>
-                      <div className="flex gap-2">
-                        <Link href={`/house/${l.id}`} className="font-semibold text-green-mid hover:underline">
-                          View Listing →
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>
+                          Verification:{" "}
+                          <strong className="capitalize text-green-dark">
+                            {l.verificationStatus?.replace(/_/g, " ") ?? "pending"}
+                          </strong>
+                        </span>
+                        {/* Transaction status — owner controlled */}
+                        <TxStatusDropdown listing={l} onUpdate={handleUpdateListing} />
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <Link
+                          href={`/house/${l.id}`}
+                          className="font-semibold text-green-mid hover:underline"
+                        >
+                          View →
                         </Link>
+                        <button
+                          type="button"
+                          onClick={() => setArchiveTarget(l)}
+                          className="flex items-center gap-1 font-semibold text-amber-700 hover:text-amber-900 transition"
+                        >
+                          <Archive className="h-3 w-3" /> Archive
+                        </button>
                       </div>
                     </div>
                   </div>
                 </div>
-
-                {/* Status Notice Banner matching Section 2 */}
-                {status === "pending" && (
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-gold/40 bg-gold/10 px-5 py-3.5 text-xs text-green-deep">
-                    <div className="flex items-center gap-2.5">
-                      <Clock className="h-4 w-4 text-gold-muted flex-shrink-0" />
-                      <div>
-                        <strong>Pending Verification:</strong> Your listing is under review. You will be notified once our team has verified your documents.
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setExpandedDetails(isExpanded ? null : l.id)}
-                      className="btn-ghost !px-3 !py-1 text-xs font-semibold"
-                    >
-                      {isExpanded ? "Hide Details" : "View Details"}
-                    </button>
-                  </div>
-                )}
-
-                {status === "rejected" && (
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-danger/30 bg-danger-bg px-5 py-3.5 text-xs text-danger">
-                    <div className="flex items-start gap-2.5">
-                      <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <strong>Rejected:</strong> Reason: {l.rejectionReason || "The uploaded document is not clear. Please re-upload a clear copy of your proof of ownership."}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setResubmitTarget(l)}
-                      className="rounded-xl border border-danger bg-white px-4 py-1.5 text-xs font-bold text-danger hover:bg-danger hover:text-white transition shadow-xs flex-shrink-0"
-                    >
-                      Edit &amp; Resubmit
-                    </button>
-                  </div>
-                )}
-
-                {/* Expanded Details Section */}
-                {isExpanded && (
-                  <div className="border-t border-cream-2 bg-cream/20 p-5 text-xs space-y-3">
-                    <p className="text-muted leading-relaxed">{l.description || "No description provided."}</p>
-                    {l.proofDocuments && l.proofDocuments.length > 0 && (
-                      <div>
-                        <strong className="block text-green-dark mb-1.5">Submitted Proof Documents:</strong>
-                        <div className="flex flex-wrap gap-2">
-                          {l.proofDocuments.map((doc, idx) => (
-                            <a
-                              key={idx}
-                              href={doc}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-cream-2 bg-white px-3 py-1.5 text-green-mid hover:underline shadow-xs"
-                            >
-                              <FileText className="h-3.5 w-3.5" />
-                              {doc.split("/").pop()}
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             );
           })}
         </div>
-      )}
-
-      {/* Tip Banner matching Section 2 */}
-      <div className="mt-8 flex items-center gap-2.5 rounded-2xl border border-cream-2 bg-cream p-4 text-xs text-green-deep">
-        <Lightbulb className="h-4 w-4 text-gold flex-shrink-0" />
-        <span>
-          <strong>Tip:</strong> Make sure the document shows your name and property details clearly. Contact HOA administration if you have questions regarding land titles or deed transfers.
-        </span>
-      </div>
-
-      {resubmitTarget && (
-        <ResubmitModal
-          listing={resubmitTarget}
-          onClose={() => setResubmitTarget(null)}
-          onSuccess={() => {
-            setResubmitTarget(null);
-            load();
-          }}
-        />
       )}
     </div>
   );

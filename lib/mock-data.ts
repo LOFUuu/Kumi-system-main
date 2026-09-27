@@ -21,6 +21,10 @@ export interface User {
   householdHead?: string;
   emailVerified?: boolean;
   createdAt?: string;
+  // Archive
+  isArchived?: boolean;
+  archiveReason?: string;
+  archivedAt?: string;
 }
 
 export const MOCK_USERS: User[] = [
@@ -33,6 +37,7 @@ export const MOCK_USERS: User[] = [
 ];
 
 export type VerificationStatus = "pending" | "verified" | "rejected";
+export type TransactionStatus = "available" | "reserved" | "sold";
 
 export interface HouseListing {
   id: number;
@@ -45,7 +50,10 @@ export interface HouseListing {
   bedrooms: number;
   bathrooms: number;
   sqm: number;
-  status: "available" | "reserved" | "sold";
+  status: "available" | "reserved" | "sold" | "off_market";
+  transactionStatus?: TransactionStatus; // "available" (For Rent/Sale), "reserved" (Reserved), "sold" (Sold / Rented Out)
+  ownerContactNumber?: string;           // Phone / Mobile number of listing owner
+  ownerMessengerLink?: string;           // Messenger / Facebook link of listing owner
   description: string;
   ownerId: number;
   ownerName: string;
@@ -57,6 +65,11 @@ export interface HouseListing {
   proofDocuments: string[];       // relative paths to uploaded proof files
   rejectionReason?: string;       // set by admin when rejecting; shown to resident
   uploadedBy?: number;            // resident user ID who submitted the listing
+  isArchived?: boolean;           // archived listings are hidden from public feed
+  archiveReason?: string;         // reason for archiving the listing
+  archivedBy?: "owner" | "admin" | null;
+  archivedAt?: string;
+  createdAt?: string;
 }
 
 const img = (seed: string) => `https://picsum.photos/seed/${seed}/800/600`;
@@ -224,7 +237,7 @@ export const MOCK_AMENITIES: Amenity[] = [
     downpayment: 200,
     downpaymentPrivate: 500,
     isActive: true,
-    image: img("pool"),
+    image: "/images/amenities/pool.jpg",
     lat: 14.3037,
     lng: 120.9886,
   },
@@ -239,7 +252,7 @@ export const MOCK_AMENITIES: Amenity[] = [
     downpayment: 200,
     downpaymentPrivate: 300,
     isActive: true,
-    image: img("court"),
+    image: "/images/amenities/court.jpg",
     lat: 14.3029,
     lng: 120.987,
   },
@@ -275,23 +288,27 @@ export type DuesStatus = "unpaid" | "on_time" | "paid" | "advance" | "delayed";
 
 export interface DuesRecord {
   id: number;
+  residentId?: number;
   residentName: string;
   blockNo: string;
   lotNo: string;
-  dueMonth: string;       // billing cycle, e.g. "2026-08"
-  dueDate: string;        // fixed monthly due date, ISO, e.g. "2026-08-05"
+  dueMonth: string;       // billing cycle, e.g. "2026-08" or "2026-09"
+  dueDate: string;        // fixed monthly due date, ISO, e.g. "2026-09-30" or "2026-08-05"
   amountDue: number;
   amountPaid: number;
   paidAt?: string;        // ISO date the last payment was recorded
   creditBalance: number;  // overpayment carried over to the next cycle
   status: DuesStatus;
+  source?: "imported" | "system" | "manual";
+  billingMonth?: string;  // e.g. "September" or "2026-09"
+  billingYear?: number;   // e.g. 2026
 }
 
 export const MOCK_DUES: DuesRecord[] = [
-  { id: 1, residentName: "Maria Santos", blockNo: "B-12", lotNo: "34", dueMonth: "2026-08", dueDate: "2026-08-05", amountDue: 350, amountPaid: 350, paidAt: "2026-08-02", creditBalance: 0, status: "on_time" },
-  { id: 2, residentName: "Jose Reyes", blockNo: "C-03", lotNo: "11", dueMonth: "2026-08", dueDate: "2026-08-05", amountDue: 350, amountPaid: 0, creditBalance: 0, status: "unpaid" },
-  { id: 3, residentName: "Linda Cruz", blockNo: "A-21", lotNo: "7", dueMonth: "2026-07", dueDate: "2026-07-05", amountDue: 350, amountPaid: 150, paidAt: "2026-07-14", creditBalance: 0, status: "delayed" },
-  { id: 4, residentName: "Pedro Luna", blockNo: "D-09", lotNo: "22", dueMonth: "2026-08", dueDate: "2026-08-05", amountDue: 350, amountPaid: 700, paidAt: "2026-07-25", creditBalance: 350, status: "advance" },
+  { id: 1, residentId: 3, residentName: "Maria Santos", blockNo: "B-12", lotNo: "34", dueMonth: "2026-08", dueDate: "2026-08-05", amountDue: 100, amountPaid: 100, paidAt: "2026-08-02", creditBalance: 0, status: "on_time", source: "system", billingMonth: "August", billingYear: 2026 },
+  { id: 2, residentId: 4, residentName: "Jose Reyes", blockNo: "C-03", lotNo: "11", dueMonth: "2026-08", dueDate: "2026-08-05", amountDue: 100, amountPaid: 0, creditBalance: 0, status: "unpaid", source: "system", billingMonth: "August", billingYear: 2026 },
+  { id: 3, residentId: 5, residentName: "Linda Cruz", blockNo: "A-21", lotNo: "7", dueMonth: "2026-07", dueDate: "2026-07-05", amountDue: 100, amountPaid: 50, paidAt: "2026-07-14", creditBalance: 0, status: "delayed", source: "system", billingMonth: "July", billingYear: 2026 },
+  { id: 4, residentId: 6, residentName: "Pedro Luna", blockNo: "D-09", lotNo: "22", dueMonth: "2026-08", dueDate: "2026-08-05", amountDue: 100, amountPaid: 200, paidAt: "2026-07-25", creditBalance: 100, status: "advance", source: "system", billingMonth: "August", billingYear: 2026 },
 ];
 
 export interface GcashPayment {
@@ -323,6 +340,28 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
   { id: 2, residentName: "Linda Cruz", refType: "amenity", refId: 3, amount: 200, paymentMethod: "gcash", status: "approved", createdAt: "2026-08-12" },
   { id: 3, residentName: "Jose Reyes", refType: "dues", refId: 0, amount: 350, paymentMethod: "gcash", status: "pending", createdAt: "2026-08-14" },
 ];
+
+// ── Property Viewings ──────────────────────────────────────────────────────
+export type ViewingStatus =
+  | "viewing_requested"
+  | "viewing_scheduled"
+  | "viewing_completed"
+  | "viewing_declined";
+
+export interface PropertyViewing {
+  id: number;
+  listingId: number;
+  listingName: string;
+  residentName: string;
+  residentEmail: string;
+  preferredDate: string;   // ISO date string e.g. "2026-10-05"
+  preferredTime: string;   // e.g. "10:00"
+  message?: string;
+  status: ViewingStatus;
+  adminNotes?: string;     // set by HOA when scheduling or declining
+  scheduledAt?: string;    // ISO date — when HOA confirms the exact schedule
+  createdAt?: string;
+}
 
 export const formatPHP = (n: number) =>
   "₱" + n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

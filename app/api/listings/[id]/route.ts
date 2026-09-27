@@ -125,21 +125,70 @@ export async function PATCH(
     return NextResponse.json({ listing: updated });
   }
 
-  // ── Standard HOWA status / field update ─────────────────────────────────
-  const denied = howaGuard(req);
-  if (denied) return NextResponse.json({ error: denied }, { status: 403 });
+  // ── Standard status / field update (Owner or Admin) ─────────────────────
+  const isOwner = Boolean(requesterId && existing.uploadedBy === requesterId);
+
+  if (!isHowa && !isOwner) {
+    return NextResponse.json(
+      { error: "Access denied. You can only edit your own listings." },
+      { status: 403 }
+    );
+  }
+
+  // Non-admin (resident owner) attempting to touch admin-only verification or marketplace visibility status
+  if (!isHowa && (body.verificationStatus || body.status)) {
+    return NextResponse.json(
+      { error: "Access denied. Ownership verification and marketplace visibility status are managed by HOA administrators." },
+      { status: 403 }
+    );
+  }
 
   const patch: Record<string, any> = {};
-  if (body.status) {
+
+  // Admin marketplace visibility status (Available ↔ Off Market)
+  if (isHowa && body.status) {
     const status = String(body.status);
-    if (!["available", "reserved", "sold"].includes(status)) {
-      return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+    if (!["available", "reserved", "sold", "off_market"].includes(status)) {
+      return NextResponse.json({ error: "Invalid marketplace status." }, { status: 400 });
     }
     patch.status = status;
   }
-  for (const k of ["price", "listingType", "bedrooms", "bathrooms", "sqm", "description"] as const) {
+
+  // Owner transaction status (For Sale/Rent ↔ Reserved ↔ Sold/Rented Out)
+  if (body.transactionStatus !== undefined) {
+    const txStatus = String(body.transactionStatus);
+    if (!["available", "reserved", "sold_rented", "sold"].includes(txStatus)) {
+      return NextResponse.json({ error: "Invalid transaction status." }, { status: 400 });
+    }
+    patch.transactionStatus = txStatus;
+  }
+
+  if (body.ownerContactNumber !== undefined) {
+    patch.ownerContactNumber = String(body.ownerContactNumber || "").trim();
+  }
+  if (body.ownerMessengerLink !== undefined) {
+    patch.ownerMessengerLink = String(body.ownerMessengerLink || "").trim();
+  }
+
+  // General field patches
+  for (const k of ["price", "listingType", "bedrooms", "bathrooms", "sqm", "description", "houseName", "images"] as const) {
     if (body[k] !== undefined) {
       patch[k] = k === "listingType" ? (body[k] === "rent" ? "rent" : "sale") : body[k];
+    }
+  }
+
+  // Re-verification Business Rule for Owners:
+  // If owner edits proof-sensitive fields (price, blockNo, lotNo, houseName, proofDocuments), reset verificationStatus back to "pending".
+  if (!isHowa && isOwner) {
+    const sensitiveFieldsChanged =
+      (body.price !== undefined && body.price !== existing.price) ||
+      (body.blockNo !== undefined && body.blockNo !== existing.blockNo) ||
+      (body.lotNo !== undefined && body.lotNo !== existing.lotNo) ||
+      (body.houseName !== undefined && body.houseName !== existing.houseName) ||
+      (body.proofDocuments !== undefined && Array.isArray(body.proofDocuments));
+
+    if (sensitiveFieldsChanged) {
+      patch.verificationStatus = "pending";
     }
   }
 

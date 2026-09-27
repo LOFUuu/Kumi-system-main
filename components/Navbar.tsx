@@ -4,14 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import type { Role } from "@/lib/mock-data";
 
-const ROLE_OPTIONS: { role: Role; label: string }[] = [
-  { role: "admin", label: "Admin" },
-  { role: "counselor", label: "Counselor" },
-  { role: "resident", label: "Resident" },
-  { role: "non_resident", label: "Non-resident" },
-];
 
 function MapIcon() {
   return (
@@ -62,8 +55,9 @@ function LoginIcon() {
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout, setRolePreview } = useAuth();
+  const { user, logout } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
+
 
   // Admin pages have their own sidebar — hide the public navbar there
   if (pathname.startsWith("/admin")) return null;
@@ -135,35 +129,14 @@ export default function Navbar() {
                 </Link>
               )}
 
-              <div className="relative group">
-                <button
-                  onClick={() => setShowLogout(true)}
-                  className="rounded-lg bg-danger px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90"
-                >
-                  <LogoutIcon />
-                </button>
-                <div className="absolute right-0 z-50 mt-2 hidden w-48 rounded-xl bg-white p-2 text-green-deep shadow-xl group-hover:block">
-                  <p className="px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-muted">
-                    Preview as role
-                  </p>
-                  {ROLE_OPTIONS.map((o) => (
-                    <button
-                      key={o.role}
-                      onClick={() => setRolePreview(o.role)}
-                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm hover:bg-cream"
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                  <hr className="my-1 border-cream-2" />
-                  <button
-                    onClick={() => setShowLogout(true)}
-                    className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-danger hover:bg-danger-bg"
-                  >
-                    Log out
-                  </button>
-                </div>
-              </div>
+              <button
+                onClick={() => setShowLogout(true)}
+                className="rounded-lg bg-danger px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90"
+                title="Log out"
+                aria-label="Log out"
+              >
+                <LogoutIcon />
+              </button>
             </>
           ) : (
             <>

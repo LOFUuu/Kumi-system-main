@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import {
   User,
@@ -24,6 +24,7 @@ export default function RegisterPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const [isConfirmFocused, setIsConfirmFocused] = useState(false);
+  const confirmInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
     fullName: "",
@@ -40,7 +41,7 @@ export default function RegisterPage() {
   const [sending, setSending] = useState(false);
 
   const showConfirmSection =
-    isPasswordFocused || isConfirmFocused || form.password.length > 0 || form.confirm.length > 0;
+    form.password.length > 0 || form.confirm.length > 0 || isConfirmFocused;
 
   const set =
     (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -181,8 +182,9 @@ export default function RegisterPage() {
 
               {/* PHONE */}
               <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-700 mb-1.5">
-                  PHONE
+                <label className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-gray-700 mb-1.5">
+                  <span>PHONE</span>
+                  <span className="text-[10px] font-normal tracking-normal text-gray-400 lowercase">(optional)</span>
                 </label>
                 <div className="relative">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-gray-400">
@@ -190,7 +192,7 @@ export default function RegisterPage() {
                   </div>
                   <input
                     type="tel"
-                    placeholder="Enter your phone number"
+                    placeholder="Enter your phone number (optional)"
                     value={form.phone}
                     onChange={set("phone")}
                     className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition focus:border-green-600 focus:ring-2 focus:ring-green-600/15"
@@ -236,6 +238,12 @@ export default function RegisterPage() {
                     onChange={set("password")}
                     onFocus={() => setIsPasswordFocused(true)}
                     onBlur={() => setIsPasswordFocused(false)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        confirmInputRef.current?.focus();
+                      }
+                    }}
                     className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-10 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition focus:border-green-600 focus:ring-2 focus:ring-green-600/15"
                   />
                   <button
@@ -244,7 +252,7 @@ export default function RegisterPage() {
                     className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400 transition hover:text-gray-600"
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
@@ -265,6 +273,7 @@ export default function RegisterPage() {
                     <Lock className="h-4 w-4" />
                   </div>
                   <input
+                    ref={confirmInputRef}
                     type={showConfirm ? "text" : "password"}
                     placeholder="Confirm your password"
                     value={form.confirm}
@@ -280,7 +289,7 @@ export default function RegisterPage() {
                     className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400 transition hover:text-gray-600"
                     aria-label={showConfirm ? "Hide confirm password" : "Show confirm password"}
                   >
-                    {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showConfirm ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   </button>
                 </div>
               </div>

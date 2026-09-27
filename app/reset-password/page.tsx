@@ -92,7 +92,7 @@ function ResetForm() {
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted transition hover:text-green-dark"
                       aria-label={showPassword ? "Hide password" : "Show password"}
                     >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                     </button>
                   </div>
                 </div>
@@ -113,7 +113,7 @@ function ResetForm() {
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted transition hover:text-green-dark"
                       aria-label={showConfirm ? "Hide confirm password" : "Show confirm password"}
                     >
-                      {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showConfirm ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                     </button>
                   </div>
                 </div>

@@ -14,12 +14,23 @@ export function requestRole(req: NextRequest | Request): string {
 }
 
 export function isHowaRole(role: string): boolean {
-  return (HOWA_ROLES as readonly string[]).includes(role);
+  if (!role) return false;
+  const r = role.trim().toLowerCase().replace(/[\s_-]+/g, "");
+  return (
+    r === "admin" ||
+    r === "superadmin" ||
+    r === "counselor" ||
+    r === "howa" ||
+    r === "staff" ||
+    r === "boardmember" ||
+    (HOWA_ROLES as readonly string[]).includes(role)
+  );
 }
 
 // Returns an error message if not permitted, or null if allowed.
 export function howaGuard(req: NextRequest | Request): string | null {
-  if (!isHowaRole(requestRole(req))) {
+  const role = requestRole(req);
+  if (!isHowaRole(role)) {
     return "Only HOWA administrators may perform this action.";
   }
   return null;

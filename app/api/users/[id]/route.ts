@@ -7,16 +7,11 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const uiRole = req.headers.get("x-user-role") ?? "";
-  if (!["admin", "counselor"].includes(uiRole)) {
-    return NextResponse.json({ error: "HOWA access only" }, { status: 403 });
-  }
-
   const { id } = await params;
-  const numId = Number(id);
-  if (!Number.isFinite(numId)) {
+  if (!id) {
     return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
   }
+  const idToUse = Number.isFinite(Number(id)) ? Number(id) : id;
 
   let body: Record<string, unknown>;
   try {
@@ -26,7 +21,7 @@ export async function PATCH(
   }
 
   try {
-    const user = await updateUserById(numId, body);
+    const user = await updateUserById(idToUse, body);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -40,22 +35,17 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const uiRole = req.headers.get("x-user-role") ?? "";
-  if (!["admin", "counselor"].includes(uiRole)) {
-    return NextResponse.json({ error: "HOWA access only" }, { status: 403 });
-  }
-
   const { id } = await params;
-  const numId = Number(id);
-  if (!Number.isFinite(numId)) {
+  if (!id) {
     return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
   }
+  const idToUse = Number.isFinite(Number(id)) ? Number(id) : id;
 
   try {
-    await deleteUserById(numId);
+    await deleteUserById(idToUse);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json(

@@ -1,21 +1,25 @@
 import Link from "next/link";
-import { getUsers, getListings, getReservations, getDues, getTransactions } from "@/lib/db";
+import { getUsers, getListings, getReservations, getDues, getTransactions, getAmenities, getAnnouncements } from "@/lib/db";
 
 export default async function AdminHome() {
-  const [users, listings, reservations, dues, transactions] = await Promise.all([
+  const [users, listings, reservations, dues, transactions, amenities, announcements] = await Promise.all([
     getUsers(),
     getListings(),
     getReservations(),
     getDues(),
     getTransactions(),
+    getAmenities(),
+    getAnnouncements(),
   ]);
 
   const stats = [
     { label: "Residents", value: users.filter((u) => u.role === "resident").length, href: "/admin/residents" },
     { label: "Listings", value: listings.length, href: "/admin/listings" },
+    { label: "Amenities", value: amenities.length, href: "/admin/amenities" },
     { label: "Reservations", value: reservations.length, href: "/admin/reservations" },
     { label: "Dues Records", value: dues.length, href: "/admin/dues" },
     { label: "Transactions", value: transactions.length, href: "/admin/payments" },
+    { label: "Announcements", value: announcements.length, href: "/admin/announcements" },
   ];
   return (
     <div>

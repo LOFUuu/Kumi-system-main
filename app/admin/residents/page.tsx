@@ -27,6 +27,9 @@ import {
   Layers,
   Sparkles,
   Check,
+  Archive,
+  ArchiveRestore,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { type User, type Role } from "@/lib/mock-data";
@@ -86,6 +89,19 @@ export default function AdminResidentsPage() {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
+  // Three-dot dropdown
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Archive modal state
+  const [archiveTarget, setArchiveTarget] = useState<User | null>(null);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [archiving, setArchiving] = useState(false);
+
+  // Delete permanently modal state
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   // Add Form State
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -135,11 +151,22 @@ export default function AdminResidentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Stats calculation
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Stats calculation — archived users are already excluded by getUsers()
   const totalResidents = users.length;
-  const activeCount = users.filter((u) => u.isActive).length;
-  const inactiveCount = users.filter((u) => !u.isActive).length;
-  const nonResidentsCount = users.filter((u) => u.role === "non_resident").length;
+  const activeCount = users.filter((u) => u.isActive && !u.isArchived).length;
+  const inactiveCount = users.filter((u) => !u.isActive && !u.isArchived).length;
+  const nonResidentsCount = users.filter((u) => u.role === "non_resident" && !u.isArchived).length;
 
   // Unique blocks for dropdown
   const blockOptions = useMemo(() => {
@@ -154,7 +181,7 @@ export default function AdminResidentsPage() {
     return Array.from(set).sort();
   }, [users]);
 
-  // Filtered users list
+  // Filtered users list — archived users are excluded at DB level
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
       // Search
@@ -190,8 +217,18 @@ export default function AdminResidentsPage() {
     return filteredUsers.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredUsers, currentPage]);
 
+  const showSuccess = (msg: string) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(""), 3500);
+  };
+  const showError = (msg: string) => {
+    setError(msg);
+    setTimeout(() => setError(""), 3500);
+  };
+
   const toggleUserStatus = async (userToToggle: User, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    setOpenMenuId(null);
     setBusy(true);
     try {
       const updated = await api.userUpdate(userToToggle.id, {
@@ -201,15 +238,47 @@ export default function AdminResidentsPage() {
       if (selectedUser?.id === userToToggle.id) {
         setSelectedUser(updated.user);
       }
-      setSuccessMsg(
+      showSuccess(
         `User ${updated.user.fullName} is now ${updated.user.isActive ? "Active" : "Inactive"}.`
       );
-      setTimeout(() => setSuccessMsg(""), 3500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update user status");
-      setTimeout(() => setError(""), 3500);
+      showError(err instanceof Error ? err.message : "Failed to update user status");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleArchiveConfirm = async () => {
+    if (!archiveTarget) return;
+    setArchiving(true);
+    try {
+      await api.userArchive(archiveTarget.id, archiveReason || undefined);
+      // Remove from local state immediately
+      setUsers((prev) => prev.filter((u) => u.id !== archiveTarget.id));
+      if (selectedUser?.id === archiveTarget.id) setSelectedUser(null);
+      setArchiveTarget(null);
+      setArchiveReason("");
+      showSuccess(`${archiveTarget.fullName} has been archived successfully.`);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to archive resident.");
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api.userDelete(deleteTarget.id);
+      setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+      if (selectedUser?.id === deleteTarget.id) setSelectedUser(null);
+      setDeleteTarget(null);
+      showSuccess(`${deleteTarget.fullName} has been permanently deleted.`);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to delete resident.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -231,6 +300,7 @@ export default function AdminResidentsPage() {
 
   const openEditModal = (u: User, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    setOpenMenuId(null);
     setEditing(u);
     setEditFullName(u.fullName || "");
     setEditEmail(u.email || "");
@@ -275,8 +345,7 @@ export default function AdminResidentsPage() {
       });
       setAdding(false);
       refresh();
-      setSuccessMsg("Resident created successfully!");
-      setTimeout(() => setSuccessMsg(""), 3500);
+      showSuccess("Resident created successfully!");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add resident");
     } finally {
@@ -309,8 +378,7 @@ export default function AdminResidentsPage() {
         setSelectedUser(res.user);
       }
       setEditing(null);
-      setSuccessMsg("Resident details updated successfully!");
-      setTimeout(() => setSuccessMsg(""), 3500);
+      showSuccess("Resident details updated successfully!");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update resident details");
     } finally {
@@ -602,13 +670,87 @@ export default function AdminResidentsPage() {
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          <button
-                            title="Edit Resident"
-                            onClick={(e) => openEditModal(u, e)}
-                            className="rounded-lg p-1.5 text-muted hover:bg-cream hover:text-green-dark"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
+
+                          {/* Three-dot menu */}
+                          <div className="relative" ref={openMenuId === u.id ? menuRef : null}>
+                            <button
+                              title="More Actions"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuId(openMenuId === u.id ? null : u.id);
+                              }}
+                              className="rounded-lg p-1.5 text-muted hover:bg-cream hover:text-green-dark"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+
+                            {openMenuId === u.id && (
+                              <div
+                                className="absolute right-0 top-full z-[500] mt-1 w-48 rounded-xl border border-cream-2 bg-white py-1 shadow-xl animate-fade-in"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {/* View Details */}
+                                <button
+                                  onClick={() => {
+                                    setSelectedUser(u);
+                                    setOpenMenuId(null);
+                                  }}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-green-dark hover:bg-cream transition-colors"
+                                >
+                                  <Eye className="h-3.5 w-3.5 text-muted" />
+                                  View Details
+                                </button>
+
+                                {/* Edit Resident */}
+                                <button
+                                  onClick={(e) => openEditModal(u, e)}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-green-dark hover:bg-cream transition-colors"
+                                >
+                                  <Edit3 className="h-3.5 w-3.5 text-muted" />
+                                  Edit Resident
+                                </button>
+
+                                {/* Deactivate / Activate */}
+                                <button
+                                  onClick={(e) => toggleUserStatus(u, e)}
+                                  disabled={busy}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-green-dark hover:bg-cream transition-colors disabled:opacity-50"
+                                >
+                                  <Power className="h-3.5 w-3.5 text-muted" />
+                                  {u.isActive ? "Deactivate" : "Activate"}
+                                </button>
+
+                                <div className="my-1 border-t border-cream-2" />
+
+                                {/* Archive Resident — amber, prominent */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setArchiveReason("");
+                                    setArchiveTarget(u);
+                                    setOpenMenuId(null);
+                                  }}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 transition-colors"
+                                >
+                                  <Archive className="h-3.5 w-3.5 text-amber-600" />
+                                  Archive Resident
+                                </button>
+
+                                {/* Delete Permanently — danger */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDeleteTarget(u);
+                                    setOpenMenuId(null);
+                                  }}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+                                  Delete Permanently
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -909,6 +1051,19 @@ export default function AdminResidentsPage() {
               >
                 <Power className="h-3.5 w-3.5" />
                 {selectedUser.isActive ? "Deactivate" : "Activate"}
+              </button>
+            </div>
+
+            {/* Archive action — secondary, below main buttons */}
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={() => {
+                  setArchiveReason("");
+                  setArchiveTarget(selectedUser);
+                }}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+              >
+                <Archive className="h-3.5 w-3.5" /> Archive Resident
               </button>
             </div>
           </aside>
@@ -1314,6 +1469,104 @@ export default function AdminResidentsPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* MODAL: Archive Resident */}
+      {archiveTarget && (
+        <div
+          className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          onClick={() => !archiving && setArchiveTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
+                <Archive className="h-5 w-5 text-amber-600" />
+              </span>
+              <h3 className="font-serif text-lg font-bold text-green-dark">Archive Resident?</h3>
+            </div>
+            <p className="text-xs text-muted leading-relaxed">
+              <strong>{archiveTarget.fullName}</strong> will be removed from the active Residents list, but their information and historical records (dues, payments, reservations) will be preserved.
+            </p>
+
+            <div className="mt-4">
+              <label className="field-label">Reason (optional)</label>
+              <input
+                type="text"
+                className="field"
+                placeholder="e.g. Moved out of Mabuhay Homes"
+                value={archiveReason}
+                onChange={(e) => setArchiveReason(e.target.value)}
+                disabled={archiving}
+              />
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setArchiveTarget(null)}
+                disabled={archiving}
+                className="btn-ghost flex-1 justify-center !py-2 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleArchiveConfirm}
+                disabled={archiving}
+                className="flex-1 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-amber-700 disabled:opacity-60 transition"
+              >
+                {archiving ? "Archiving…" : "Archive Resident"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Delete Permanently */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          onClick={() => !deleting && setDeleteTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100">
+                <AlertTriangle className="h-5 w-5 text-rose-600" />
+              </span>
+              <h3 className="font-serif text-lg font-bold text-rose-700">Delete Permanently?</h3>
+            </div>
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 leading-relaxed mb-3">
+              ⚠️ This action <strong>cannot be undone</strong>. The resident record for <strong>{deleteTarget.fullName}</strong> will be permanently removed from the database.
+            </div>
+            <p className="text-xs text-muted leading-relaxed">
+              Only use this for duplicate accounts, test accounts, or records created by mistake. Historical dues and payment records will remain for integrity.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="btn-ghost flex-1 justify-center !py-2 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConfirm}
+                disabled={deleting}
+                className="flex-1 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-700 disabled:opacity-60 transition"
+              >
+                {deleting ? "Deleting…" : "Delete Permanently"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -114,7 +114,10 @@ export default function GoogleSignInButton({ redirectTo }: { redirectTo?: string
 
   return (
     <div>
-      <div ref={buttonRef} className="flex w-full items-center justify-center min-h-[44px]" />
+      <div
+        ref={buttonRef}
+        className="flex w-full items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-white min-h-[44px] shadow-sm transition hover:bg-gray-50"
+      />
       {error && <p className="mt-2 text-center text-xs font-medium text-danger">{error}</p>}
     </div>
   );

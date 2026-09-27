@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Calendar,
   CreditCard,
@@ -128,119 +129,18 @@ export default function DashboardPage() {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 1. ADMIN / COUNSELOR DASHBOARD VIEW
-  // ─────────────────────────────────────────────────────────────────────────────
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && user && isAdmin) {
+      router.replace("/admin");
+    }
+  }, [loading, user, isAdmin, router]);
+
   if (isAdmin) {
     return (
-      <div className="min-h-screen bg-cream/40 pb-12">
-        <div className="border-b border-cream-2 bg-gradient-to-br from-green-dark to-green-mid px-6 py-8 text-white">
-          <div className="mx-auto max-w-7xl flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-0.5 text-xs font-semibold text-gold mb-2">
-                <Shield className="h-3.5 w-3.5" /> HOA Administration
-              </div>
-              <h1 className="font-serif text-3xl sm:text-4xl font-bold">
-                Welcome, {user?.fullName ?? "Admin"}
-              </h1>
-              <p className="text-white/80 text-sm">
-                Community overview, resident records &amp; payment management.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Link href="/admin/payments" className="btn-gold !text-sm !py-2 shadow-md">
-                Review Payments ({adminPendingPay})
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        <div className="mx-auto max-w-7xl px-6 py-8 space-y-8">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="card">
-              <div className="text-xs font-bold uppercase tracking-wider text-muted">Residents</div>
-              <div className="font-serif text-3xl font-bold text-green-dark">{adminResidents}</div>
-            </div>
-            <div className="card">
-              <div className="text-xs font-bold uppercase tracking-wider text-muted">Active Users</div>
-              <div className="font-serif text-3xl font-bold text-green-dark">{adminActive}</div>
-            </div>
-            <div className="card">
-              <div className="text-xs font-bold uppercase tracking-wider text-muted">Pending Payments</div>
-              <div className="font-serif text-3xl font-bold text-amber-600">{adminPendingPay}</div>
-            </div>
-            <div className="card">
-              <div className="text-xs font-bold uppercase tracking-wider text-muted">Total Revenue</div>
-              <div className="font-serif text-3xl font-bold text-green-mid">{formatPHP(adminRevenue)}</div>
-            </div>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <div className="card">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-serif text-xl font-bold text-green-dark">Recent Transactions</h2>
-                <Link href="/admin/payments" className="text-xs font-bold text-green-mid hover:underline">
-                  View All →
-                </Link>
-              </div>
-              <ul className="divide-y divide-cream-2 text-xs">
-                {txns.slice(0, 6).map((t) => (
-                  <li key={t.id} className="flex items-center justify-between py-3">
-                    <div>
-                      <div className="font-bold text-green-dark">{t.residentName}</div>
-                      <div className="text-muted capitalize">{t.refType} · {formatDate(t.createdAt)}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-green-mid">{formatPHP(t.amount)}</div>
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        t.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-                      }`}>
-                        {t.status}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="card">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-serif text-xl font-bold text-green-dark">Pending Reservations</h2>
-                <Link href="/admin/reservations" className="text-xs font-bold text-green-mid hover:underline">
-                  Manage →
-                </Link>
-              </div>
-              <ul className="divide-y divide-cream-2 text-xs">
-                {reservations.filter((r) => r.status === "pending").slice(0, 6).map((r) => (
-                  <li key={r.id} className="flex items-center justify-between py-3">
-                    <div>
-                      <div className="font-bold text-green-dark">{r.residentName}</div>
-                      <div className="text-muted">{r.amenityName} · {r.date}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-green-mid">{formatPHP(r.downpayment)}</div>
-                      <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                        Pending Approval
-                      </span>
-                    </div>
-                  </li>
-                ))}
-                {reservations.filter((r) => r.status === "pending").length === 0 && (
-                  <li className="py-6 text-center text-muted">No pending reservations.</li>
-                )}
-              </ul>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Link href="/admin/residents" className="btn-green !text-white">Manage Residents</Link>
-            <Link href="/admin/payments" className="btn-green !text-white">Manage Payments</Link>
-            <Link href="/admin/reservations" className="btn-green !text-white">Manage Reservations</Link>
-            <Link href="/admin/listings" className="btn-green !text-white">Manage Listings</Link>
-            <Link href="/admin/amenities" className="btn-green !text-white">Manage Amenities</Link>
-            <Link href="/admin/reports" className="btn-green !text-white">Reports</Link>
-          </div>
-        </div>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <p className="text-sm text-muted">Redirecting to Admin Panel…</p>
       </div>
     );
   }
@@ -306,30 +206,56 @@ export default function DashboardPage() {
       )}
 
       {/* HERO HEADER */}
-      <div className="border-b border-cream-2 bg-gradient-to-br from-green-dark via-green-deep to-green-mid px-6 py-8 text-white shadow-md">
-        <div className="mx-auto max-w-6xl">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-gold mb-2 backdrop-blur-sm">
+      <div className="relative w-full overflow-hidden bg-[#0a271a] border-b border-cream-2 px-6 py-8 sm:py-10 text-white shadow-md">
+        {/* Subtle radial glow */}
+        <div className="absolute right-[-60px] top-[-60px] h-[400px] w-[400px] rounded-full bg-[radial-gradient(circle,rgba(244,196,48,.08),transparent_70%)] pointer-events-none" />
+
+        <div className="relative z-10 mx-auto max-w-6xl">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            {/* LEFT: Text content */}
+            <div className="max-w-xl">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-gold mb-3 backdrop-blur-sm border border-white/20">
                 <UserIcon className="h-3.5 w-3.5" />
                 {user?.role === "resident" ? "Verified Resident" : "Member"}
                 {user?.blockNo && user?.lotNo && ` · Block ${user.blockNo}, Lot ${user.lotNo}`}
               </div>
-              <h1 className="font-serif text-3xl sm:text-4xl font-bold">
+              <h1 className="font-serif text-3xl sm:text-4xl font-bold text-gold drop-shadow-sm">
                 Welcome back, {user?.fullName || "Resident"}
               </h1>
-              <p className="mt-1 text-sm text-white/80">
-                Track your amenity bookings, monthly dues, and community announcements.
+              <p className="mt-1.5 text-xs sm:text-sm font-bold tracking-[2px] uppercase text-white/90">
+                MABUHAY HOMES 2000 PHASE 5
               </p>
+              <p className="mt-2 text-xs sm:text-sm leading-relaxed text-white/75">
+                Track your amenity bookings, monthly dues, and official announcements.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2.5">
+                <Link href="/reservation" className="inline-flex items-center gap-1.5 rounded-2xl bg-gold px-4 py-2.5 text-xs font-bold text-[#0a271a] shadow-md hover:scale-[1.02] transition-transform">
+                  <Calendar className="h-4 w-4" /> Book Amenity
+                </Link>
+                <Link href="/my-dues" className="inline-flex items-center gap-1.5 rounded-2xl border border-white/30 bg-white/10 px-4 py-2.5 text-xs font-bold text-white backdrop-blur-sm hover:bg-white/20 transition-colors">
+                  <CreditCard className="h-4 w-4" /> Pay Dues
+                </Link>
+              </div>
             </div>
 
-            <div className="flex flex-wrap gap-2.5">
-              <Link href="/reservation" className="btn-gold !py-2.5 !px-4 text-xs font-bold shadow-lg flex items-center gap-1.5">
-                <Calendar className="h-4 w-4" /> Book Amenity
-              </Link>
-              <Link href="/my-dues" className="btn-green !bg-white/20 !hover:bg-white/30 !py-2.5 !px-4 text-xs font-bold text-white border border-white/30 flex items-center gap-1.5">
-                <CreditCard className="h-4 w-4" /> Pay Dues
-              </Link>
+            {/* RIGHT: Mabuhay Homes sign photo card (pa-gilid) */}
+            <div className="w-full lg:w-auto lg:shrink-0 lg:max-w-sm xl:max-w-md">
+              <div className="relative overflow-hidden rounded-3xl border-2 border-white/20 shadow-2xl group">
+                <img
+                  src="/images/mabuhay-banner.jpg"
+                  alt="Mabuhay Homes 2000 Phase V Sign"
+                  className="w-full h-[160px] sm:h-[200px] lg:h-[200px] object-cover object-center transition-transform duration-700 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                <div className="absolute bottom-3 left-3 right-3 text-left">
+                  <span className="inline-block rounded-full bg-gold px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#0a271a] shadow">
+                    Official Community Gate
+                  </span>
+                  <p className="mt-1 font-serif text-sm font-bold text-white drop-shadow-md">
+                    Mabuhay Homes 2000 Phase V
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -18,19 +18,21 @@ import {
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
+  Eye,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
 const LINKS: { href: string; label: string; icon: LucideIcon; sub?: boolean; amber?: boolean }[] = [
   { href: "/admin/residents", label: "Residents", icon: Users },
   { href: "/admin/listings", label: "Listings", icon: Home },
+  { href: "/admin/viewings", label: "Property Viewings", icon: Eye },
   { href: "/admin/amenities", label: "Amenities", icon: Waves },
   { href: "/admin/reservations", label: "Reservations", icon: CalendarDays },
   { href: "/admin/dues", label: "Dues", icon: Coins },
   { href: "/admin/payments", label: "Payments", icon: CreditCard },
   { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
   { href: "/admin/reports", label: "Reports", icon: BarChart3 },
-  { href: "/admin/amenities/archive", label: "Archive", icon: Archive, sub: true, amber: true },
+  { href: "/admin/archive", label: "Archive", icon: Archive, amber: true },
 ];
 
 export default function AdminSidebar() {
@@ -67,11 +69,11 @@ export default function AdminSidebar() {
       <div className="flex flex-1 flex-col overflow-hidden p-3">
         {/* Logo / Brand */}
         <Link
-          href="/dashboard"
+          href="/admin"
           className={`mb-4 flex items-center gap-2.5 rounded-xl px-2 py-2 font-display text-gold transition-all duration-300 hover:bg-cream ${
             collapsed ? "justify-center" : ""
           }`}
-          title="Dashboard"
+          title="Admin Overview"
         >
           <LayoutDashboard className="h-5 w-5 flex-shrink-0" />
           <span
@@ -93,8 +95,21 @@ export default function AdminSidebar() {
         {/* Nav links */}
         <nav className="space-y-0.5">
           {LINKS.map((l) => {
-            const active = pathname === l.href || pathname.startsWith(l.href + "/");
-            const isArchive = l.amber;
+            const isArchive = l.amber || l.href === "/admin/archive" || l.href === "/admin/amenities/archive";
+            let active = false;
+            if (isArchive) {
+              active =
+                pathname === "/admin/archive" ||
+                pathname.startsWith("/admin/archive") ||
+                pathname === "/admin/amenities/archive" ||
+                pathname.startsWith("/admin/amenities/archive");
+            } else if (l.href === "/admin/amenities") {
+              active =
+                pathname === "/admin/amenities" ||
+                (pathname.startsWith("/admin/amenities/") && !pathname.startsWith("/admin/amenities/archive"));
+            } else {
+              active = pathname === l.href || pathname.startsWith(l.href + "/");
+            }
 
             return (
               <Link

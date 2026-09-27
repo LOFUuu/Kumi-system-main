@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Lock, TriangleAlert, Eye, EyeOff } from "lucide-react";
@@ -36,9 +37,19 @@ function LoginForm() {
   };
 
   return (
-    <div className="flex min-h-[80vh] items-center justify-center bg-gradient-to-br from-green-deep via-green-dark to-green-mid px-4 py-14">
-      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="bg-gradient-to-br from-green-dark to-green-mid p-9 text-center">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-green-deep via-green-dark to-green-mid px-4 py-14">
+      <div className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="bg-gradient-to-br from-green-dark to-green-mid px-9 pt-8 pb-7 text-center">
+          {/* Community logo */}
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full overflow-hidden border-2 border-gold shadow-lg bg-white">
+            <Image
+              src="/logo.jpg"
+              alt="Mabuhay Homes Logo"
+              width={64}
+              height={64}
+              className="h-full w-full object-cover"
+            />
+          </div>
           <span className="font-display text-3xl tracking-[4px] text-gold">MABUHAY HOMES</span>
           <p className="mt-1.5 text-[11px] uppercase tracking-[1.5px] text-white/55">Community Portal</p>
         </div>
@@ -100,15 +111,15 @@ function LoginForm() {
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
                     <Eye className="h-4 w-4" />
+                  ) : (
+                    <EyeOff className="h-4 w-4" />
                   )}
                 </button>
               </div>
             </div>
             <div className="flex justify-end">
-              <Link href="/forgot-password" className="text-sm font-semibold text-green-mid hover:underline">
+              <Link href="/forgot-password" className="text-sm font-semibold text-gold-muted hover:underline">
                 Forgot password?
               </Link>
             </div>

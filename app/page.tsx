@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Users, Home } from "lucide-react";
+import { Users, Home, LogIn, Calendar, CreditCard } from "lucide-react";
 import { ListingCard, StatBox } from "@/components/ui";
 import Reveal from "@/components/Reveal";
 import { useAuth } from "@/lib/auth";
@@ -32,38 +32,90 @@ export default function HomePage() {
   return (
     <>
       {/* HERO */}
-      <section className="relative flex min-h-[540px] items-center overflow-hidden bg-gradient-to-br from-green-deep via-green-dark to-green-mid">
-        <div className="absolute right-[-80px] top-[-80px] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle,rgba(244,196,48,.08),transparent_70%)]" />
-        <div className="relative z-10 max-w-3xl px-8 py-16">
-          <h1 className="font-serif text-6xl font-black leading-tight text-white">
-            Welcome to <br />
-            <em className="not-italic text-gold">Mabuhay Homes</em>
-            <span className="mt-2 block text-2xl font-normal opacity-85">
+      <section className="relative min-h-[420px] lg:min-h-[440px] w-full overflow-hidden bg-[#0a271a]">
+        {/* Full right-side image that fades into green on the left */}
+        <div className="absolute inset-0 z-0">
+          <img
+            src="/images/mabuhay-banner.jpg"
+            alt="Mabuhay Homes 2000 Phase V"
+            className="h-full w-full object-cover object-[60%_center] filter brightness-[1.08] contrast-[1.05]"
+          />
+          {/* Left fade: solid dark green → transparent */}
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0a271a] from-[30%] via-[#0a271a]/85 via-[50%] to-transparent" />
+          {/* Top & bottom vignette */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0a271a]/40 via-transparent to-[#0a271a]/50" />
+        </div>
+
+        {/* Subtle leaf / organic shape bottom-right decoration */}
+        <div className="absolute bottom-0 right-0 z-0 pointer-events-none select-none opacity-30">
+          <svg width="260" height="120" viewBox="0 0 260 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="200" cy="100" rx="160" ry="60" fill="#1a4a2e" />
+            <ellipse cx="240" cy="115" rx="90" ry="35" fill="#1e5235" />
+          </svg>
+        </div>
+
+        {/* Hero Content: Left-aligned */}
+        <div className="relative z-10 mx-auto max-w-7xl px-6 lg:px-12 py-12 sm:py-16 flex items-center min-h-[420px] lg:min-h-[440px]">
+          <div className="max-w-lg text-left">
+            {/* WELCOME TO + gold line */}
+            <div className="flex items-center gap-3 text-xs sm:text-sm font-semibold tracking-[3px] uppercase text-white/85">
+              <span>WELCOME TO</span>
+              <span className="h-[2px] w-12 sm:w-16 bg-gold rounded-full" />
+            </div>
+
+            {/* MABUHAY HOMES — single line, original font preserved */}
+            <h1 className="mt-2 font-serif text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight text-gold drop-shadow-sm">
+              Mabuhay Homes
+            </h1>
+
+            {/* SUBTITLE */}
+            <p className="mt-2 text-[11px] sm:text-xs font-bold tracking-[2.5px] uppercase text-white/90">
               MABUHAY HOMES 2000 PHASE 5
-            </span>
-          </h1>
-          <p className="mt-5 max-w-xl text-base leading-relaxed text-white/70">
-            Your community hub for house listings, amenity reservations, monthly
-            dues tracking, and official announcements.
-          </p>
-          <div className="mt-9 flex flex-wrap gap-3">
-            <Link href="/house-listing" className="btn-gold">
-              View Listings
-            </Link>
-            {user ? (
-              <>
-                <Link href="/reservation" className="btn-outline-w !text-white">
-                  Book Amenity
-                </Link>
-                <Link href="/my-dues" className="btn-outline-w !text-white">
-                  My Dues
-                </Link>
-              </>
-            ) : (
-              <Link href="/login" className="btn-outline-w !text-white">
-                Log In
+            </p>
+
+            {/* DESCRIPTION */}
+            <p className="mt-3 text-xs sm:text-sm leading-relaxed text-white/75 max-w-sm">
+              Your community hub for house listings, amenity reservations,
+              monthly dues tracking, and official announcements.
+            </p>
+
+            {/* BUTTONS */}
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Link
+                href="/house-listing"
+                className="inline-flex items-center gap-2 rounded-2xl bg-gold px-5 py-2.5 text-sm font-bold text-[#0a271a] shadow-md transition hover:brightness-110 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Home className="h-4 w-4" />
+                View Listings
               </Link>
-            )}
+
+              {user ? (
+                <>
+                  <Link
+                    href="/reservation"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"
+                  >
+                    <Calendar className="h-4 w-4" />
+                    Book Amenity
+                  </Link>
+                  <Link
+                    href="/my-dues"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    My Dues
+                  </Link>
+                </>
+              ) : (
+                <Link
+                  href="/login"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"
+                >
+                  <LogIn className="h-4 w-4" />
+                  Log In
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </section>
