@@ -65,6 +65,7 @@ export interface HouseListing {
   proofDocuments: string[];       // relative paths to uploaded proof files
   rejectionReason?: string;       // set by admin when rejecting; shown to resident
   uploadedBy?: number;            // resident user ID who submitted the listing
+  showOnMap?: boolean;            // resident preference: show property on community map
   isArchived?: boolean;           // archived listings are hidden from public feed
   archiveReason?: string;         // reason for archiving the listing
   archivedBy?: "owner" | "admin" | null;

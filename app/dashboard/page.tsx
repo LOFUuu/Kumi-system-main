@@ -99,7 +99,9 @@ export default function DashboardPage() {
 
   const myListings = useMemo(() => {
     if (!user) return [];
-    return listings.filter((l) => l.uploadedBy === user.id);
+    return listings.filter(
+      (l) => !l.isArchived && (l.uploadedBy === user.id || l.ownerId === user.id)
+    );
   }, [listings, user]);
 
   // Admin community stats

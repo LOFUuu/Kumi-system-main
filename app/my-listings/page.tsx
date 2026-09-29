@@ -235,8 +235,10 @@ export default function MyListingsPage() {
         const mine = all.filter(
           (l) =>
             !l.isArchived &&
-            ((user?.id && l.uploadedBy === user.id) ||
-              l.ownerName === user?.fullName)
+            Boolean(
+              user?.id &&
+                (l.uploadedBy === user.id || l.ownerId === user.id)
+            )
         );
         setListings(mine);
       })
@@ -244,7 +246,7 @@ export default function MyListingsPage() {
   };
 
   useEffect(() => {
-    if (user && user.role !== "non_resident") load();
+    if (user) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -265,35 +267,13 @@ export default function MyListingsPage() {
             Sign in to view your listings
           </h2>
           <p className="mt-2 text-sm text-muted">
-            You must be signed in as a resident to manage your property listings.
+            You must be signed in to manage your property listings.
           </p>
           <button
             onClick={() => router.push("/login")}
             className="btn-green mt-6 inline-flex w-full justify-center"
           >
             Sign In
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (user.role === "non_resident") {
-    return (
-      <div className="section">
-        <div className="mx-auto max-w-md rounded-2xl border border-gold/30 bg-gold/5 p-8 text-center">
-          <Lock className="mx-auto h-10 w-10 text-gold" />
-          <h2 className="mt-3 font-serif text-2xl font-bold text-green-dark">
-            Resident access only
-          </h2>
-          <p className="mt-2 text-sm text-muted">
-            Only verified homeowners and registered residents can post and manage property listings.
-          </p>
-          <button
-            onClick={() => router.push("/house-listing")}
-            className="btn-green mt-6 inline-flex w-full justify-center"
-          >
-            Browse House Listings
           </button>
         </div>
       </div>

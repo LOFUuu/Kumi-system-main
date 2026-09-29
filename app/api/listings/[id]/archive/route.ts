@@ -24,7 +24,10 @@ export async function POST(
     const role = requestRole(req);
     const isHowa = role === "admin" || role === "counselor";
     const requesterId = Number(req.headers.get("x-user-id") || "0");
-    const isOwner = Boolean(requesterId && existing.uploadedBy === requesterId);
+    const isOwner = Boolean(
+      requesterId &&
+        (existing.uploadedBy === requesterId || existing.ownerId === requesterId)
+    );
 
     if (!isHowa && !isOwner) {
       return NextResponse.json(

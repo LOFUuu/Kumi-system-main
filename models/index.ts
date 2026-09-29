@@ -41,6 +41,7 @@ const listingSchema = new Schema<HouseListing>(
     proofDocuments: { type: [String], default: [] },
     rejectionReason: { type: String, default: null },
     uploadedBy: { type: Number, default: null },
+    showOnMap: { type: Boolean, default: true },
     // ── Archiving ───────────────────────────────────────────────────────────
     isArchived: { type: Boolean, default: false },
     archiveReason: { type: String, default: null },

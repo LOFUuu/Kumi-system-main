@@ -55,9 +55,9 @@ export const api = {
   /** Public feed — only verified listings */
   listingsVerified: () =>
     getJSON<HouseListing[]>("/api/listings?verificationStatus=verified"),
-  /** All listings — for admin panel */
+  /** All listings — for admin panel / my listings */
   listings: (status?: string) =>
-    getJSON<HouseListing[]>(`/api/listings${status ? `?status=${status}` : ""}`),
+    getJSON<HouseListing[]>(`/api/listings${status ? `?status=${status}` : ""}`, howaHeaders()),
   listing: (id: number | string) => getJSON<HouseListing>(`/api/listings/${id}`),
   masterIndex: () => getJSON<{ blockNo: string; lotNo: string }[]>("/api/listings/master-index"),
 

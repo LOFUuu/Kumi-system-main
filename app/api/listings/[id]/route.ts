@@ -86,7 +86,7 @@ export async function PATCH(
   // ── Resubmit (listing owner resubmits with new/updated docs) ────────────
   if (body.proofDocuments && !isHowa) {
     // Verify the requester owns this listing
-    if (requesterId && existing.uploadedBy !== requesterId) {
+    if (requesterId && existing.uploadedBy !== requesterId && existing.ownerId !== requesterId) {
       return NextResponse.json(
         { error: "You can only resubmit your own listings." },
         { status: 403 }
@@ -126,7 +126,10 @@ export async function PATCH(
   }
 
   // ── Standard status / field update (Owner or Admin) ─────────────────────
-  const isOwner = Boolean(requesterId && existing.uploadedBy === requesterId);
+  const isOwner = Boolean(
+    requesterId &&
+      (existing.uploadedBy === requesterId || existing.ownerId === requesterId)
+  );
 
   if (!isHowa && !isOwner) {
     return NextResponse.json(

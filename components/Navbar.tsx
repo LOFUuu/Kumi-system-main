@@ -72,7 +72,7 @@ export default function Navbar() {
     nav.push({ label: "Map", href: "/map", map: true });
     nav.push({ label: "Announcements", href: "/announcements" });
   }
-  if (user && (user.role === "resident" || user.role === "counselor" || user.role === "admin"))
+  if (user)
     nav.push({ label: "My Listings", href: "/my-listings" });
   if (user) {
     nav.push({ label: "History", href: "/history" });

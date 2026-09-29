@@ -80,6 +80,7 @@ export default function AddListingPage() {
   const [houseName, setHouseName] = useState("");
   const [ownerContactNumber, setOwnerContactNumber] = useState("");
   const [ownerMessengerLink, setOwnerMessengerLink] = useState("");
+  const [showOnMap, setShowOnMap] = useState<boolean>(true);
 
   // Photo states
   const [mainPhoto, setMainPhoto] = useState<File | null>(null);
@@ -220,6 +221,7 @@ export default function AddListingPage() {
         images,
         ownerContactNumber: ownerContactNumber.trim() || undefined,
         ownerMessengerLink: ownerMessengerLink.trim() || undefined,
+        showOnMap,
       });
 
       setDone(true);
@@ -256,30 +258,7 @@ export default function AddListingPage() {
     );
   }
 
-  if (user.role === "non_resident") {
-    return (
-      <div className="min-h-[calc(100vh-140px)] bg-[#faf8f2] px-4 py-12">
-        <div className="mx-auto max-w-md rounded-2xl border border-[#decb9e]/60 bg-[#f4efe4] p-8 text-center shadow-sm">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e9d9a8]/60">
-            <Lock className="h-6 w-6 text-[#a07c2e]" />
-          </div>
-          <h2 className="mt-4 font-serif text-2xl font-bold text-[#143424]">
-            Resident access only
-          </h2>
-          <p className="mt-2 text-sm text-[#5c6e60]">
-            Only verified homeowners and registered residents can post property
-            listings.
-          </p>
-          <button
-            onClick={() => router.push("/house-listing")}
-            className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#1a3826] py-3 text-sm font-semibold text-white hover:bg-[#132c1e] transition"
-          >
-            Browse House Listings
-          </button>
-        </div>
-      </div>
-    );
-  }
+
 
   // ── Success state ──────────────────────────────────────────────────────────
   if (done) {
@@ -554,6 +533,31 @@ export default function AddListingPage() {
                       onChange={(e) => setOwnerMessengerLink(e.target.value)}
                     />
                   </div>
+                </div>
+
+                {/* ── Community Map Visibility Toggle ── */}
+                <div className="mt-3 flex items-center justify-between rounded-xl border border-[#c8d8cc] bg-white p-3.5 shadow-xs">
+                  <div>
+                    <span className="block text-xs font-bold uppercase tracking-wide text-[#1a3826]">
+                      Show Property on Community Map
+                    </span>
+                    <p className="mt-0.5 text-[11px] text-[#5c6e60]">
+                      Allow a public marker to appear on the Mabuhay Homes Community Map once verified &amp; available.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowOnMap((v) => !v)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      showOnMap ? "bg-[#2d6a4f]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        showOnMap ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
                 </div>
               </div>
             </div>

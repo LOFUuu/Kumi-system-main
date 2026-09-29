@@ -27,9 +27,9 @@ export async function GET(req: NextRequest) {
 // Listings require at least one proof document and start as "pending".
 export async function POST(req: NextRequest) {
   const role = requestRole(req);
-  if (!role || role === "non_resident") {
+  if (!role) {
     return NextResponse.json(
-      { error: "Access denied. Only registered residents and HOWA administrators may submit listings." },
+      { error: "Access denied. You must be signed in to submit a listing." },
       { status: 403 }
     );
   }
@@ -89,8 +89,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Caller's identity from headers (set by the client from localStorage)
-  const uploadedById = Number(req.headers.get("x-user-id") || "0") || undefined;
+  // Caller's identity from headers (set by the client from localStorage) or body payload
+  const headerUserId = Number(req.headers.get("x-user-id") || "0");
+  const bodyOwnerId = Number(body.ownerId || "0");
+  const uploadedById = headerUserId || bodyOwnerId || undefined;
   const ownerName = String(body.ownerName || "").trim() || "HOA";
 
   // Admin/counselor listings are auto-verified; resident submissions start as pending.
@@ -118,7 +120,7 @@ export async function POST(req: NextRequest) {
     ownerContactNumber,
     ownerMessengerLink,
     description: String(body.description || ""),
-    ownerId: Number(body.ownerId) || 0,
+    ownerId: bodyOwnerId || uploadedById || 0,
     ownerName,
     images: String(body.images || "")
       ? String(body.images)
@@ -133,6 +135,7 @@ export async function POST(req: NextRequest) {
     proofDocuments,
     rejectionReason: null,
     uploadedBy: uploadedById ?? null,
+    showOnMap: body.showOnMap !== undefined ? Boolean(body.showOnMap) : true,
   };
 
   await Listing.create(docs as any);
