@@ -273,11 +273,7 @@ export default function AnnouncementsPage() {
       <div className="mx-auto max-w-6xl">
         <Reveal>
           <div className="text-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-gold/40 bg-gold/10 px-4 py-1.5 text-xs font-bold uppercase tracking-[2.5px] text-green-dark">
-              <span className="h-2 w-2 rounded-full bg-gold animate-pulse" />
-              COMMUNITY UPDATES
-            </div>
-            <h1 className="mt-3 font-serif text-4xl sm:text-5xl font-bold text-green-dark tracking-tight">
+            <h1 className="font-serif text-4xl sm:text-5xl font-bold text-green-dark tracking-tight">
               Announcements
             </h1>
             <p className="mx-auto mt-3 max-w-xl text-sm sm:text-base text-muted leading-relaxed">
@@ -451,16 +447,7 @@ export default function AnnouncementsPage() {
                     </div>
 
                     {/* Card Footer */}
-                    <div className="mt-6 flex items-center justify-between border-t border-cream-2/70 pt-4 text-xs">
-                      <div className="flex items-center gap-2 text-muted font-medium">
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-cream-2 text-green-dark">
-                          <UserIcon className="h-3.5 w-3.5" />
-                        </div>
-                        <span className="truncate max-w-[120px]">
-                          {a.poster || "HOA Admin"}
-                        </span>
-                      </div>
-
+                    <div className="mt-6 flex items-center justify-end border-t border-cream-2/70 pt-4 text-xs">
                       <button
                         type="button"
                         className="inline-flex items-center gap-1 font-bold text-green-mid group-hover:text-gold transition-colors duration-200"
@@ -555,10 +542,6 @@ export default function AnnouncementsPage() {
                 <span className="flex items-center gap-1.5">
                   <Calendar className="h-4 w-4 text-green-mid" />
                   {formatDate(activeModal.postDate)}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <UserIcon className="h-4 w-4 text-green-mid" />
-                  Posted by <span className="font-semibold text-green-dark">{activeModal.poster || "HOA Admin"}</span>
                 </span>
               </div>
             </div>
