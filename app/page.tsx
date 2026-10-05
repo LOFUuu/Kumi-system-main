@@ -256,16 +256,6 @@ export default function HomePage() {
                     className="h-72 w-full object-cover object-center brightness-90"
                   />
                 </div>
-                {/* Floating stats pill */}
-                <div className="absolute -bottom-4 -left-4 flex items-center gap-3 rounded-2xl border border-cream-2 bg-white px-5 py-3 shadow-xl">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gold/10 text-gold">
-                    <Users className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="font-serif text-xl font-bold text-green-dark">{totalResidents}+</div>
-                    <div className="text-xs text-muted">Happy Residents</div>
-                  </div>
-                </div>
               </div>
             </Reveal>
           </div>
