@@ -47,6 +47,47 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
   });
 }
 
+export async function sendGoogleOnlyAccountEmail(to: string, name: string): Promise<void> {
+  const user = process.env.EMAIL_USER;
+  if (!user) throw new Error("EMAIL_USER is not configured");
+
+  const displayName = name ? `, ${name.split(" ")[0]}` : "";
+  await getTransporter().sendMail({
+    from: `"Mabuhay Homes Community Portal" <${user}>`,
+    to,
+    subject: "Mabuhay Homes – Password Reset Request",
+    text:
+      `Hi${displayName},\n\n` +
+      `We received a password reset request for your Mabuhay Homes account.\n\n` +
+      `Your account uses "Continue with Google" to sign in, so there is no separate ` +
+      `application password to reset.\n\n` +
+      `To access your account, simply use the "Continue with Google" button on the ` +
+      `login page and sign in with your Google account.\n\n` +
+      `If you need to change your Google account password, please visit:\n` +
+      `https://myaccount.google.com/security\n\n` +
+      `If you didn't request this, you can safely ignore this email.`,
+    html:
+      `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#1b2a1e">` +
+      `<h2 style="color:#123f2a">Mabuhay Homes – Password Reset Request</h2>` +
+      `<p>Hi${displayName},</p>` +
+      `<p>We received a password reset request for your Mabuhay Homes account.</p>` +
+      `<div style="background:#f0faf4;border-left:4px solid #1c6b3c;padding:14px 18px;border-radius:6px;margin:20px 0">` +
+      `<strong>Your account uses Google Sign-In.</strong><br>` +
+      `There is no separate application password to reset — you sign in using ` +
+      `<em>"Continue with Google"</em>.` +
+      `</div>` +
+      `<p>To access your account, click <strong>Continue with Google</strong> on the login page.</p>` +
+      `<p>If you need to change your <strong>Google account password</strong>, visit:</p>` +
+      `<p style="text-align:center;margin:24px 0">` +
+      `<a href="https://myaccount.google.com/security" style="background:#4285F4;color:#fff;text-decoration:none;` +
+      `padding:12px 22px;border-radius:8px;font-weight:bold;display:inline-block">Manage Google Account</a>` +
+      `</p>` +
+      `<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0" />` +
+      `<p style="color:#888;font-size:12px">If you didn't request this, ignore this email — your account is safe.</p>` +
+      `</div>`,
+  });
+}
+
 export async function sendVerificationEmail(to: string, verifyUrl: string): Promise<void> {
   const user = process.env.EMAIL_USER;
   if (!user) throw new Error("EMAIL_USER is not configured");
