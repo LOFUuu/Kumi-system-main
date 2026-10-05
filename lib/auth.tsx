@@ -128,7 +128,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     persist(user);
-    window.location.href = opts?.next || roleHome(user.role);
+    const target = user.role === "admin" ? "/admin" : (opts?.next || roleHome(user.role));
+    window.location.href = target;
   };
 
   const logout = () => persist(null);

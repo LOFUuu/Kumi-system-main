@@ -34,6 +34,7 @@ export const MOCK_USERS: User[] = [
   { id: 4, fullName: "Jose Reyes", email: "jose@email.com", role: "resident", isActive: true, blockNo: "C-03", lotNo: "11" },
   { id: 5, fullName: "Linda Cruz", email: "linda@email.com", role: "resident", isActive: true, blockNo: "A-21", lotNo: "7" },
   { id: 8, fullName: "Lofu Tsikaruz", email: "lofu@gmail.com", role: "non_resident", isActive: true },
+  { id: 9, fullName: "Mabuhay Admin", email: "mabuhay2000phase5@gmail.com", role: "admin", isActive: true },
 ];
 
 export type VerificationStatus = "pending" | "verified" | "rejected";
