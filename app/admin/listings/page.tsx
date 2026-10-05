@@ -225,6 +225,28 @@ export default function AdminListingsPage() {
     }
   };
 
+  // Action: Toggle Site Visit Recommendation
+  const handleToggleSiteVisit = async (listing: HouseListing) => {
+    const nextVal = !listing.siteVisitRecommended;
+    setActionBusyId(listing.id);
+    try {
+      await api.listingUpdate(listing.id, { siteVisitRecommended: nextVal });
+      setMsg({
+        type: "success",
+        text: `"${listing.houseName}" ${nextVal ? "marked as Site Visit Recommended" : "removed from Site Visit Recommendation"}.`,
+      });
+      loadListings();
+      setTimeout(() => setMsg(null), 4000);
+    } catch (err: unknown) {
+      setMsg({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to update site visit recommendation.",
+      });
+    } finally {
+      setActionBusyId(null);
+    }
+  };
+
   // Action: Approve Listing
   const handleApprove = async (listing: HouseListing) => {
     setActionBusyId(listing.id);
@@ -554,23 +576,31 @@ export default function AdminListingsPage() {
 
                       {/* Status Column */}
                       <td className="p-4">
-                        {isOffMarket ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 border border-gray-200 px-2.5 py-1 text-[11px] font-bold text-gray-700">
-                            <Ban className="h-3 w-3 text-gray-500" /> Off Market
-                          </span>
-                        ) : isRejected ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-danger-bg border border-danger/30 px-2.5 py-1 text-[11px] font-bold text-danger">
-                            <XCircle className="h-3 w-3" /> Rejected
-                          </span>
-                        ) : isPending ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/20 border border-gold/40 px-2.5 py-1 text-[11px] font-bold text-green-deep">
-                            <Clock className="h-3 w-3 text-gold" /> Pending
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-light/20 border border-green-light/40 px-2.5 py-1 text-[11px] font-bold text-green-dark">
-                            <Check className="h-3 w-3 text-green-mid" /> Verified
-                          </span>
-                        )}
+                        <div className="flex flex-col items-start gap-1">
+                          {isOffMarket ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 border border-gray-200 px-2.5 py-1 text-[11px] font-bold text-gray-700">
+                              <Ban className="h-3 w-3 text-gray-500" /> Off Market
+                            </span>
+                          ) : isRejected ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-danger-bg border border-danger/30 px-2.5 py-1 text-[11px] font-bold text-danger">
+                              <XCircle className="h-3 w-3" /> Rejected
+                            </span>
+                          ) : isPending ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/20 border border-gold/40 px-2.5 py-1 text-[11px] font-bold text-green-deep">
+                              <Clock className="h-3 w-3 text-gold" /> Pending
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-green-light/20 border border-green-light/40 px-2.5 py-1 text-[11px] font-bold text-green-dark">
+                              <Check className="h-3 w-3 text-green-mid" /> Verified
+                            </span>
+                          )}
+
+                          {l.siteVisitRecommended && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-900 shadow-2xs">
+                              <Eye className="h-2.5 w-2.5 text-amber-700" /> Site Visit Rec
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Listed On Column */}
@@ -581,6 +611,22 @@ export default function AdminListingsPage() {
                       {/* Actions Column */}
                       <td className="p-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
+                          {/* Site Visit Recommendation Button */}
+                          <button
+                            type="button"
+                            disabled={actionBusyId === l.id}
+                            onClick={() => handleToggleSiteVisit(l)}
+                            className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-semibold border transition shadow-2xs whitespace-nowrap ${
+                              l.siteVisitRecommended
+                                ? "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200"
+                                : "bg-white text-green-dark border-cream-2 hover:bg-cream"
+                            }`}
+                            title="Indicate whether this property is recommended for a site visit"
+                          >
+                            <Eye className="h-3.5 w-3.5 text-amber-600" />
+                            <span>{l.siteVisitRecommended ? "Site Visit ✓" : "Site Visit Rec"}</span>
+                          </button>
+
                           {/* Proof Documents Button (if present) */}
                           {l.proofDocuments && l.proofDocuments.length > 0 && (
                             <button

@@ -16,6 +16,9 @@ import {
   Loader2,
   AlertTriangle,
   X,
+  XCircle,
+  AlertCircle,
+  Clock,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -399,16 +402,53 @@ export default function MyListingsPage() {
                           <Ruler className="h-4 w-4" /> {l.sqm} sqm
                         </span>
                       </div>
+
+                      {/* ── Rejection Callout Banner ── */}
+                      {l.verificationStatus === "rejected" && (
+                        <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50/90 p-3 text-xs text-rose-900 space-y-1">
+                          <div className="flex items-center gap-1.5 font-bold text-rose-700">
+                            <XCircle className="h-4 w-4 flex-shrink-0" />
+                            <span>Listing Submission Rejected by Admin</span>
+                          </div>
+                          {l.rejectionReason && (
+                            <p className="text-[11px] leading-relaxed text-rose-800 font-medium">
+                              <strong>Reason:</strong> {l.rejectionReason}
+                            </p>
+                          )}
+                          <p className="text-[10px] text-rose-700/80">
+                            Your listing remains saved in your account. Please update your proof of ownership or contact the HOA office to request re-validation.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* ── Pending Verification Callout Banner ── */}
+                      {l.verificationStatus === "pending" && (
+                        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/80 p-2.5 text-[11px] text-amber-900 flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                          <span>
+                            Under HOA Validation. Submitted proof of ownership documents are being reviewed by administrators.
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Footer row */}
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-cream-2 pt-3 text-[11px] text-muted">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span>
+                        <span className="flex items-center gap-1">
                           Verification:{" "}
-                          <strong className="capitalize text-green-dark">
-                            {l.verificationStatus?.replace(/_/g, " ") ?? "pending"}
-                          </strong>
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            l.verificationStatus === "rejected"
+                              ? "bg-rose-100 text-rose-800 border border-rose-300"
+                              : l.verificationStatus === "pending"
+                              ? "bg-amber-100 text-amber-800 border border-amber-300"
+                              : "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                          }`}>
+                            {l.verificationStatus === "rejected" && <XCircle className="h-2.5 w-2.5" />}
+                            {l.verificationStatus === "pending" && <Clock className="h-2.5 w-2.5" />}
+                            {l.verificationStatus === "verified" && <Check className="h-2.5 w-2.5" />}
+                            {l.verificationStatus ? l.verificationStatus.toUpperCase() : "PENDING"}
+                          </span>
                         </span>
                         {/* Transaction status — owner controlled */}
                         <TxStatusDropdown listing={l} onUpdate={handleUpdateListing} />

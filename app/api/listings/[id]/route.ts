@@ -173,6 +173,10 @@ export async function PATCH(
     patch.ownerMessengerLink = String(body.ownerMessengerLink || "").trim();
   }
 
+  if (body.siteVisitRecommended !== undefined) {
+    patch.siteVisitRecommended = Boolean(body.siteVisitRecommended);
+  }
+
   // General field patches
   for (const k of ["price", "listingType", "bedrooms", "bathrooms", "sqm", "description", "houseName", "images"] as const) {
     if (body[k] !== undefined) {

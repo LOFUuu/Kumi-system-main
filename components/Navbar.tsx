@@ -5,7 +5,6 @@ import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 
-
 function MapIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle" }}>
@@ -57,7 +56,7 @@ export default function Navbar() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
-
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   // Admin pages have their own sidebar — hide the public navbar there
   if (pathname.startsWith("/admin")) return null;
@@ -72,45 +71,50 @@ export default function Navbar() {
     nav.push({ label: "Map", href: "/map", map: true });
     nav.push({ label: "Announcements", href: "/announcements" });
   }
-  if (user)
-    nav.push({ label: "My Listings", href: "/my-listings" });
-  if (user) {
-    nav.push({ label: "History", href: "/history" });
-  }
+  if (user) nav.push({ label: "My Listings", href: "/my-listings" });
+  if (user) nav.push({ label: "History", href: "/history" });
 
   return (
     <nav className="sticky top-0 z-[2000] bg-gradient-to-br from-green-dark to-green-mid text-white shadow-lg">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-        <Link href="/" className="font-display text-2xl tracking-[3px] text-gold">
+        <Link href="/" className="font-display text-2xl tracking-[3px] text-gold hover:opacity-90 transition-opacity">
           MABUHAY HOMES
         </Link>
 
-        <ul className="hidden items-center gap-1 md:flex">
+        {/* Desktop nav */}
+        <ul className="hidden items-center gap-0.5 md:flex">
           {nav.map((item) => {
             const active = pathname === item.href;
             return (
               <li key={item.href} className="relative">
                 <Link
                   href={item.href}
-                  className={`flex items-center gap-1 rounded-lg px-3 py-2 text-sm transition hover:bg-white/10 ${
-                    active ? "bg-white/15 font-semibold" : ""
-                  }`}
+                  className={`relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200
+                    ${active
+                      ? "text-gold font-semibold"
+                      : "text-white/85 hover:text-white hover:bg-white/10"
+                    }`}
                 >
                   {item.map && <MapIcon />}
                   {item.label}
+                  {/* Active underline indicator */}
+                  {active && (
+                    <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-gold" />
+                  )}
                 </Link>
                 {item.map && !active && (
-                  <span className="absolute right-1 top-1 h-2 w-2 rounded-full border-2 border-green-deep bg-danger" />
+                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-green-deep bg-danger" />
                 )}
               </li>
             );
           })}
         </ul>
 
+        {/* Right: user / auth controls */}
         <div className="flex items-center gap-2">
           {user ? (
             <>
-              <div className="hidden items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-sm sm:flex">
+              <div className="hidden items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-sm sm:flex border border-white/10">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/15">
                   <UserIcon />
                 </span>
@@ -131,7 +135,7 @@ export default function Navbar() {
 
               <button
                 onClick={() => setShowLogout(true)}
-                className="rounded-lg bg-danger px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90"
+                className="rounded-lg bg-danger px-3 py-2 text-xs font-semibold text-white transition-all duration-200 hover:opacity-90 hover:shadow-sm"
                 title="Log out"
                 aria-label="Log out"
               >
@@ -140,21 +144,65 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              <Link href="/login" className="flex items-center gap-1 rounded-lg border border-white/30 px-3 py-2 text-sm text-white/80 hover:bg-white/10">
+              <Link href="/login" className="flex items-center gap-1.5 rounded-lg border border-white/30 px-3 py-2 text-sm text-white/85 transition-all duration-200 hover:bg-white/10 hover:text-white hover:border-white/50">
                 <LoginIcon />
                 Log In
               </Link>
-              <Link href="/register" className="btn-gold btn-sm !px-3 !py-2 text-xs">
+              <Link href="/register" className="btn-gold btn-sm !px-4 !py-2 text-xs">
                 Register
               </Link>
             </>
           )}
+
+          {/* Mobile hamburger */}
+          <button
+            className="flex md:hidden rounded-lg p-2 text-white/80 hover:bg-white/10 transition-colors"
+            onClick={() => setMobileOpen((v) => !v)}
+            aria-label="Toggle menu"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              {mobileOpen ? (
+                <>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </>
+              ) : (
+                <>
+                  <line x1="3" y1="7" x2="21" y2="7" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="17" x2="21" y2="17" />
+                </>
+              )}
+            </svg>
+          </button>
         </div>
       </div>
 
+      {/* Mobile dropdown */}
+      {mobileOpen && (
+        <div className="md:hidden border-t border-white/10 bg-green-dark/95 backdrop-blur-sm px-4 pb-4 pt-2 space-y-1">
+          {nav.map((item) => {
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileOpen(false)}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors
+                  ${active ? "bg-gold/15 text-gold" : "text-white/80 hover:bg-white/10 hover:text-white"}`}
+              >
+                {item.map && <MapIcon />}
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Logout modal */}
       {showLogout && (
         <div
-          className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
           onClick={() => setShowLogout(false)}
         >
           <div
@@ -168,7 +216,7 @@ export default function Navbar() {
             <div className="mt-5 flex justify-end gap-2">
               <button
                 onClick={() => setShowLogout(false)}
-                className="rounded-lg border border-cream-2 px-4 py-2 text-sm font-semibold hover:bg-cream"
+                className="rounded-lg border border-cream-2 px-4 py-2 text-sm font-semibold hover:bg-cream transition-colors"
               >
                 Cancel
               </button>
@@ -178,7 +226,7 @@ export default function Navbar() {
                   setShowLogout(false);
                   router.push("/");
                 }}
-                className="rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+                className="rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
               >
                 Log out
               </button>

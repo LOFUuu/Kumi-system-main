@@ -66,6 +66,7 @@ export interface HouseListing {
   rejectionReason?: string;       // set by admin when rejecting; shown to resident
   uploadedBy?: number;            // resident user ID who submitted the listing
   showOnMap?: boolean;            // resident preference: show property on community map
+  siteVisitRecommended?: boolean; // admin recommendation for property site visit
   isArchived?: boolean;           // archived listings are hidden from public feed
   archiveReason?: string;         // reason for archiving the listing
   archivedBy?: "owner" | "admin" | null;

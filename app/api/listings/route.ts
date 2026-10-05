@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getListings, getMasterIndex, getNextId } from "@/lib/db";
 import { Listing } from "@/models";
 import { requestRole } from "@/lib/role";
+import { sendAdminListingNotificationEmail } from "@/lib/mailer";
 import type { VerificationStatus } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
@@ -139,5 +140,23 @@ export async function POST(req: NextRequest) {
   };
 
   await Listing.create(docs as any);
+
+  // Send security email notification to Admin if submission needs validation
+  if (verificationStatus === "pending") {
+    try {
+      await sendAdminListingNotificationEmail({
+        listingId: id,
+        houseName: docs.houseName,
+        propertyAddress: address,
+        ownerName,
+        ownerContact: ownerContactNumber,
+        status: "Pending Ownership Validation",
+        actionRequired: "Review proof of ownership documents and validate listing",
+      });
+    } catch (err) {
+      console.error("[Mailer] Failed to send admin listing notification:", err);
+    }
+  }
+
   return NextResponse.json({ listing: { ...docs, id } }, { status: 201 });
 }

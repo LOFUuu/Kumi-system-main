@@ -338,13 +338,18 @@ export default function HouseDetailPage() {
 
         {/* Info */}
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className={`badge ${isRent ? "badge-rent" : "badge-sale"}`}>
               {isRent ? "FOR RENT" : "FOR SALE"}
             </span>
             <span className={`badge ${listing.status === "available" ? "badge-green" : "badge-gold"}`}>
               {listing.status.toUpperCase().replace(/_/g, " ")}
             </span>
+            {listing.siteVisitRecommended && (
+              <span className="badge bg-amber-100 text-amber-900 border border-amber-300 font-bold flex items-center gap-1">
+                <Eye className="h-3 w-3 text-amber-700" /> SITE VISIT RECOMMENDED
+              </span>
+            )}
           </div>
 
           <h1 className="mt-3 font-serif text-4xl font-bold text-green-dark">

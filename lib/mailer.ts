@@ -76,3 +76,58 @@ export async function sendVerificationEmail(to: string, verifyUrl: string): Prom
       `</div>`,
   });
 }
+
+export interface AdminListingNotificationPayload {
+  listingId: number | string;
+  houseName: string;
+  propertyAddress: string;
+  ownerName: string;
+  ownerContact?: string;
+  status: string;
+  actionRequired: string;
+}
+
+export async function sendAdminListingNotificationEmail(
+  payload: AdminListingNotificationPayload
+): Promise<void> {
+  const user = process.env.EMAIL_USER;
+  if (!user) {
+    console.log("[Mailer] EMAIL_USER not configured. Skipping admin email notification for listing:", payload.listingId);
+    return;
+  }
+
+  const to = process.env.ADMIN_EMAIL || user;
+
+  await getTransporter().sendMail({
+    from: `"Mabuhay Homes Security & Verification" <${user}>`,
+    to,
+    subject: `[Action Required] Listing Verification: ${payload.houseName}`,
+    text:
+      `A listing requires admin validation/review.\n\n` +
+      `Listing ID: ${payload.listingId}\n` +
+      `Property: ${payload.houseName}\n` +
+      `Address: ${payload.propertyAddress}\n` +
+      `Owner/Submitter: ${payload.ownerName} (${payload.ownerContact || "N/A"})\n` +
+      `Current Status: ${payload.status}\n` +
+      `Required Action: ${payload.actionRequired}\n\n` +
+      `Please log into the Admin Portal to review submitted proof documents and validate the listing.`,
+    html:
+      `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#1b2a1e;border:1px solid #e2e8f0;border-radius:12px;padding:24px;background:#fafafa">` +
+      `<h2 style="color:#123f2a;margin-top:0">HOA Listing Validation &amp; Security Alert</h2>` +
+      `<p>A listing submission or update requires HOA administrator review and ownership validation.</p>` +
+      `<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">` +
+      `<tr><td style="padding:6px 0;color:#666"><strong>Listing ID:</strong></td><td>${payload.listingId}</td></tr>` +
+      `<tr><td style="padding:6px 0;color:#666"><strong>Property:</strong></td><td><strong>${payload.houseName}</strong></td></tr>` +
+      `<tr><td style="padding:6px 0;color:#666"><strong>Address:</strong></td><td>${payload.propertyAddress}</td></tr>` +
+      `<tr><td style="padding:6px 0;color:#666"><strong>Owner / Submitter:</strong></td><td>${payload.ownerName} ${payload.ownerContact ? `(${payload.ownerContact})` : ""}</td></tr>` +
+      `<tr><td style="padding:6px 0;color:#666"><strong>Current Status:</strong></td><td><span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-weight:bold;font-size:12px">${payload.status}</span></td></tr>` +
+      `<tr><td style="padding:6px 0;color:#666"><strong>Required Action:</strong></td><td style="color:#b91c1c;font-weight:bold">${payload.actionRequired}</td></tr>` +
+      `</table>` +
+      `<p style="margin-top:20px;text-align:center">` +
+      `<a href="/admin/listings" style="background:#123f2a;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:bold;display:inline-block">Open Admin Verification Registry</a>` +
+      `</p>` +
+      `<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0" />` +
+      `<p style="color:#888;font-size:11px">This automated security notification was sent by the Mabuhay Homes Community Portal.</p>` +
+      `</div>`,
+  });
+}

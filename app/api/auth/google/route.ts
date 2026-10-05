@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUsers, createUser, setEmailVerified } from "@/lib/db";
+import { getUsers, createUser, setEmailVerified, updateUserById } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const TOKEN_INFO_URL = "https://oauth2.googleapis.com/tokeninfo";
+const ADMIN_EMAIL = "mabuhay2000phase5@gmail.com";
 
 interface GoogleProfile {
   aud?: string;
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
   }
 
   const verified = profile.email_verified === true || profile.email_verified === "true";
-  const email = typeof profile.email === "string" ? profile.email.toLowerCase() : "";
+  const email = typeof profile.email === "string" ? profile.email.trim().toLowerCase() : "";
   if (!verified || !email) {
     return NextResponse.json(
       { error: "A verified Google email is required to sign in" },
@@ -69,16 +70,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const isAdminEmail = email === ADMIN_EMAIL;
+
   // Find-or-create the portal user tied to this email. Google verifies the
   // address itself, so these accounts are immediately email-verified — and any
   // account registered by password that was still unverified gets auto-verified
   // here, since signing in via Google proves ownership of the inbox.
   const users = await getUsers();
-  let user = users.find((u) => u.email.toLowerCase() === email);
+  let user = users.find((u) => u.email.trim().toLowerCase() === email);
   if (!user) {
     const fullName = profile.name?.trim() || email.split("@")[0] || "Resident";
-    user = await createUser({ fullName, email, role: "non_resident", emailVerified: true });
+    const assignedRole = isAdminEmail ? "admin" : "non_resident";
+    user = await createUser({ fullName, email, role: assignedRole, emailVerified: true });
   } else {
+    // If this is the authorized admin email, ensure the user role is updated to admin
+    if (isAdminEmail && user.role !== "admin") {
+      const updated = await updateUserById(user.id, { role: "admin" });
+      if (updated) {
+        user = updated;
+      } else {
+        user.role = "admin";
+      }
+    }
     // Proves ownership of the inbox, so a pending password sign-up becomes
     // immediately usable.
     await setEmailVerified(email, true);
