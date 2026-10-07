@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import QRCode from "react-qr-code";
-import { Check, QrCode, Upload, Image as ImageIcon, X, Receipt, FileText } from "lucide-react";
+import { Check, QrCode, Upload, X, Receipt, FileText, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatPHP, type GcashPayment, type Reservation } from "@/lib/mock-data";
 
@@ -20,6 +20,7 @@ function ConfirmBody() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string>("");
   const [action, setAction] = useState("");
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -77,13 +78,22 @@ function ConfirmBody() {
   const paid = payment?.status === "paid";
   const readyForReview = paid;
 
-  const confirmPayment = async (e: React.FormEvent) => {
+  /** Step 1: validate fields, then show the confirmation modal */
+  const handleSubmitClick = (e: React.FormEvent) => {
     e.preventDefault();
     if (!intent) return;
-    if (!gcashRef.trim() && !receiptFile && !reservation.receiptPath) {
+    if (!gcashRef.trim() && !receiptFile && !reservation?.receiptPath) {
       setAction("Please provide a GCash Reference Number or upload a receipt.");
       return;
     }
+    setAction("");
+    setShowConfirmModal(true);
+  };
+
+  /** Step 2: user clicked "Yes, Confirm" inside the modal → actually submit */
+  const confirmPayment = async () => {
+    if (!intent || !reservation) return;
+    setShowConfirmModal(false);
     setAction("Uploading & submitting…");
     try {
       let uploadedReceiptPath: string | undefined = reservation.receiptPath;
@@ -116,6 +126,63 @@ function ConfirmBody() {
 
   return (
     <div className="section">
+      {/* ── Confirmation Modal ───────────────────────────────────── */}
+      {showConfirmModal && reservation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-6 space-y-5">
+            {/* Header */}
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-100">
+                <AlertCircle className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-serif text-base font-bold text-green-dark">Confirm Payment Submission</h3>
+                <p className="mt-0.5 text-xs text-muted">Please review the details before finalizing.</p>
+              </div>
+            </div>
+
+            {/* Summary */}
+            <div className="rounded-xl bg-cream/60 divide-y divide-cream-2 text-sm">
+              {gcashRef.trim() && (
+                <div className="flex justify-between items-center px-4 py-2.5">
+                  <span className="text-muted">GCash Ref #</span>
+                  <span className="font-bold text-green-dark">{gcashRef.trim()}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center px-4 py-2.5">
+                <span className="text-muted">Amount</span>
+                <span className="font-bold text-green-mid">{formatPHP(reservation.downpayment)}</span>
+              </div>
+              <div className="flex justify-between items-center px-4 py-2.5">
+                <span className="text-muted">Receipt</span>
+                <span className="font-semibold text-green-dark">
+                  {receiptFile ? receiptFile.name : (reservation.receiptPath ? "Previously uploaded" : "None")}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted">
+              Once submitted, the HOA admin will review your payment. Make sure all details are correct.
+            </p>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="btn-ghost flex-1 !py-2.5 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmPayment}
+                className="btn-green flex-1 !py-2.5 text-sm font-bold"
+              >
+                Yes, Confirm Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="mx-auto max-w-xl rounded-3xl border border-green-light/40 bg-white p-0 shadow-sm">
         <div className="rounded-t-3xl bg-green-mid p-8 text-center text-white">
           <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/15">
@@ -168,7 +235,7 @@ function ConfirmBody() {
                 Pay exactly <strong className="text-green-mid">{formatPHP(reservation.downpayment)}</strong> in the GCash app.
               </p>
 
-              <form onSubmit={confirmPayment} className="mt-4 space-y-3 text-left">
+              <form onSubmit={handleSubmitClick} className="mt-4 space-y-3 text-left">
                 <div>
                   <label className="field-label">GCash Reference Number</label>
                   <input
