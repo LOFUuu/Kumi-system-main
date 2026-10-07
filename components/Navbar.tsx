@@ -124,7 +124,7 @@ export default function Navbar() {
                   <span className="rounded-full bg-amber-400/20 px-2 py-0.5 text-[11px] font-semibold text-amber-200 border border-amber-400/30">
                     Pending
                   </span>
-                ) : user.role !== "non_resident" && (
+                ) : (
                   <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[11px] font-semibold capitalize text-green-deep">
                     {user.role.replace("_", " ")}
                   </span>
