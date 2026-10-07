@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserByEmailForAuth, setUserPassword, type AuthUser } from "@/lib/db";
-import { verifyPassword, hashPassword } from "@/lib/password";
+import { getUserByEmailForAuth, type AuthUser } from "@/lib/db";
+import { verifyPassword } from "@/lib/password";
+import { createSessionCookieValue } from "@/lib/server-auth";
 import type { User } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
@@ -40,15 +41,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
   }
 
-  // If user has no passwordHash yet (e.g. Google-registered or seeded mock account),
-  // automatically set their password using the provided password so they are never blocked from logging in!
+  // AUTH-ISSUE-02 FIX: Do NOT automatically set or accept passwords for accounts without a passwordHash.
+  // Google-registered accounts or accounts without a password set MUST sign in via Google or use password reset.
   if (!user.passwordHash) {
-    const newHash = hashPassword(password);
-    await setUserPassword(email, newHash);
-    user.passwordHash = newHash;
-  } else if (!verifyPassword(password, user.passwordHash)) {
+    return NextResponse.json(
+      { error: "This account uses Google Sign-In or has no password set. Please sign in with Google or request a password reset." },
+      { status: 401 }
+    );
+  }
+
+  if (!verifyPassword(password, user.passwordHash)) {
     return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
   }
 
-  return NextResponse.json({ user: toPublicUser(user) });
+  const publicUser = toPublicUser(user);
+  const res = NextResponse.json({ user: publicUser });
+
+  res.cookies.set("kumi_session", createSessionCookieValue(user), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 30 * 24 * 60 * 60,
+  });
+
+  return res;
 }

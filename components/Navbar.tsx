@@ -58,8 +58,8 @@ export default function Navbar() {
   const [showLogout, setShowLogout] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Admin pages have their own sidebar — hide the public navbar there
-  if (pathname.startsWith("/admin")) return null;
+  // Admin pages or logged-in admin user — hide the public navbar
+  if (pathname.startsWith("/admin") || user?.role === "admin") return null;
 
   const nav: { label: string; href: string; map?: boolean }[] = [
     { label: "Home", href: "/" },
@@ -126,7 +126,7 @@ export default function Navbar() {
                 )}
               </div>
 
-              {(user.role === "counselor" || user.role === "admin") && (
+              {user.role === "counselor" && (
                 <Link href="/admin" className="btn-gold btn-sm flex items-center gap-1 !px-3 !py-2 text-xs">
                   <GearIcon />
                   Admin Panel
@@ -224,7 +224,7 @@ export default function Navbar() {
                 onClick={() => {
                   logout();
                   setShowLogout(false);
-                  router.push("/");
+                  window.location.href = "/";
                 }}
                 className="rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
               >

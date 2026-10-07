@@ -173,3 +173,14 @@ body {
 /* ─── Thin scrollbars ─────────────────────────────────────── */
 .scroll-thin::-webkit-scrollbar        { width: 8px; height: 8px; }
 .scroll-thin::-webkit-scrollbar-thumb  { background: rgba(45,106,79,0.25); border-radius: 9999px; }
+
+/* ─── Hide native browser password reveal / clear icons (AUTH-ISSUE-01) ─── */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear,
+input[type="text"]::-ms-clear,
+input[type="password"]::-webkit-credentials-auto-fill-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+

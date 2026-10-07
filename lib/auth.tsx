@@ -63,13 +63,39 @@ function readStoredUser(): User | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => readStoredUser());
-  const [loading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const persist = (u: User | null) => {
     setUser(u);
     if (u && isWellFormedUser(u)) localStorage.setItem("mh_user", JSON.stringify(u));
     else localStorage.removeItem("mh_user");
   };
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active) return;
+        if (data && data.user) {
+          persist(data.user as User);
+        } else if (readStoredUser()) {
+          // If server says unauthenticated (no session cookie or invalid session),
+          // sync client state to unauthenticated as well.
+          persist(null);
+        }
+      })
+      .catch(() => {
+        /* keep cached user on network error */
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const roleHome = (role: Role) =>
     role === "admin" ? "/admin" : role === "counselor" ? "/admin/residents" : "/";
@@ -84,7 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     persist(user);
-    window.location.href = opts?.next || roleHome(user.role);
+    const target = user.role === "admin" ? "/admin" : (opts?.next && !opts.next.startsWith("/login") ? opts.next : roleHome(user.role));
+    window.location.href = target;
   };
 
   const registerAccount = async (data: {
@@ -98,8 +125,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     lotNo?: string;
   }) => {
     try {
-      // Returns ok + triggers the verification email; the account is NOT active
-      // until the user clicks the verification link, so we never auto-login.
       await api.register({
         ...data,
         role: data.role || "resident",
@@ -128,11 +153,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     persist(user);
-    const target = user.role === "admin" ? "/admin" : (opts?.next || roleHome(user.role));
+    const target = user.role === "admin" ? "/admin" : (opts?.next && !opts.next.startsWith("/login") ? opts.next : roleHome(user.role));
     window.location.href = target;
   };
 
-  const logout = () => persist(null);
+  const logout = () => {
+    fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    persist(null);
+  };
 
   const setRolePreview = (role: Role) => {
     const base = MOCK_USERS.find((u) => u.role === role) ?? MOCK_USERS[0];

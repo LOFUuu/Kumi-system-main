@@ -1,16 +1,17 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Lock, TriangleAlert, Eye, EyeOff } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Lock, TriangleAlert, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 
 function LoginForm() {
   const searchParams = useSearchParams();
-  const { login } = useAuth();
+  const router = useRouter();
+  const { user, loading, login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -19,6 +20,23 @@ function LoginForm() {
 
   const next = searchParams.get("next") || "";
   const reason = searchParams.get("reason");
+
+  useEffect(() => {
+    if (!loading && user?.role === "admin") {
+      router.replace("/admin");
+    }
+  }, [user, loading, router]);
+
+  if (loading || user?.role === "admin") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-green-deep via-green-dark to-green-mid">
+        <div className="flex items-center gap-3 text-gold">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span className="font-semibold text-sm">Redirecting to Admin Dashboard…</span>
+        </div>
+      </div>
+    );
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

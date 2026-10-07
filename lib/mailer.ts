@@ -90,32 +90,39 @@ export async function sendGoogleOnlyAccountEmail(to: string, name: string): Prom
 
 export async function sendVerificationEmail(to: string, verifyUrl: string): Promise<void> {
   const user = process.env.EMAIL_USER;
-  if (!user) throw new Error("EMAIL_USER is not configured");
+  if (!user) {
+    console.warn(`[Mailer Warning] EMAIL_USER not configured. Verification link for ${to}: ${verifyUrl}`);
+    return;
+  }
 
-  await getTransporter().sendMail({
-    from: `"Mabuhay Homes Community Portal" <${user}>`,
-    to,
-    subject: "Verify your Mabuhay Homes account",
-    text:
-      `Thanks for signing up for the Mabuhay Homes community portal. ` +
-      `Open the link below to verify your email address and activate your account. ` +
-      `The link expires in 24 hours.\n\n${verifyUrl}\n\n` +
-      `If you didn't sign up, you can ignore this email.`,
-    html:
-      `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#1b2a1e">` +
-      `<h2 style="color:#123f2a">Verify your Mabuhay Homes account</h2>` +
-      `<p>Thanks for signing up for the community portal. Click the button below to ` +
-      `verify your email address and activate your account. The link expires in <strong>24 hours</strong>.</p>` +
-      `<p style="text-align:center;margin:28px 0">` +
-      `<a href="${verifyUrl}" style="background:#1c6b3c;color:#fff;text-decoration:none;` +
-      `padding:12px 22px;border-radius:8px;font-weight:bold;display:inline-block">Verify email</a>` +
-      `</p>` +
-      `<p>If the button doesn't work, copy and paste this link into your browser:</p>` +
-      `<p style="word-break:break-all;color:#555">${verifyUrl}</p>` +
-      `<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0" />` +
-      `<p style="color:#888;font-size:12px">If you didn't sign up, ignore this email.</p>` +
-      `</div>`,
-  });
+  try {
+    await getTransporter().sendMail({
+      from: `"Mabuhay Homes Community Portal" <${user}>`,
+      to,
+      subject: "Verify your Mabuhay Homes account",
+      text:
+        `Thanks for signing up for the Mabuhay Homes community portal. ` +
+        `Open the link below to verify your email address and activate your account. ` +
+        `The link expires in 24 hours.\n\n${verifyUrl}\n\n` +
+        `If you didn't sign up, you can ignore this email.`,
+      html:
+        `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#1b2a1e">` +
+        `<h2 style="color:#123f2a">Verify your Mabuhay Homes account</h2>` +
+        `<p>Thanks for signing up for the community portal. Click the button below to ` +
+        `verify your email address and activate your account. The link expires in <strong>24 hours</strong>.</p>` +
+        `<p style="text-align:center;margin:28px 0">` +
+        `<a href="${verifyUrl}" style="background:#1c6b3c;color:#fff;text-decoration:none;` +
+        `padding:12px 22px;border-radius:8px;font-weight:bold;display:inline-block">Verify email</a>` +
+        `</p>` +
+        `<p>If the button doesn't work, copy and paste this link into your browser:</p>` +
+        `<p style="word-break:break-all;color:#555">${verifyUrl}</p>` +
+        `<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0" />` +
+        `<p style="color:#888;font-size:12px">If you didn't sign up, ignore this email.</p>` +
+        `</div>`,
+    });
+  } catch (err: any) {
+    console.warn(`[Mailer Warning] Could not send email via SMTP (${err?.message || err}). Verification link for ${to}: ${verifyUrl}`);
+  }
 }
 
 export interface AdminListingNotificationPayload {

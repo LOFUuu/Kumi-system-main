@@ -68,18 +68,7 @@ export async function POST(req: NextRequest) {
   const origin = new URL(req.url).origin;
   const verifyUrl = `${origin}/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
 
-  try {
-    await sendVerificationEmail(email, verifyUrl);
-  } catch {
-    // Never leave a half-created account if the email couldn't be delivered.
-    if (!existing) {
-      await deleteUserById(userId);
-    }
-    return NextResponse.json(
-      { error: "We couldn't send the verification email. Please try again in a moment." },
-      { status: 502 }
-    );
-  }
+  await sendVerificationEmail(email, verifyUrl);
 
   return NextResponse.json({ ok: true }, { status: existing ? 202 : 201 });
 }

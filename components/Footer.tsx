@@ -1,15 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { MapPin, Phone, Mail } from "lucide-react";
+import { MapPin, Phone, Mail, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
-function SocialIcon({ href = "#", children }: { href?: string; children: React.ReactNode }) {
+function SocialIcon({ href = "#", label, children }: { href?: string; label: string; children: React.ReactNode }) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
+      aria-label={label}
+      onClick={(e) => {
+        if (href === "#") e.preventDefault();
+      }}
       className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white/70 transition-all duration-200 hover:bg-gold hover:text-green-deep hover:scale-110"
     >
       {children}
@@ -18,9 +23,48 @@ function SocialIcon({ href = "#", children }: { href?: string; children: React.R
 }
 
 export default function Footer() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [isSuccess, setIsSuccess] = useState(false);
 
-  if (user?.role === "admin") return null;
+  // Hide footer while auth state is resolving or for admin users
+  if (loading || user?.role === "admin") return null;
+
+  const handleSubscribe = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) {
+      setIsSuccess(false);
+      setMessage("Please enter an email address.");
+      return;
+    }
+
+    setSubmitting(true);
+    setMessage("");
+
+    try {
+      const res = await fetch("/api/newsletter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setIsSuccess(false);
+        setMessage(data.error || "Failed to subscribe. Please try again.");
+      } else {
+        setIsSuccess(true);
+        setMessage(data.message || "Subscribed successfully!");
+        setEmail("");
+      }
+    } catch {
+      setIsSuccess(false);
+      setMessage("Failed to subscribe. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <footer className="mt-auto bg-green-deep text-white/80">
@@ -39,40 +83,61 @@ export default function Footer() {
             Community portal for Mabuhay Homes 2000 Phase 5 — listings, amenities, dues & announcements.
           </p>
           <h4 className="mb-3 text-xs font-bold uppercase tracking-wide text-gold/80">Newsletter</h4>
-          <form className="flex overflow-hidden rounded-xl border border-white/15" onSubmit={(e) => e.preventDefault()}>
-            <input
-              type="email"
-              placeholder="Your Email Address"
-              className="w-full bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-white/35 focus:bg-white/8"
-            />
-            <button type="submit" className="bg-gold px-3 text-green-deep transition-all hover:brightness-110" aria-label="Subscribe">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                <path d="M22 2L11 13" /><path d="M22 2L15 22l-4-9-9-4 20-7z" />
-              </svg>
-            </button>
+          <form className="flex flex-col gap-2" onSubmit={handleSubscribe}>
+            <div className="flex overflow-hidden rounded-xl border border-white/15">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Your Email Address"
+                className="w-full bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-white/35 focus:bg-white/8"
+              />
+              <button
+                type="submit"
+                disabled={submitting}
+                className="bg-gold px-3 text-green-deep transition-all hover:brightness-110 disabled:opacity-60 flex items-center justify-center"
+                aria-label="Subscribe"
+              >
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-green-deep" />
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                    <path d="M22 2L11 13" /><path d="M22 2L15 22l-4-9-9-4 20-7z" />
+                  </svg>
+                )}
+              </button>
+            </div>
+            {message && (
+              <p className={`flex items-center gap-1.5 text-xs ${isSuccess ? "text-emerald-400" : "text-rose-400"}`}>
+                {isSuccess ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <AlertCircle className="h-3.5 w-3.5 shrink-0" />}
+                <span>{message}</span>
+              </p>
+            )}
           </form>
+
+          {/* Social Icons */}
           <div className="mt-4 flex gap-2">
             {/* Facebook */}
-            <SocialIcon>
+            <SocialIcon href="https://facebook.com" label="Facebook">
               <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
                 <path d="M13 22v-8h2.7l.4-3H13V9c0-.9.3-1.5 1.6-1.5H16V4.8a23 23 0 00-2.4-.1c-2.4 0-4 1.5-4 4.1V11H7v3h2.6v8H13z" />
               </svg>
             </SocialIcon>
             {/* Twitter/X */}
-            <SocialIcon>
+            <SocialIcon href="https://x.com" label="Twitter">
               <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
                 <path d="M22 5.9c-.7.3-1.5.6-2.3.7.8-.5 1.5-1.3 1.8-2.3-.8.5-1.7.8-2.6 1a4.1 4.1 0 00-7 3.7A11.6 11.6 0 013 4.9a4.1 4.1 0 001.3 5.5c-.6 0-1.2-.2-1.8-.5v.1c0 2 1.4 3.6 3.3 4a4.1 4.1 0 01-1.9.1 4.1 4.1 0 003.8 2.8A8.2 8.2 0 012 18.4a11.6 11.6 0 006.3 1.8c7.5 0 11.7-6.3 11.7-11.7v-.5c.8-.6 1.5-1.3 2-2.1z" />
               </svg>
             </SocialIcon>
             {/* YouTube */}
-            <SocialIcon>
+            <SocialIcon href="https://youtube.com" label="YouTube">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-4 w-4">
                 <path d="M2.5 8.5a3 3 0 013-3h13a3 3 0 013 3v7a3 3 0 01-3 3h-13a3 3 0 01-3-3v-7z" />
                 <path d="M10 9l6 3-6 3V9z" fill="currentColor" stroke="none" />
               </svg>
             </SocialIcon>
             {/* Instagram */}
-            <SocialIcon>
+            <SocialIcon href="https://instagram.com" label="Instagram">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-4 w-4">
                 <rect x="3" y="3" width="18" height="18" rx="5" />
                 <circle cx="12" cy="12" r="4" />
@@ -131,7 +196,11 @@ export default function Footer() {
               { label: "Terms & Conditions", href: "#" },
             ].map((item) => (
               <li key={item.label}>
-                <a href={item.href} className="flex items-center gap-2 text-white/70 transition-colors hover:text-gold">
+                <a
+                  href={item.href}
+                  onClick={(e) => { if (item.href === "#") e.preventDefault(); }}
+                  className="flex items-center gap-2 text-white/70 transition-colors hover:text-gold"
+                >
                   <span className="h-1 w-1 rounded-full bg-gold/40" /> {item.label}
                 </a>
               </li>
@@ -172,8 +241,8 @@ export default function Footer() {
             Mabuhay Homes
           </div>
           <div className="flex gap-4">
-            <a href="#" className="transition-colors hover:text-gold">Privacy</a>
-            <a href="#" className="transition-colors hover:text-gold">Terms</a>
+            <a href="#" onClick={(e) => e.preventDefault()} className="transition-colors hover:text-gold">Privacy</a>
+            <a href="#" onClick={(e) => e.preventDefault()} className="transition-colors hover:text-gold">Terms</a>
           </div>
         </div>
       </div>

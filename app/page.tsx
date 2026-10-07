@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Users, Home, LogIn, Calendar, CreditCard, ShieldCheck, TreePine, HandshakeIcon, Star } from "lucide-react";
 import { ListingCard, StatBox } from "@/components/ui";
 import Reveal from "@/components/Reveal";
@@ -33,10 +34,18 @@ const WHY_ITEMS = [
 ];
 
 export default function HomePage() {
-  const { user } = useAuth();
+  const router = useRouter();
+  const { user, loading } = useAuth();
   const [listings, setListings] = useState<HouseListing[]>([]);
   const [anns, setAnns] = useState<Announcement[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+
+  useEffect(() => {
+    if (!loading && user?.role === "admin") {
+      router.replace("/admin");
+      return;
+    }
+  }, [user, loading, router]);
 
   useEffect(() => {
     api.listingsVerified().then(setListings).catch(() => setListings([]));

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -37,13 +37,12 @@ const LINKS: { href: string; label: string; icon: LucideIcon; sub?: boolean; amb
 
 export default function AdminSidebar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
   const handleLogout = () => {
     logout();
-    router.push("/login");
+    window.location.href = "/login";
   };
 
   return (

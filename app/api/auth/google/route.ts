@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUsers, createUser, setEmailVerified, updateUserById } from "@/lib/db";
+import { createSessionCookieValue } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -97,5 +98,14 @@ export async function POST(req: NextRequest) {
     await setEmailVerified(email, true);
   }
 
-  return NextResponse.json({ user });
+  const res = NextResponse.json({ user });
+  res.cookies.set("kumi_session", createSessionCookieValue(user), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 30 * 24 * 60 * 60,
+  });
+
+  return res;
 }

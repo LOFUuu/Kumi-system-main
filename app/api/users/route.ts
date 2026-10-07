@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUsers, createUser } from "@/lib/db";
+import { getAuthenticatedUser } from "@/lib/server-auth";
+import { isHowaRole } from "@/lib/role";
 
 export const dynamic = "force-dynamic";
 
@@ -9,8 +11,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const uiRole = req.headers.get("x-user-role") ?? "";
-  if (!["admin", "counselor"].includes(uiRole)) {
+  const authUser = await getAuthenticatedUser(req);
+  if (!authUser || !isHowaRole(authUser.role)) {
     return NextResponse.json({ error: "HOWA access only" }, { status: 403 });
   }
 
