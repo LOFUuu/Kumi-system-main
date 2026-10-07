@@ -10,13 +10,14 @@ function hashPassword(password) {
 }
 
 mongoose.connect(process.env.MONGODB_URI).then(async () => {
-  const newHash = hashPassword("admin123");
+  const newPassword = process.env.ADMIN_NEW_PASSWORD || "Mabuhay!P5#2026Admin";
+  const newHash = hashPassword(newPassword);
   const result = await mongoose.connection.db.collection("users").updateOne(
     { email: "admin@mabuhay.com" },
     { $set: { passwordHash: newHash } }
   );
   console.log("Updated:", result.modifiedCount, "document(s)");
-  console.log("Admin can now log in with: admin@mabuhay.com / admin123");
+  console.log("Admin password reset using current policy.");
   await mongoose.disconnect();
 }).catch((e) => {
   console.error(e.message);
