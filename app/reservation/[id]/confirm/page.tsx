@@ -97,13 +97,42 @@ function ConfirmBody() {
     setAction("Uploading & submitting…");
     try {
       let uploadedReceiptPath: string | undefined = reservation.receiptPath;
+
       if (receiptFile) {
-        const uploadRes = await api.uploadPaymentReceipt(receiptFile);
-        uploadedReceiptPath = uploadRes.path;
+        // Pass intentId so the upload route saves the receipt directly to MongoDB.
+        // This avoids re-sending the large base64 string in the confirm step's JSON body.
+        const fd = new FormData();
+        fd.append("file", receiptFile);
+        fd.append("intentId", intent);
+        const uploadRes = await fetch("/api/payments/upload", {
+          method: "POST",
+          cache: "no-store",
+          body: fd,
+        });
+        const uploadJson = await uploadRes.json().catch(() => null);
+        if (!uploadRes.ok) {
+          throw new Error((uploadJson as any)?.error || `Upload failed (${uploadRes.status})`);
+        }
+        uploadedReceiptPath = (uploadJson as any).path;
       }
 
-      const res = await api.confirmPayment(intent, gcashRef.trim(), uploadedReceiptPath);
-      setPayment(res.payment);
+      // Confirm the payment — only send gcashRef (short string), NOT the base64 data URL,
+      // to avoid hitting the JSON body size limit.
+      const res = await fetch(`/api/payments/${intent}/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gcashRef: gcashRef.trim(),
+          // Only send receiptPath if it was NOT already saved by the upload step
+          receiptPath: receiptFile ? undefined : uploadedReceiptPath,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error((json as any)?.error || `Confirmation failed (${res.status})`);
+      }
+
+      setPayment(json.payment);
       setAction("");
       if (uploadedReceiptPath) {
         setReservation((prev) => prev ? { ...prev, receiptPath: uploadedReceiptPath, gcashRef } : null);

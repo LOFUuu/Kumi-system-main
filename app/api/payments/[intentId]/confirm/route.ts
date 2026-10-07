@@ -4,6 +4,9 @@ import { Transaction } from "@/models";
 
 export const dynamic = "force-dynamic";
 
+// Allow up to 10 MB JSON body — needed because receiptPath may be a base64 data URL
+export const maxDuration = 30;
+
 // Marks a payment intent as "paid" using the GCash reference number the user
 // supplies after completing the payment in the GCash app.
 //

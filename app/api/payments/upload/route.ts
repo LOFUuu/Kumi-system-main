@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import dbConnect from "@/lib/mongoose";
+import { Transaction, Reservation } from "@/models";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +12,7 @@ const ALLOWED_MIME = new Set([
   "application/pdf",
 ]);
 
-const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB — keeps us under Vercel's 4.5 MB serverless body limit
+const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB — under Vercel's 4.5 MB serverless body limit
 
 export async function POST(req: NextRequest) {
   let formData: FormData;
@@ -24,6 +26,9 @@ export async function POST(req: NextRequest) {
   }
 
   const file = formData.get("file") as File | null;
+  // Optional: intentId allows the upload to immediately persist receiptPath in MongoDB
+  // so the confirm step never needs to carry the large base64 string in its JSON body.
+  const intentId = (formData.get("intentId") as string | null) || "";
 
   if (!file || file.size === 0) {
     return NextResponse.json(
@@ -47,11 +52,33 @@ export async function POST(req: NextRequest) {
   }
 
   // Convert to base64 data URL — works on Vercel (no disk write needed).
-  // The data URL is stored as-is in the receiptPath field in MongoDB.
   const buffer = Buffer.from(await file.arrayBuffer());
   const base64 = buffer.toString("base64");
   const dataUrl = `data:${file.type};base64,${base64}`;
 
+  // If intentId is provided, persist the receiptPath directly to MongoDB now.
+  // This avoids sending the large base64 string again in the confirm step's JSON body.
+  if (intentId) {
+    try {
+      await dbConnect();
+      const txn = await Transaction.findOne({ "payment.intentId": intentId } as any).lean();
+      if (txn) {
+        await Transaction.updateOne(
+          { "payment.intentId": intentId } as any,
+          { $set: { receiptPath: dataUrl } } as any
+        );
+        // Also update the linked reservation if one exists
+        if ((txn as any).refType === "amenity" && (txn as any).refId) {
+          await Reservation.updateOne(
+            { _id: (txn as any).refId } as any,
+            { $set: { receiptPath: dataUrl } } as any
+          );
+        }
+      }
+    } catch {
+      // Non-fatal — still return the path so client can proceed
+    }
+  }
+
   return NextResponse.json({ path: dataUrl }, { status: 200 });
 }
-
