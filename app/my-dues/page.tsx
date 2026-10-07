@@ -26,8 +26,11 @@ import {
   Sparkles,
   History,
   Coins,
-  CreditCard,
   Building,
+  ArrowLeft,
+  ArrowRight,
+  ShieldCheck,
+  Eye,
 } from "lucide-react";
 
 const STATUS_BADGE: Record<string, string> = {
@@ -43,13 +46,14 @@ export default function MyDuesPage() {
   const [dues, setDues] = useState<DuesRecord[]>([]);
   const [payId, setPayId] = useState<DuesRecord | null>(null);
   const [amount, setAmount] = useState<number>(0);
-  const [paymentMethod, setPaymentMethod] = useState<"gcash" | "cash">("gcash");
+  const [paymentMethod, setPaymentMethod] = useState<"gcash">("gcash");
   const [gcashRef, setGcashRef] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string>("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [modalStep, setModalStep] = useState<"form" | "review" | "success">("form");
 
   const load = () => api.dues().then(setDues).catch(() => setDues([]));
   useEffect(() => {
@@ -105,11 +109,28 @@ export default function MyDuesPage() {
     setReceiptFile(null);
     setReceiptPreview("");
     setMsg("");
+    setModalStep("form");
   };
 
-  const submit = async (e: React.FormEvent) => {
+  /** Step 1: Validate input form and open the confirmation review step */
+  const handleProceedToReview = (e: React.FormEvent) => {
     e.preventDefault();
     if (!payId) return;
+    if (amount <= 0) {
+      setMsg("Please enter a valid payment amount.");
+      return;
+    }
+    if (!gcashRef.trim() && !receiptFile) {
+      setMsg("Please enter a GCash Reference Number or upload a receipt screenshot.");
+      return;
+    }
+    setMsg("");
+    setModalStep("review");
+  };
+
+  /** Step 2: User clicks "Confirm & Submit Payment" on the review step */
+  const confirmPaymentSubmission = async () => {
+    if (!payId || busy) return;
     setBusy(true);
     setMsg("");
     try {
@@ -123,17 +144,15 @@ export default function MyDuesPage() {
         amount,
         paidAt: new Date().toISOString().slice(0, 10),
         userEmail: user?.email,
-        paymentMethod,
+        paymentMethod: "gcash",
         gcashRef: gcashRef.trim() || undefined,
         receiptPath: uploadedReceiptPath,
       });
-      setMsg("Payment recorded successfully! Status and credit balance recalculated.");
-      setTimeout(() => {
-        setPayId(null);
-        load();
-      }, 600);
+
+      setModalStep("success");
+      load();
     } catch (err: unknown) {
-      setMsg(err instanceof Error ? err.message : "Could not record payment.");
+      setMsg(err instanceof Error ? err.message : "Could not submit payment. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -356,78 +375,65 @@ export default function MyDuesPage() {
       {/* Pay Dues Modal */}
       {payId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fade-in overflow-y-auto">
-          <form onSubmit={submit} className="w-full max-w-md my-8 rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-cream-2">
-              <div>
-                <h3 className="font-serif text-xl font-bold text-green-dark">
-                  Pay {formatBillingPeriod(payId.dueMonth)} Dues
-                </h3>
-                <p className="text-xs text-muted mt-0.5">
-                  Monthly Homeowners Association Fee
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPayId(null)}
-                className="rounded-full p-1 text-muted hover:bg-cream"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mt-3 rounded-xl bg-cream/40 p-3 text-xs text-muted border border-cream-2">
-              <div className="flex justify-between items-center">
-                <span>Amount Due for Cycle:</span>
-                <strong className="text-green-dark">{formatPHP(outstandingFor(payId) || payId.amountDue)}</strong>
-              </div>
-              <p className="mt-1 text-[11px] text-green-mid">
-                💡 Overpayment (e.g. paying ₱200 for ₱100 due) automatically carries over as credit for next month.
-              </p>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <div>
-                <label className="field-label">Amount to Pay (PHP) *</label>
-                <input
-                  type="number"
-                  className="field text-lg font-bold text-green-dark"
-                  min={1}
-                  value={amount}
-                  onChange={(e) => setAmount(Number(e.target.value) || 0)}
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="field-label">Payment Method</label>
-                <div className="grid grid-cols-2 gap-2">
+          <div className="w-full max-w-md my-8 rounded-2xl bg-white p-6 shadow-2xl">
+            {/* ════════════════════════════════════════════════════════ */}
+            {/* MODAL STEP 1: PAYMENT INPUT FORM                         */}
+            {/* ════════════════════════════════════════════════════════ */}
+            {modalStep === "form" && (
+              <form onSubmit={handleProceedToReview}>
+                <div className="flex items-center justify-between pb-3 border-b border-cream-2">
+                  <div>
+                    <h3 className="font-serif text-xl font-bold text-green-dark">
+                      Pay {formatBillingPeriod(payId.dueMonth)} Dues
+                    </h3>
+                    <p className="text-xs text-muted mt-0.5">
+                      Monthly Homeowners Association Fee
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setPaymentMethod("gcash")}
-                    className={`rounded-xl border p-2.5 text-center text-xs font-bold transition ${
-                      paymentMethod === "gcash"
-                        ? "border-blue-500 bg-blue-50 text-blue-700 shadow-xs"
-                        : "border-cream-2 text-muted hover:bg-cream"
-                    }`}
+                    onClick={() => setPayId(null)}
+                    className="rounded-full p-1 text-muted hover:bg-cream"
                   >
-                    GCash
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("cash")}
-                    className={`rounded-xl border p-2.5 text-center text-xs font-bold transition ${
-                      paymentMethod === "cash"
-                        ? "border-emerald-500 bg-emerald-50 text-emerald-700 shadow-xs"
-                        : "border-cream-2 text-muted hover:bg-cream"
-                    }`}
-                  >
-                    Cash (Admin Office)
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
-              </div>
 
-              {paymentMethod === "gcash" && (
-                <>
+                <div className="mt-3 rounded-xl bg-cream/40 p-3 text-xs text-muted border border-cream-2">
+                  <div className="flex justify-between items-center">
+                    <span>Amount Due for Cycle:</span>
+                    <strong className="text-green-dark">{formatPHP(outstandingFor(payId) || payId.amountDue)}</strong>
+                  </div>
+                  <p className="mt-1 text-[11px] text-green-mid">
+                    💡 Overpayment (e.g. paying ₱200 for ₱100 due) automatically carries over as credit for next month.
+                  </p>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <label className="field-label">Amount to Pay (PHP) *</label>
+                    <input
+                      type="number"
+                      className="field text-lg font-bold text-green-dark"
+                      min={1}
+                      value={amount}
+                      onChange={(e) => setAmount(Number(e.target.value) || 0)}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="field-label">Payment Method</label>
+                    <div className="rounded-xl border border-blue-500 bg-blue-50/80 p-2.5 flex items-center justify-between text-blue-800">
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <Smartphone className="h-4 w-4 text-blue-600" /> GCash Only
+                      </span>
+                      <span className="text-[10px] font-semibold bg-blue-200/70 text-blue-900 px-2 py-0.5 rounded-md">
+                        Accepted Method
+                      </span>
+                    </div>
+                  </div>
+
                   <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-center">
                     <div className="text-xs font-bold text-blue-700">MABUHAY HOMES HOA GCASH</div>
                     <div className="font-mono text-sm font-bold text-blue-900 mt-0.5">0917 123 4567</div>
@@ -492,31 +498,197 @@ export default function MyDuesPage() {
                       </div>
                     )}
                   </div>
-                </>
-              )}
-            </div>
+                </div>
 
-            {msg && <p className="mt-3 text-xs font-semibold text-green-mid">{msg}</p>}
+                {msg && <p className="mt-3 text-xs font-semibold text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200">{msg}</p>}
 
-            <div className="mt-5 flex gap-3">
-              <button
-                type="submit"
-                disabled={busy || amount <= 0}
-                className="btn-green flex-1 !py-2.5 text-sm font-bold"
-              >
-                {busy ? "Processing…" : "Submit Payment"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPayId(null)}
-                className="btn-ghost flex-1 !py-2.5 text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
+                <div className="mt-5 flex gap-3">
+                  <button
+                    type="submit"
+                    className="btn-green flex-1 !py-2.5 text-sm font-bold flex items-center justify-center gap-1.5"
+                  >
+                    Submit Payment <ArrowRight className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPayId(null)}
+                    className="btn-ghost flex-1 !py-2.5 text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* ════════════════════════════════════════════════════════ */}
+            {/* MODAL STEP 2: REVIEW / CONFIRMATION STEP                 */}
+            {/* ════════════════════════════════════════════════════════ */}
+            {modalStep === "review" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-cream-2">
+                  <div>
+                    <h3 className="font-serif text-xl font-bold text-green-dark">
+                      Review Your Payment
+                    </h3>
+                    <p className="text-xs text-muted mt-0.5">
+                      Please review your payment details before confirming.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPayId(null)}
+                    className="rounded-full p-1 text-muted hover:bg-cream"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Details Breakdown */}
+                <div className="rounded-xl border border-cream-2 bg-cream/30 p-4 space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-green-dark pb-1 border-b border-cream-2">
+                    Payment Details
+                  </h4>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-lg bg-white p-2.5 border border-cream-2">
+                      <span className="text-muted block text-[10px]">Billing Period</span>
+                      <strong className="text-green-dark text-xs mt-0.5 block">
+                        {formatBillingPeriod(payId.dueMonth)}
+                      </strong>
+                    </div>
+                    <div className="rounded-lg bg-white p-2.5 border border-cream-2">
+                      <span className="text-muted block text-[10px]">Amount to Pay</span>
+                      <strong className="text-green-mid text-xs mt-0.5 block">
+                        {formatPHP(amount)}
+                      </strong>
+                    </div>
+                    <div className="rounded-lg bg-white p-2.5 border border-cream-2">
+                      <span className="text-muted block text-[10px]">Payment Method</span>
+                      <strong className="text-blue-700 text-xs mt-0.5 block">GCash</strong>
+                    </div>
+                    <div className="rounded-lg bg-white p-2.5 border border-cream-2">
+                      <span className="text-muted block text-[10px]">Status</span>
+                      <span className="inline-block mt-0.5 font-bold text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+                        Pending Verification
+                      </span>
+                    </div>
+                    <div className="col-span-2 rounded-lg bg-white p-2.5 border border-cream-2">
+                      <span className="text-muted block text-[10px]">GCash Reference Number</span>
+                      <strong className="font-mono text-green-dark text-xs mt-0.5 block">
+                        {gcashRef.trim() || "(No reference number provided)"}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Receipt Preview */}
+                  <div className="pt-1">
+                    <span className="text-[11px] font-bold text-green-dark block mb-1">Proof of Payment Preview:</span>
+                    {receiptPreview ? (
+                      <div className="rounded-xl border border-cream-2 bg-white p-2 flex items-center justify-center">
+                        <img
+                          src={receiptPreview}
+                          alt="Receipt Preview"
+                          className="max-h-40 object-contain rounded-lg"
+                        />
+                      </div>
+                    ) : receiptFile ? (
+                      <div className="rounded-xl border border-cream-2 bg-white p-3 flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-muted" />
+                        <span className="text-xs font-bold text-green-dark truncate">{receiptFile.name}</span>
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-2.5 text-center text-xs text-amber-800">
+                        No receipt screenshot attached.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Notice Box */}
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex items-start gap-2.5 text-xs text-amber-900">
+                  <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="space-y-0.5 text-[11px]">
+                    <p className="font-bold text-amber-950">Please make sure your payment details and receipt are correct before submitting.</p>
+                    <p className="text-amber-800">Your payment will be sent for verification after confirmation.</p>
+                  </div>
+                </div>
+
+                {msg && <p className="text-xs font-semibold text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200">{msg}</p>}
+
+                {/* Confirmation Actions */}
+                <div className="mt-4 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setModalStep("form")}
+                    disabled={busy}
+                    className="btn-ghost flex-1 !py-2.5 text-xs font-semibold flex items-center justify-center gap-1"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" /> ← Back & Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmPaymentSubmission}
+                    disabled={busy}
+                    className="btn-green flex-1 !py-2.5 text-xs font-bold flex items-center justify-center gap-1"
+                  >
+                    {busy ? "Submitting…" : "Confirm & Submit Payment"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ════════════════════════════════════════════════════════ */}
+            {/* MODAL STEP 3: SUCCESS STATE                              */}
+            {/* ════════════════════════════════════════════════════════ */}
+            {modalStep === "success" && (
+              <div className="space-y-4 text-center py-2">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                  <CheckCircle2 className="h-8 w-8" />
+                </div>
+
+                <div>
+                  <h3 className="font-serif text-xl font-bold text-green-dark">
+                    Payment Submitted Successfully!
+                  </h3>
+                  <p className="text-xs text-muted mt-1 max-w-xs mx-auto">
+                    Your GCash payment and receipt have been submitted for verification.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-900 space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted">Billing Period:</span>
+                    <span className="font-bold text-green-dark">{formatBillingPeriod(payId.dueMonth)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted">Amount Submitted:</span>
+                    <span className="font-bold text-green-mid">{formatPHP(amount)}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1 border-t border-emerald-200/60">
+                    <span className="text-muted">Payment Status:</span>
+                    <span className="font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full text-[10px]">
+                      Pending Verification
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-muted">
+                  The HOA admin will review your proof of payment and update your dues record accordingly.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => setPayId(null)}
+                  className="btn-green w-full !py-2.5 text-sm font-bold mt-2"
+                >
+                  Done
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
+
