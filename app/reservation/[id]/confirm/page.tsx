@@ -219,22 +219,28 @@ function ConfirmBody() {
             </div>
           </dl>
 
-          {payment && !paid && (
+          {!paid && (
             <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-5 text-center">
-              <div className="mx-auto w-fit rounded-2xl bg-white p-4 shadow-sm">
-                <QRCode value={payment.qrPayload} size={180} />
-              </div>
-              <div className="mt-4 font-serif text-2xl font-bold tracking-[3px] text-blue-600">0917 123 4567</div>
-              <div className="text-xs font-semibold text-muted">MABUHAY HOMES HOA — Scan to Pay</div>
-              {paymentPlaceholder && (
-                <p className="mt-2 inline-block rounded-full bg-blue-100 px-3 py-1 text-[11px] font-semibold text-blue-700">
-                  Demo QR — real GCash merchant QR replaces this when the gateway is connected
-                </p>
+              {/* QR code — only shown when payment object is available */}
+              {payment && (
+                <>
+                  <div className="mx-auto w-fit rounded-2xl bg-white p-4 shadow-sm">
+                    <QRCode value={payment.qrPayload} size={180} />
+                  </div>
+                  <div className="mt-4 font-serif text-2xl font-bold tracking-[3px] text-blue-600">0917 123 4567</div>
+                  <div className="text-xs font-semibold text-muted">MABUHAY HOMES HOA — Scan to Pay</div>
+                  {paymentPlaceholder && (
+                    <p className="mt-2 inline-block rounded-full bg-blue-100 px-3 py-1 text-[11px] font-semibold text-blue-700">
+                      Demo QR — real GCash merchant QR replaces this when the gateway is connected
+                    </p>
+                  )}
+                  <p className="mt-3 text-sm text-muted">
+                    Pay exactly <strong className="text-green-mid">{formatPHP(reservation.downpayment)}</strong> in the GCash app.
+                  </p>
+                </>
               )}
-              <p className="mt-3 text-sm text-muted">
-                Pay exactly <strong className="text-green-mid">{formatPHP(reservation.downpayment)}</strong> in the GCash app.
-              </p>
 
+              {/* GCash ref + receipt upload — always shown when not yet paid */}
               <form onSubmit={handleSubmitClick} className="mt-4 space-y-3 text-left">
                 <div>
                   <label className="field-label">GCash Reference Number</label>
@@ -252,7 +258,7 @@ function ConfirmBody() {
                     <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-blue-200 bg-white p-4 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition group">
                       <Upload className="h-5 w-5 text-blue-500 group-hover:scale-110 transition" />
                       <span className="mt-1 text-xs font-bold text-green-dark">Click to upload receipt</span>
-                      <span className="text-[10px] text-muted">JPG, PNG, WEBP, or PDF up to 10MB</span>
+                      <span className="text-[10px] text-muted">JPG, PNG, WEBP, or PDF up to 4MB</span>
                       <input
                         type="file"
                         accept="image/*,application/pdf"
@@ -304,6 +310,7 @@ function ConfirmBody() {
               </form>
             </div>
           )}
+
 
           {readyForReview && (
             <div className="mt-5 space-y-3">
