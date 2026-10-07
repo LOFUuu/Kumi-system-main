@@ -16,9 +16,21 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const ADMIN_EMAIL = "mabuhay2000phase5@gmail.com";
+  let targetRole: "admin" | "counselor" | "resident" | "non_resident" | undefined = undefined;
+
   const role = String(body.role ?? "").trim();
-  if (role && !["admin", "counselor", "resident", "non_resident"].includes(role)) {
-    return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+  if (role) {
+    if (email === ADMIN_EMAIL) {
+      targetRole = "admin";
+    } else if (role === "admin" || role === "counselor") {
+      return NextResponse.json(
+        { error: "Administrative roles cannot be self-assigned." },
+        { status: 403 }
+      );
+    } else if (role === "resident" || role === "non_resident") {
+      targetRole = role;
+    }
   }
 
   const cedula = typeof body.cedula === "string" && body.cedula ? body.cedula.slice(0, 4_000_000) : undefined;
@@ -27,7 +39,7 @@ export async function PATCH(req: NextRequest) {
     blockNo: body.blockNo ? String(body.blockNo) : undefined,
     lotNo: body.lotNo ? String(body.lotNo) : undefined,
     phone: body.phone ? String(body.phone) : undefined,
-    role: role ? (role as "admin" | "counselor" | "resident" | "non_resident") : undefined,
+    role: targetRole,
     cedula,
   });
 

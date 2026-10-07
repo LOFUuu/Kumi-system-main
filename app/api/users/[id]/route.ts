@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateUserById, deleteUserById } from "@/lib/db";
+import { howaGuardAsync } from "@/lib/role";
 
 export const dynamic = "force-dynamic";
 
@@ -7,6 +8,11 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const guardErr = await howaGuardAsync(req);
+  if (guardErr) {
+    return NextResponse.json({ error: guardErr }, { status: 403 });
+  }
+
   const { id } = await params;
   if (!id) {
     return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
@@ -35,9 +41,14 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const guardErr = await howaGuardAsync(req);
+  if (guardErr) {
+    return NextResponse.json({ error: guardErr }, { status: 403 });
+  }
+
   const { id } = await params;
   if (!id) {
     return NextResponse.json({ error: "Invalid user id" }, { status: 400 });

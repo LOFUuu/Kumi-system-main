@@ -71,8 +71,9 @@ export default function Navbar() {
     nav.push({ label: "Map", href: "/map", map: true });
     nav.push({ label: "Announcements", href: "/announcements" });
   }
-  if (user) nav.push({ label: "My Listings", href: "/my-listings" });
-  if (user) nav.push({ label: "History", href: "/history" });
+  // My Listings and History are for verified residents only
+  if (user && user.role !== "non_resident") nav.push({ label: "My Listings", href: "/my-listings" });
+  if (user && user.role !== "non_resident") nav.push({ label: "History", href: "/history" });
 
   return (
     <nav className="sticky top-0 z-[2000] bg-gradient-to-br from-green-dark to-green-mid text-white shadow-lg">
@@ -119,7 +120,11 @@ export default function Navbar() {
                   <UserIcon />
                 </span>
                 {user.fullName}
-                {user.role !== "non_resident" && (
+                {user.role === "non_resident" ? (
+                  <span className="rounded-full bg-amber-400/20 px-2 py-0.5 text-[11px] font-semibold text-amber-200 border border-amber-400/30">
+                    Pending
+                  </span>
+                ) : user.role !== "non_resident" && (
                   <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[11px] font-semibold capitalize text-green-deep">
                     {user.role.replace("_", " ")}
                   </span>

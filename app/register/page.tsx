@@ -75,7 +75,8 @@ export default function RegisterPage() {
         password: form.password,
         address: form.address.trim() || undefined,
         phone: form.phone.trim() || undefined,
-        role: "resident",
+        // Self-registered users start as non_resident. Admin upgrades to resident.
+        role: "non_resident",
       });
       setDone(form.email.trim().toLowerCase());
     } catch (err) {
@@ -124,6 +125,13 @@ export default function RegisterPage() {
               <span>
                 We sent a verification link to <strong>{done}</strong>. Open it to activate your
                 account — it expires in 24 hours. Check your spam folder if you don&apos;t see it.
+              </span>
+            </div>
+            <div className="flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
+              <TriangleAlert className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
+              <span>
+                After verifying your email, your account will be in <strong>Pending</strong> status
+                until the HOA admin approves your residency. Community features will be unlocked once verified.
               </span>
             </div>
             <button

@@ -158,8 +158,52 @@ export default function MyDuesPage() {
     }
   };
 
+  // ── Access Guard ──────────────────────────────────────────────────────────
+  // Unauthenticated users and non-residents (pending verification) should not
+  // have unrestricted access to this page. Show a restricted-access screen
+  // instead of the full dues ledger.
+  if (!user) {
+    return (
+      <div className="section flex items-center justify-center min-h-[60vh]">
+        <div className="max-w-md w-full rounded-2xl border border-cream-2 bg-white p-8 text-center shadow-sm">
+          <AlertCircle className="mx-auto h-10 w-10 text-amber-500 mb-4" />
+          <h2 className="font-serif text-2xl font-bold text-green-dark">Login Required</h2>
+          <p className="mt-2 text-sm text-muted">
+            Please log in to view your monthly dues.
+          </p>
+          <a href="/login" className="btn-green mt-6 inline-flex w-full justify-center">
+            Go to Log In
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  if (user.role === "non_resident") {
+    return (
+      <div className="section flex items-center justify-center min-h-[60vh]">
+        <div className="max-w-md w-full rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center shadow-sm">
+          <AlertCircle className="mx-auto h-10 w-10 text-amber-500 mb-4" />
+          <h2 className="font-serif text-2xl font-bold text-amber-900">Account Pending Verification</h2>
+          <p className="mt-2 text-sm text-amber-800 leading-relaxed">
+            Your account is currently awaiting resident verification by the HOA administrator.
+            Once your residency details are verified, you will gain access to your monthly dues ledger.
+          </p>
+          <p className="mt-3 text-xs text-amber-700">
+            If you believe this is an error, please contact the HOA office.
+          </p>
+          <a href="/" className="btn-green mt-6 inline-flex w-full justify-center">
+            Return to Home
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="section">
+
+
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-serif text-4xl font-bold text-green-dark">My Dues</h1>

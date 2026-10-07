@@ -68,6 +68,10 @@ export default function HistoryPage() {
     if (!authLoading && !user) {
       router.replace("/login?next=/history&reason=history");
     }
+    // Non-residents don't have access to transaction history
+    if (!authLoading && user && user.role === "non_resident") {
+      router.replace("/");
+    }
   }, [authLoading, user, router]);
 
   useEffect(() => {

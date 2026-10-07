@@ -54,6 +54,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
   }
 
+  const ADMIN_EMAIL = "mabuhay2000phase5@gmail.com";
+  if (email === ADMIN_EMAIL && user.role !== "admin") {
+    const { updateUserById } = await import("@/lib/db");
+    const updated = await updateUserById(user.id, { role: "admin" });
+    if (updated) {
+      user.role = "admin";
+    }
+  }
+
   const publicUser = toPublicUser(user);
   const res = NextResponse.json({ user: publicUser });
 

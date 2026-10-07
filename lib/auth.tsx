@@ -98,7 +98,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const roleHome = (role: Role) =>
-    role === "admin" ? "/admin" : role === "counselor" ? "/admin/residents" : "/";
+    role === "admin" ? "/admin" :
+    role === "counselor" ? "/admin/residents" :
+    "/";
 
   const login = async (email: string, password: string, opts?: { next?: string }) => {
     let user: User;
@@ -127,7 +129,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.register({
         ...data,
-        role: data.role || "resident",
+        // Self-registered accounts start as non_resident pending admin verification.
+        // Only the admin can upgrade to resident via the admin panel.
+        role: data.role || "non_resident",
         email: data.email.trim().toLowerCase(),
       });
     } catch (err) {

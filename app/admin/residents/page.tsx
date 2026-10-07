@@ -441,7 +441,7 @@ export default function AdminResidentsPage() {
             >
               <option value="all">All</option>
               <option value="resident">Resident</option>
-              <option value="non_resident">Non-Resident</option>
+              <option value="non_resident">Non-Resident / Pending</option>
               <option value="counselor">Counselor</option>
               <option value="admin">Admin</option>
             </select>
