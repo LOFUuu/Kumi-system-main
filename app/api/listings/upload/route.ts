@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +9,7 @@ const ALLOWED_MIME = new Set([
   "application/pdf",
 ]);
 
-const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB — under Vercel's 4.5 MB serverless limit
 
 export async function POST(req: NextRequest) {
   let formData: FormData;
@@ -33,7 +31,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Validate
+  // Validate each file
   for (const file of files) {
     if (!ALLOWED_MIME.has(file.type)) {
       return NextResponse.json(
@@ -43,31 +41,19 @@ export async function POST(req: NextRequest) {
     }
     if (file.size > MAX_FILE_BYTES) {
       return NextResponse.json(
-        { error: `File too large: ${file.name}. Max 5 MB per file.` },
+        { error: `File too large: ${file.name}. Max 4 MB per file.` },
         { status: 400 }
       );
     }
   }
 
-  // Ensure upload directory exists
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "listing-docs");
-  await mkdir(uploadDir, { recursive: true });
-
+  // Convert each file to a base64 data URL — works on Vercel (no disk write needed).
+  // Data URLs are stored as-is in the proofDocuments field in MongoDB.
   const paths: string[] = [];
-
   for (const file of files) {
-    const ext = file.name.split(".").pop() ?? "bin";
-    // Safe filename: timestamp + sanitised original name
-    const safeName = file.name
-      .replace(/[^a-zA-Z0-9._-]/g, "_")
-      .slice(0, 60);
-    const filename = `${Date.now()}-${safeName}`;
-    const absPath = path.join(uploadDir, filename);
-
     const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(absPath, buffer);
-
-    paths.push(`/uploads/listing-docs/${filename}`);
+    const base64 = buffer.toString("base64");
+    paths.push(`data:${file.type};base64,${base64}`);
   }
 
   return NextResponse.json({ paths }, { status: 200 });

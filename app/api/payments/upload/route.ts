@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +10,7 @@ const ALLOWED_MIME = new Set([
   "application/pdf",
 ]);
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB — keeps us under Vercel's 4.5 MB serverless body limit
 
 export async function POST(req: NextRequest) {
   let formData: FormData;
@@ -43,22 +41,17 @@ export async function POST(req: NextRequest) {
 
   if (file.size > MAX_FILE_BYTES) {
     return NextResponse.json(
-      { error: `File is too large: ${Math.round(file.size / (1024 * 1024))}MB. Max 10MB allowed.` },
+      { error: `File is too large: ${Math.round(file.size / (1024 * 1024))}MB. Max 4MB allowed.` },
       { status: 400 }
     );
   }
 
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "receipts");
-  await mkdir(uploadDir, { recursive: true });
-
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 60);
-  const filename = `${Date.now()}-${safeName}`;
-  const absPath = path.join(uploadDir, filename);
-
+  // Convert to base64 data URL — works on Vercel (no disk write needed).
+  // The data URL is stored as-is in the receiptPath field in MongoDB.
   const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(absPath, buffer);
+  const base64 = buffer.toString("base64");
+  const dataUrl = `data:${file.type};base64,${base64}`;
 
-  const publicPath = `/uploads/receipts/${filename}`;
-
-  return NextResponse.json({ path: publicPath }, { status: 200 });
+  return NextResponse.json({ path: dataUrl }, { status: 200 });
 }
+
