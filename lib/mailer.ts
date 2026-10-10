@@ -20,42 +20,55 @@
 
 import nodemailer from "nodemailer";
 import type { SendMailOptions } from "nodemailer";
+import { google } from "googleapis";
 
-// ─── Resend HTTP API (production) ────────────────────────────────────────────
+// ─── Gmail API via OAuth2 (Production & Local) ──────────────────────────────
 
-async function sendViaResend(opts: {
-  from: string;
-  to: string;
-  subject: string;
-  text?: string;
-  html?: string;
-  replyTo?: string;
-}): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error("RESEND_API_KEY is not set.");
+async function sendViaGmailAPI(opts: SendMailOptions): Promise<void> {
+  const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN } = process.env;
+  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN) {
+    throw new Error("Gmail API credentials (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN) are not set.");
+  }
 
-  const payload: Record<string, unknown> = {
-    from: opts.from,
-    to: [opts.to],
-    subject: opts.subject,
-    ...(opts.text ? { text: opts.text } : {}),
-    ...(opts.html ? { html: opts.html } : {}),
-    ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
-  };
+  const oAuth2Client = new google.auth.OAuth2(
+    GMAIL_CLIENT_ID,
+    GMAIL_CLIENT_SECRET,
+    "https://developers.google.com/oauthplayground"
+  );
+  oAuth2Client.setCredentials({ refresh_token: GMAIL_REFRESH_TOKEN });
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
+  const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
+
+  // Use nodemailer to generate the raw email string
+  const transporter = nodemailer.createTransport({
+    streamTransport: true,
+    newline: "windows",
   });
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Resend API error ${res.status}: ${body}`);
+  const info = await transporter.sendMail(opts);
+  let rawMessage = info.message;
+  
+  if (!Buffer.isBuffer(rawMessage) && typeof rawMessage !== "string") {
+    const chunks = [];
+    for await (const chunk of rawMessage as any) {
+      chunks.push(chunk);
+    }
+    rawMessage = Buffer.concat(chunks);
   }
+
+  // Gmail API requires base64url encoding
+  const encodedMessage = Buffer.from(rawMessage as Buffer)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  await gmail.users.messages.send({
+    userId: "me",
+    requestBody: {
+      raw: encodedMessage,
+    },
+  });
 }
 
 // ─── Nodemailer SMTP fallback (local dev) ─────────────────────────────────────
@@ -101,19 +114,20 @@ async function sendMail(opts: {
   html?: string;
   replyTo?: string;
 }): Promise<void> {
-  if (process.env.RESEND_API_KEY) {
-    console.log(`[Mailer] Sending via Resend → ${opts.to}`);
-    await sendViaResend(opts);
+  const nmOpts: SendMailOptions = {
+    from: opts.from,
+    to: opts.to,
+    subject: opts.subject,
+    ...(opts.text ? { text: opts.text } : {}),
+    ...(opts.html ? { html: opts.html } : {}),
+    ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
+  };
+
+  if (process.env.GMAIL_CLIENT_ID && process.env.GMAIL_REFRESH_TOKEN) {
+    console.log(`[Mailer] Sending via Gmail REST API → ${opts.to}`);
+    await sendViaGmailAPI(nmOpts);
   } else {
-    console.log(`[Mailer] Sending via SMTP (local) → ${opts.to}`);
-    const nmOpts: SendMailOptions = {
-      from: opts.from,
-      to: opts.to,
-      subject: opts.subject,
-      ...(opts.text ? { text: opts.text } : {}),
-      ...(opts.html ? { html: opts.html } : {}),
-      ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
-    };
+    console.log(`[Mailer] Sending via SMTP (local fallback) → ${opts.to}`);
     await sendViaNodemailer(nmOpts);
   }
 }
@@ -121,12 +135,7 @@ async function sendMail(opts: {
 // ─── From-address helper ──────────────────────────────────────────────────────
 
 function fromAddress(label = "Mabuhay Homes Community Portal"): string {
-  // Resend free tier: use onboarding@resend.dev until you verify your own domain.
-  // Once verified, set RESEND_FROM_EMAIL to your domain address.
-  const addr =
-    process.env.RESEND_FROM_EMAIL ||
-    process.env.EMAIL_USER ||
-    "onboarding@resend.dev";
+  const addr = process.env.GMAIL_USER || process.env.EMAIL_USER || "noreply@mabuhayhomes.com";
   return `"${label}" <${addr}>`;
 }
 
@@ -196,7 +205,7 @@ export async function sendGoogleOnlyAccountEmail(to: string, name: string): Prom
 }
 
 export async function sendVerificationEmail(to: string, verifyUrl: string): Promise<void> {
-  if (!process.env.RESEND_API_KEY && !process.env.EMAIL_USER) {
+  if (!process.env.GMAIL_CLIENT_ID && !process.env.EMAIL_USER) {
     console.warn(`[Mailer] No transport configured. Verification link for ${to}: ${verifyUrl}`);
     return;
   }
@@ -317,7 +326,7 @@ export async function sendAdminListingNotificationEmail(
 }
 
 export async function sendNewsletterWelcomeEmail(to: string): Promise<void> {
-  if (!process.env.RESEND_API_KEY && !process.env.EMAIL_USER) {
+  if (!process.env.GMAIL_CLIENT_ID && !process.env.EMAIL_USER) {
     console.warn(`[Mailer] No transport configured. Skipping welcome email for ${to}`);
     return;
   }
