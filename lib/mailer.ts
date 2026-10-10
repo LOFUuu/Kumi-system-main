@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import type { Transporter } from "nodemailer";
+import type { Transporter, SendMailOptions } from "nodemailer";
 
 let cachedTransporter: Transporter | null = null;
 
@@ -7,7 +7,8 @@ function getTransporter(): Transporter {
   const user = process.env.EMAIL_USER;
   const rawPass = process.env.EMAIL_PASS;
   if (!user || !rawPass) {
-    throw new Error("EMAIL_USER/EMAIL_PASS are not configured in environment variables.");
+    console.error("[Mailer Error] EMAIL_USER and/or EMAIL_PASS are not configured in Vercel environment variables.");
+    throw new Error("EMAIL_USER/EMAIL_PASS environment variables are not configured in Vercel settings.");
   }
 
   if (!cachedTransporter) {
@@ -26,11 +27,63 @@ function getTransporter(): Transporter {
   return cachedTransporter;
 }
 
+async function sendMailWithFallback(options: SendMailOptions): Promise<void> {
+  const user = process.env.EMAIL_USER;
+  const rawPass = process.env.EMAIL_PASS;
+
+  if (!user || !rawPass) {
+    console.error("[Mailer Critical Error] Missing EMAIL_USER or EMAIL_PASS environment variables in production environment.");
+    throw new Error("EMAIL_USER and EMAIL_PASS environment variables are missing.");
+  }
+
+  const pass = rawPass.replace(/\s+/g, "");
+
+  // Attempt 1: Default transport (smtp.gmail.com:465 SSL)
+  try {
+    const transporter = getTransporter();
+    await transporter.sendMail(options);
+    return;
+  } catch (err: any) {
+    console.warn("[Mailer Warning] Primary transport (465 SSL) failed:", err?.message || err);
+    cachedTransporter = null;
+  }
+
+  // Attempt 2: Fallback transport (smtp.gmail.com:587 STARTTLS)
+  try {
+    const fallbackTransporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      requireTLS: true,
+      auth: { user, pass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    });
+    await fallbackTransporter.sendMail(options);
+    return;
+  } catch (err: any) {
+    console.warn("[Mailer Warning] Fallback transport (587 STARTTLS) failed:", err?.message || err);
+  }
+
+  // Attempt 3: Service Gmail transport
+  try {
+    const serviceTransporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user, pass },
+    });
+    await serviceTransporter.sendMail(options);
+  } catch (err: any) {
+    console.error("[Mailer Error] All SMTP transport attempts failed:", err?.message || err);
+    throw err;
+  }
+}
+
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
   const user = process.env.EMAIL_USER;
-  if (!user) throw new Error("EMAIL_USER is not configured");
+  if (!user) throw new Error("EMAIL_USER is not configured in environment variables.");
 
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: `"Mabuhay Homes Community Portal" <${user}>`,
     to,
     subject: "Reset your Mabuhay Homes password",
@@ -58,10 +111,10 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
 
 export async function sendGoogleOnlyAccountEmail(to: string, name: string): Promise<void> {
   const user = process.env.EMAIL_USER;
-  if (!user) throw new Error("EMAIL_USER is not configured");
+  if (!user) throw new Error("EMAIL_USER is not configured in environment variables.");
 
   const displayName = name ? `, ${name.split(" ")[0]}` : "";
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: `"Mabuhay Homes Community Portal" <${user}>`,
     to,
     subject: "Mabuhay Homes – Password Reset Request",
@@ -104,7 +157,7 @@ export async function sendVerificationEmail(to: string, verifyUrl: string): Prom
     return;
   }
 
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: `"Mabuhay Homes Community Portal" <${user}>`,
     to,
     subject: "Verify your Mabuhay Homes account",
@@ -137,11 +190,11 @@ export async function sendContactEmail(data: {
   message: string;
 }): Promise<void> {
   const user = process.env.EMAIL_USER;
-  if (!user) throw new Error("EMAIL_USER is not configured");
+  if (!user) throw new Error("EMAIL_USER is not configured in environment variables.");
 
   const recipient = process.env.ADMIN_EMAIL || user;
 
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: `"Mabuhay Homes Contact Form" <${user}>`,
     to: recipient,
     replyTo: `"${data.fullName}" <${data.email}>`,
@@ -184,7 +237,7 @@ export async function sendAdminListingNotificationEmail(
 
   const to = process.env.ADMIN_EMAIL || user;
 
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: `"Mabuhay Homes Security & Verification" <${user}>`,
     to,
     subject: `[Action Required] Listing Verification: ${payload.houseName}`,
@@ -225,7 +278,7 @@ export async function sendNewsletterWelcomeEmail(to: string): Promise<void> {
     return;
   }
 
-  await getTransporter().sendMail({
+  await sendMailWithFallback({
     from: `"Mabuhay Homes Community Portal" <${user}>`,
     to,
     subject: "Welcome to Mabuhay Homes Newsletter!",

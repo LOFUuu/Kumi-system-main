@@ -30,14 +30,23 @@ export async function POST(req: NextRequest) {
   subscribers.add(email);
 
   // Send real welcome email to the subscriber via Nodemailer
+  let emailSent = false;
   try {
     await sendNewsletterWelcomeEmail(email);
+    emailSent = true;
   } catch (err) {
     console.error("[Newsletter Mailer Error]:", err);
   }
 
+  if (emailSent) {
+    return NextResponse.json(
+      { message: "Thank you for subscribing! A welcome email has been sent to your inbox." },
+      { status: 200 }
+    );
+  }
+
   return NextResponse.json(
-    { message: "Thank you for subscribing! A welcome email has been sent to your inbox." },
+    { message: "Thank you for subscribing to our newsletter!" },
     { status: 200 }
   );
 }
