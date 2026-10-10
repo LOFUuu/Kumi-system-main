@@ -1,90 +1,138 @@
+/**
+ * lib/mailer.ts
+ *
+ * Dual-mode mailer:
+ *   - Production (Vercel): Uses Resend HTTP API (RESEND_API_KEY env var).
+ *     Vercel serverless blocks outbound SMTP ports, so HTTP-based email is
+ *     the only reliable option in production.
+ *   - Local development: Falls back to nodemailer + Gmail SMTP if RESEND_API_KEY
+ *     is absent (your existing EMAIL_USER / EMAIL_PASS still work locally).
+ *
+ * One-time Vercel setup:
+ *   1. Go to https://resend.com and create a free account
+ *   2. Dashboard → API Keys → Create API Key → copy it
+ *   3. Vercel Dashboard → Your Project → Settings → Environment Variables
+ *      Add:  RESEND_API_KEY = re_xxxxxxxxxxxx
+ *      Add:  RESEND_FROM_EMAIL = onboarding@resend.dev   (free test sender,
+ *            or your own verified domain address once you verify a domain)
+ *   4. Redeploy (Vercel auto-deploys on next git push to main)
+ */
+
 import nodemailer from "nodemailer";
-import type { Transporter, SendMailOptions } from "nodemailer";
+import type { SendMailOptions } from "nodemailer";
 
-let cachedTransporter: Transporter | null = null;
+// ─── Resend HTTP API (production) ────────────────────────────────────────────
 
-function getTransporter(): Transporter {
-  const user = process.env.EMAIL_USER;
-  const rawPass = process.env.EMAIL_PASS;
-  if (!user || !rawPass) {
-    console.error("[Mailer Error] EMAIL_USER and/or EMAIL_PASS are not configured in Vercel environment variables.");
-    throw new Error("EMAIL_USER/EMAIL_PASS environment variables are not configured in Vercel settings.");
+async function sendViaResend(opts: {
+  from: string;
+  to: string;
+  subject: string;
+  text?: string;
+  html?: string;
+  replyTo?: string;
+}): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new Error("RESEND_API_KEY is not set.");
+
+  const payload: Record<string, unknown> = {
+    from: opts.from,
+    to: [opts.to],
+    subject: opts.subject,
+    ...(opts.text ? { text: opts.text } : {}),
+    ...(opts.html ? { html: opts.html } : {}),
+    ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
+  };
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Resend API error ${res.status}: ${body}`);
   }
-
-  if (!cachedTransporter) {
-    const pass = rawPass.replace(/\s+/g, "");
-    cachedTransporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: { user, pass },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
-    });
-  }
-
-  return cachedTransporter;
 }
 
-async function sendMailWithFallback(options: SendMailOptions): Promise<void> {
+// ─── Nodemailer SMTP fallback (local dev) ─────────────────────────────────────
+
+async function sendViaNodemailer(options: SendMailOptions): Promise<void> {
   const user = process.env.EMAIL_USER;
   const rawPass = process.env.EMAIL_PASS;
-
   if (!user || !rawPass) {
-    console.error("[Mailer Critical Error] Missing EMAIL_USER or EMAIL_PASS environment variables in production environment.");
-    throw new Error("EMAIL_USER and EMAIL_PASS environment variables are missing.");
+    throw new Error("EMAIL_USER / EMAIL_PASS not set for local SMTP fallback.");
   }
-
   const pass = rawPass.replace(/\s+/g, "");
-
-  // Attempt 1: Default transport (smtp.gmail.com:465 SSL)
-  try {
-    const transporter = getTransporter();
-    await transporter.sendMail(options);
-    return;
-  } catch (err: any) {
-    console.warn("[Mailer Warning] Primary transport (465 SSL) failed:", err?.message || err);
-    cachedTransporter = null;
+  const configs = [
+    { host: "smtp.gmail.com", port: 465 as const, secure: true },
+    { host: "smtp.gmail.com", port: 587 as const, secure: false, requireTLS: true },
+  ];
+  let lastErr: unknown;
+  for (const cfg of configs) {
+    try {
+      const t = nodemailer.createTransport({
+        ...cfg,
+        auth: { user, pass },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+      });
+      await t.sendMail(options);
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[Mailer] SMTP ${cfg.port} failed:`, (err as Error)?.message);
+    }
   }
+  throw lastErr;
+}
 
-  // Attempt 2: Fallback transport (smtp.gmail.com:587 STARTTLS)
-  try {
-    const fallbackTransporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      requireTLS: true,
-      auth: { user, pass },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
-    });
-    await fallbackTransporter.sendMail(options);
-    return;
-  } catch (err: any) {
-    console.warn("[Mailer Warning] Fallback transport (587 STARTTLS) failed:", err?.message || err);
-  }
+// ─── Unified sendMail (auto-selects transport) ────────────────────────────────
 
-  // Attempt 3: Service Gmail transport
-  try {
-    const serviceTransporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: { user, pass },
-    });
-    await serviceTransporter.sendMail(options);
-  } catch (err: any) {
-    console.error("[Mailer Error] All SMTP transport attempts failed:", err?.message || err);
-    throw err;
+async function sendMail(opts: {
+  from: string;
+  to: string;
+  subject: string;
+  text?: string;
+  html?: string;
+  replyTo?: string;
+}): Promise<void> {
+  if (process.env.RESEND_API_KEY) {
+    console.log(`[Mailer] Sending via Resend → ${opts.to}`);
+    await sendViaResend(opts);
+  } else {
+    console.log(`[Mailer] Sending via SMTP (local) → ${opts.to}`);
+    const nmOpts: SendMailOptions = {
+      from: opts.from,
+      to: opts.to,
+      subject: opts.subject,
+      ...(opts.text ? { text: opts.text } : {}),
+      ...(opts.html ? { html: opts.html } : {}),
+      ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
+    };
+    await sendViaNodemailer(nmOpts);
   }
+}
+
+// ─── From-address helper ──────────────────────────────────────────────────────
+
+function fromAddress(label = "Mabuhay Homes Community Portal"): string {
+  // Resend free tier: use onboarding@resend.dev until you verify your own domain.
+  // Once verified, set RESEND_FROM_EMAIL to your domain address.
+  const addr =
+    process.env.RESEND_FROM_EMAIL ||
+    process.env.EMAIL_USER ||
+    "onboarding@resend.dev";
+  return `"${label}" <${addr}>`;
 }
 
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
-  const user = process.env.EMAIL_USER;
-  if (!user) throw new Error("EMAIL_USER is not configured in environment variables.");
-
-  await sendMailWithFallback({
-    from: `"Mabuhay Homes Community Portal" <${user}>`,
+  await sendMail({
+    from: fromAddress(),
     to,
     subject: "Reset your Mabuhay Homes password",
     text:
@@ -110,12 +158,9 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
 }
 
 export async function sendGoogleOnlyAccountEmail(to: string, name: string): Promise<void> {
-  const user = process.env.EMAIL_USER;
-  if (!user) throw new Error("EMAIL_USER is not configured in environment variables.");
-
   const displayName = name ? `, ${name.split(" ")[0]}` : "";
-  await sendMailWithFallback({
-    from: `"Mabuhay Homes Community Portal" <${user}>`,
+  await sendMail({
+    from: fromAddress(),
     to,
     subject: "Mabuhay Homes – Password Reset Request",
     text:
@@ -151,14 +196,12 @@ export async function sendGoogleOnlyAccountEmail(to: string, name: string): Prom
 }
 
 export async function sendVerificationEmail(to: string, verifyUrl: string): Promise<void> {
-  const user = process.env.EMAIL_USER;
-  if (!user) {
-    console.warn(`[Mailer Warning] EMAIL_USER not configured. Verification link for ${to}: ${verifyUrl}`);
+  if (!process.env.RESEND_API_KEY && !process.env.EMAIL_USER) {
+    console.warn(`[Mailer] No transport configured. Verification link for ${to}: ${verifyUrl}`);
     return;
   }
-
-  await sendMailWithFallback({
-    from: `"Mabuhay Homes Community Portal" <${user}>`,
+  await sendMail({
+    from: fromAddress(),
     to,
     subject: "Verify your Mabuhay Homes account",
     text:
@@ -189,13 +232,14 @@ export async function sendContactEmail(data: {
   subject?: string;
   message: string;
 }): Promise<void> {
-  const user = process.env.EMAIL_USER;
-  if (!user) throw new Error("EMAIL_USER is not configured in environment variables.");
+  const recipient =
+    process.env.ADMIN_EMAIL ||
+    process.env.EMAIL_USER ||
+    process.env.RESEND_FROM_EMAIL;
+  if (!recipient) throw new Error("No admin recipient configured (ADMIN_EMAIL / EMAIL_USER / RESEND_FROM_EMAIL).");
 
-  const recipient = process.env.ADMIN_EMAIL || user;
-
-  await sendMailWithFallback({
-    from: `"Mabuhay Homes Contact Form" <${user}>`,
+  await sendMail({
+    from: fromAddress("Mabuhay Homes Contact Form"),
     to: recipient,
     replyTo: `"${data.fullName}" <${data.email}>`,
     subject: `[Contact HOA] ${data.subject || "New Inquiry from " + data.fullName}`,
@@ -229,16 +273,17 @@ export interface AdminListingNotificationPayload {
 export async function sendAdminListingNotificationEmail(
   payload: AdminListingNotificationPayload
 ): Promise<void> {
-  const user = process.env.EMAIL_USER;
-  if (!user) {
-    console.log("[Mailer] EMAIL_USER not configured. Skipping admin email notification for listing:", payload.listingId);
+  const to =
+    process.env.ADMIN_EMAIL ||
+    process.env.EMAIL_USER ||
+    process.env.RESEND_FROM_EMAIL;
+  if (!to) {
+    console.log("[Mailer] No admin recipient configured. Skipping listing notification.");
     return;
   }
 
-  const to = process.env.ADMIN_EMAIL || user;
-
-  await sendMailWithFallback({
-    from: `"Mabuhay Homes Security & Verification" <${user}>`,
+  await sendMail({
+    from: fromAddress("Mabuhay Homes Security & Verification"),
     to,
     subject: `[Action Required] Listing Verification: ${payload.houseName}`,
     text:
@@ -272,14 +317,13 @@ export async function sendAdminListingNotificationEmail(
 }
 
 export async function sendNewsletterWelcomeEmail(to: string): Promise<void> {
-  const user = process.env.EMAIL_USER;
-  if (!user) {
-    console.warn(`[Mailer Warning] EMAIL_USER not configured. Skipping welcome email for ${to}`);
+  if (!process.env.RESEND_API_KEY && !process.env.EMAIL_USER) {
+    console.warn(`[Mailer] No transport configured. Skipping welcome email for ${to}`);
     return;
   }
 
-  await sendMailWithFallback({
-    from: `"Mabuhay Homes Community Portal" <${user}>`,
+  await sendMail({
+    from: fromAddress(),
     to,
     subject: "Welcome to Mabuhay Homes Newsletter!",
     text:
