@@ -186,21 +186,20 @@ export default function Footer() {
         {/* Support */}
         <div>
           <h4 className="mb-4 text-xs font-bold uppercase tracking-wider text-[#86efac]">Our Support</h4>
-          <ul className="space-y-2 text-xs">
+        <ul className="space-y-2 text-xs">
             {[
               { label: "Contact HOA", href: "/contact" },
-              { label: "Rules & Regulations", href: "#" },
-              { label: "Privacy Policy", href: "#" },
-              { label: "Terms & Conditions", href: "#" },
+              { label: "Rules & Regulations", href: "/rules-and-regulations" },
+              { label: "Privacy Policy", href: "/privacy-policy" },
+              { label: "Terms & Conditions", href: "/terms-and-conditions" },
             ].map((item) => (
               <li key={item.label}>
-                <a
+                <Link
                   href={item.href}
-                  onClick={(e) => { if (item.href === "#") e.preventDefault(); }}
                   className="flex items-center gap-2 text-white/70 transition-colors hover:text-[#86efac]"
                 >
                   <span className="h-1 w-1 rounded-full bg-[#54b868]" /> {item.label}
-                </a>
+                </Link>
               </li>
             ))}
           </ul>
@@ -238,8 +237,8 @@ export default function Footer() {
             MABUHAY HOMES
           </div>
           <div className="flex gap-4 text-xs">
-            <a href="#" onClick={(e) => e.preventDefault()} className="transition-colors hover:text-white">Privacy</a>
-            <a href="#" onClick={(e) => e.preventDefault()} className="transition-colors hover:text-white">Terms</a>
+            <Link href="/privacy-policy" className="transition-colors hover:text-white">Privacy</Link>
+            <Link href="/terms-and-conditions" className="transition-colors hover:text-white">Terms</Link>
           </div>
         </div>
       </div>
