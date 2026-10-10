@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   History,
   Calendar,
@@ -49,13 +49,19 @@ function formatDate(d?: string) {
 
 type TabType = "all" | "reservations" | "payments" | "dues";
 
-export default function HistoryPage() {
+function HistoryContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlQ = searchParams.get("q") || "";
   const { user, loading: authLoading } = useAuth();
 
   const [activeTab, setActiveTab] = useState<TabType>("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(urlQ);
   const [statusFilter, setStatusFilter] = useState("all");
+
+  useEffect(() => {
+    if (urlQ) setSearchQuery(urlQ);
+  }, [urlQ]);
 
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -380,8 +386,17 @@ export default function HistoryPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search history…"
-                className="h-9 w-full rounded-xl border border-cream-2 bg-white pl-8 pr-3 text-xs font-medium placeholder:text-muted/60 focus:border-green-mid focus:outline-none"
+                className="h-9 w-full rounded-xl border border-cream-2 bg-white pl-8 pr-7 text-xs font-medium placeholder:text-muted/60 focus:border-green-mid focus:outline-none"
               />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-green-dark"
+                  title="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             <select
               value={statusFilter}
@@ -662,5 +677,19 @@ export default function HistoryPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function HistoryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="section min-h-[60vh] flex items-center justify-center">
+          <p className="text-muted text-sm font-semibold animate-pulse">Loading activity history…</p>
+        </div>
+      }
+    >
+      <HistoryContent />
+    </Suspense>
   );
 }

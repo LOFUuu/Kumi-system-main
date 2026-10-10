@@ -31,6 +31,7 @@ import {
   ArrowRight,
   ShieldCheck,
   Eye,
+  Search,
 } from "lucide-react";
 
 const STATUS_BADGE: Record<string, string> = {
@@ -53,6 +54,7 @@ export default function MyDuesPage() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [modalStep, setModalStep] = useState<"form" | "review" | "success">("form");
 
   const load = () => api.dues().then(setDues).catch(() => setDues([]));
@@ -75,13 +77,30 @@ export default function MyDuesPage() {
   const credit = myDues.reduce((s, d) => s + creditFor(d.amountDue, d.amountPaid), 0);
 
   const filteredDues = useMemo(() => {
-    if (statusFilter === "all") return myDues;
     return myDues.filter((d) => {
-      const st = computeDuesStatusForRecord(d);
-      const displayStatus = st === "on_time" ? "paid" : st;
-      return displayStatus === statusFilter;
+      // 1. Status Filter
+      if (statusFilter !== "all") {
+        const st = computeDuesStatusForRecord(d);
+        const displayStatus = st === "on_time" ? "paid" : st;
+        if (displayStatus !== statusFilter) return false;
+      }
+
+      // 2. Search Query Filter
+      if (searchQuery.trim()) {
+        const term = searchQuery.toLowerCase().trim();
+        const monthMatch = d.dueMonth ? d.dueMonth.toLowerCase().includes(term) : false;
+        const periodMatch = formatBillingPeriod(d.dueMonth).toLowerCase().includes(term);
+        const blockMatch = d.blockNo ? d.blockNo.toLowerCase().includes(term) : false;
+        const lotMatch = d.lotNo ? d.lotNo.toLowerCase().includes(term) : false;
+        const statusMatch = d.status ? d.status.toLowerCase().includes(term) : false;
+        const paidAtMatch = d.paidAt ? d.paidAt.includes(term) : false;
+
+        return monthMatch || periodMatch || blockMatch || lotMatch || statusMatch || paidAtMatch;
+      }
+
+      return true;
     });
-  }, [myDues, statusFilter]);
+  }, [myDues, statusFilter, searchQuery]);
 
   const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -313,28 +332,51 @@ export default function MyDuesPage() {
 
       {/* Continuous Payment & Dues History */}
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <h3 className="font-serif text-xl font-bold text-green-dark flex items-center gap-2">
             <History className="h-5 w-5 text-green-mid" />
             Complete Payment & Dues History
           </h3>
 
-          {/* Status Filter */}
-          <div className="flex items-center gap-1.5 rounded-xl border border-cream-2 bg-white p-1 text-xs shadow-sm">
-            {["all", "paid", "unpaid", "delayed"].map((st) => (
-              <button
-                key={st}
-                type="button"
-                onClick={() => setStatusFilter(st)}
-                className={`rounded-lg px-3 py-1 font-semibold capitalize transition ${
-                  statusFilter === st
-                    ? "bg-green-mid text-white"
-                    : "text-muted hover:text-green-dark hover:bg-cream"
-                }`}
-              >
-                {st === "delayed" ? "Overdue / Partial" : st}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Search Input */}
+            <div className="relative flex-1 sm:w-56">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+              <input
+                type="text"
+                placeholder="Search month, status..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-9 w-full rounded-xl border border-cream-2 bg-white pl-8 pr-7 text-xs font-medium placeholder:text-muted/60 focus:border-green-mid focus:outline-none shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-green-dark"
+                  title="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex items-center gap-1.5 rounded-xl border border-cream-2 bg-white p-1 text-xs shadow-sm">
+              {["all", "paid", "unpaid", "delayed"].map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setStatusFilter(st)}
+                  className={`rounded-lg px-3 py-1 font-semibold capitalize transition ${
+                    statusFilter === st
+                      ? "bg-green-mid text-white"
+                      : "text-muted hover:text-green-dark hover:bg-cream"
+                  }`}
+                >
+                  {st === "delayed" ? "Overdue / Partial" : st}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
