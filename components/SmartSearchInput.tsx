@@ -7,12 +7,7 @@ import {
   Building2,
   Calendar,
   CreditCard,
-  MapPin,
-  Sparkles,
-  ArrowRight,
   Compass,
-  Tag,
-  CheckCircle2,
   X,
   HelpCircle,
 } from "lucide-react";
@@ -65,10 +60,10 @@ export default function SmartSearchInput({
   // Compute live suggestions & typo corrections
   const { suggestions, didYouMean } = findSmartSuggestions(query, user?.role);
 
-  // Combine items for keyboard navigation index
+  // Combine items for keyboard navigation index (cap recommendations at 4)
   const currentItems: SearchTarget[] = query.trim()
     ? suggestions.map((s) => s.target)
-    : defaultRecommendations.slice(0, 6);
+    : defaultRecommendations.slice(0, 4);
 
   const executeTarget = useCallback(
     (target: SearchTarget) => {
@@ -163,7 +158,10 @@ export default function SmartSearchInput({
             setSelectedIndex(-1);
           }}
           onKeyDown={handleKeyDown}
-          className={`h-9 w-full rounded-full border border-gray-200 bg-gray-50/80 pl-8 pr-7 text-xs text-[#123f2a] placeholder-gray-400 outline-none transition-all focus:border-[#45a057] focus:bg-white focus:ring-2 focus:ring-[#45a057]/15 flex items-center ${inputClassName}`}
+          className={`h-9 w-full rounded-full border border-gray-200 bg-gray-50/80 pl-8 pr-7 text-xs text-[#123f2a] placeholder-gray-400 outline-none
+            transition-[border-color,background-color,box-shadow,transform] duration-200
+            focus:border-[#45a057] focus:bg-white focus:ring-2 focus:ring-[#45a057]/20
+            focus:scale-[1.018] flex items-center ${inputClassName}`}
         />
 
         {query && (
@@ -183,11 +181,23 @@ export default function SmartSearchInput({
 
       {/* Smart Suggestions Dropdown Popup */}
       {isOpen && (
-        <div className="absolute left-0 right-0 top-full mt-1.5 z-[3500] w-full min-w-[280px] max-w-md rounded-2xl border border-gray-100 bg-white p-2 shadow-xl ring-1 ring-black/5 animate-fade-in">
+        <div
+          className="absolute left-0 right-0 top-full mt-1.5 z-[3500] w-full min-w-[280px] max-w-md rounded-2xl border border-gray-100 bg-white p-2 shadow-xl ring-1 ring-black/5"
+          style={{
+            animation: "searchDropdownIn 0.18s cubic-bezier(0.16,1,0.3,1) both",
+          }}
+        >
+          {/* Keyframes injected once */}
+          <style>{`
+            @keyframes searchDropdownIn {
+              from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+              to   { opacity: 1; transform: translateY(0)   scale(1); }
+            }
+          `}</style>
+
           {/* Header Title */}
-          <div className="flex items-center justify-between px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100">
+          <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100">
             <span>{query.trim() ? "Search Suggestions" : "Recommended for You"}</span>
-            <Sparkles className="h-3 w-3 text-[#45a057]" />
           </div>
 
           {/* Typo "Did you mean?" Correction Banner */}
@@ -209,26 +219,21 @@ export default function SmartSearchInput({
           {/* Default Recommendations List (Empty query) */}
           {!query.trim() && (
             <div className="py-1 space-y-0.5">
-              {defaultRecommendations.slice(0, 6).map((item, idx) => {
+              {defaultRecommendations.slice(0, 4).map((item, idx) => {
                 const isSelected = selectedIndex === idx;
                 return (
                   <div
                     key={item.id}
                     onClick={() => executeTarget(item)}
                     onMouseEnter={() => setSelectedIndex(idx)}
-                    className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${
+                    className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${
                       isSelected ? "bg-[#e8f3ec] text-[#123f2a]" : "text-gray-700 hover:bg-gray-50"
                     }`}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-gray-100 text-gray-600 shrink-0">
-                        {getIconForCategory(item.category)}
-                      </div>
-                      <span>{item.title}</span>
+                    <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-gray-100 text-gray-600 shrink-0">
+                      {getIconForCategory(item.category)}
                     </div>
-                    <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                      {item.category}
-                    </span>
+                    <span>{item.title}</span>
                   </div>
                 );
               })}
@@ -250,22 +255,14 @@ export default function SmartSearchInput({
                       key={res.target.id}
                       onClick={() => executeTarget(res.target)}
                       onMouseEnter={() => setSelectedIndex(idx)}
-                      className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${
+                      className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${
                         isSelected ? "bg-[#e8f3ec] text-[#123f2a]" : "text-gray-700 hover:bg-gray-50"
                       }`}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-gray-100 shrink-0">
-                          {getIconForCategory(res.target.category)}
-                        </div>
-                        <span className="truncate">{res.target.title}</span>
+                      <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-gray-100 shrink-0">
+                        {getIconForCategory(res.target.category)}
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                          {res.target.category}
-                        </span>
-                        <ArrowRight className="h-3 w-3 text-gray-400" />
-                      </div>
+                      <span className="truncate">{res.target.title}</span>
                     </div>
                   );
                 })
@@ -273,11 +270,7 @@ export default function SmartSearchInput({
             </div>
           )}
 
-          {/* Footer instruction */}
-          <div className="mt-1 pt-1.5 border-t border-gray-100 px-3 text-[10px] text-gray-400 flex items-center justify-between">
-            <span>Press <kbd className="rounded bg-gray-100 px-1 font-mono">↵</kbd> to search</span>
-            <span>Use <kbd className="rounded bg-gray-100 px-1 font-mono">↑</kbd> <kbd className="rounded bg-gray-100 px-1 font-mono">↓</kbd> to navigate</span>
-          </div>
+
         </div>
       )}
     </div>
