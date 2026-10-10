@@ -26,6 +26,23 @@ export async function PATCH(
     return NextResponse.json({ error: "Reservation not found." }, { status: 404 });
   }
 
+  if (action === "approve") {
+    const existingApproved = await Reservation.findOne({
+      _id: { $ne: resId },
+      amenityId: reservation.amenityId,
+      date: reservation.date,
+      bookingType: reservation.bookingType,
+      status: "approved",
+    } as any);
+
+    if (existingApproved) {
+      return NextResponse.json(
+        { error: "Conflict: This slot is already booked by an approved reservation." },
+        { status: 409 }
+      );
+    }
+  }
+
   const newStatus = action === "approve" ? "approved" : "declined";
 
   reservation.status = newStatus;

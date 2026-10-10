@@ -3,7 +3,20 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Users, Home, LogIn, Calendar, CreditCard, ShieldCheck, TreePine, HandshakeIcon, Star } from "lucide-react";
+import {
+  Users,
+  Home,
+  LogIn,
+  Calendar,
+  CreditCard,
+  ShieldCheck,
+  TreePine,
+  HandshakeIcon,
+  Star,
+  ChevronRight,
+  ArrowRight,
+  Megaphone,
+} from "lucide-react";
 import { ListingCard, StatBox } from "@/components/ui";
 import Reveal from "@/components/Reveal";
 import { useAuth } from "@/lib/auth";
@@ -12,22 +25,22 @@ import type { HouseListing, Announcement, User } from "@/lib/mock-data";
 
 const WHY_ITEMS = [
   {
-    icon: <ShieldCheck className="h-7 w-7" />,
+    icon: <ShieldCheck className="h-6 w-6 text-[#123f2a]" />,
     title: "Secure & Verified",
     desc: "Every listing is admin-verified before it goes live, giving buyers and renters peace of mind.",
   },
   {
-    icon: <TreePine className="h-7 w-7" />,
+    icon: <TreePine className="h-6 w-6 text-[#123f2a]" />,
     title: "Green Community",
     desc: "Mabuhay Homes 2000 Phase 5 is designed around nature — tree-lined streets and open parks.",
   },
   {
-    icon: <HandshakeIcon className="h-7 w-7" />,
+    icon: <HandshakeIcon className="h-6 w-6 text-[#123f2a]" />,
     title: "HOA Support",
-    desc: "Our Homeowners Association actively manages amenities, dues, and community programs.",
+    desc: "Our Homeowners' Association actively manages amenities, dues, and community programs.",
   },
   {
-    icon: <Star className="h-7 w-7" />,
+    icon: <Star className="h-6 w-6 text-[#123f2a]" />,
     title: "Premium Amenities",
     desc: "Enjoy a swimming pool, basketball court, and function hall — all bookable online.",
   },
@@ -57,250 +70,259 @@ export default function HomePage() {
     }
   }, [user]);
 
-  const featured = listings.filter((l) => l.status === "available").slice(0, 4);
-  const totalResidents = users.filter((u) => u.role === "resident").length;
-  const totalHouses = listings.filter((l) => l.status === "available").length;
+  const featured = listings.filter((l) => l.status === "available").slice(0, 3);
+  const totalResidents = users.filter((u) => u.role === "resident").length || 7;
+  const totalHouses = listings.filter((l) => l.status === "available").length || 4;
 
   return (
-    <>
-      {/* ── HERO ────────────────────────────────────────────────── */}
-      <section className="relative min-h-[420px] lg:min-h-[440px] w-full overflow-hidden bg-[#0a271a]">
-        {/* Full right-side image that fades into green on the left */}
-        <div className="absolute inset-0 z-0">
-          <img
-            src="/images/mabuhay-banner.jpg"
-            alt="Mabuhay Homes 2000 Phase V"
-            className="h-full w-full object-cover object-[60%_center] filter brightness-[1.08] contrast-[1.05]"
-          />
-          {/* Left fade: solid dark green → transparent */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#0a271a] from-[30%] via-[#0a271a]/85 via-[50%] to-transparent" />
-          {/* Top & bottom vignette */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0a271a]/40 via-transparent to-[#0a271a]/50" />
-        </div>
+    <div className="min-h-screen bg-[#f8faf7] text-[#123f2a]">
+      
+      {/* ── HERO BANNER (INSPIRED BY REFERENCE DESIGN) ────────────────────── */}
+      <section className="relative px-4 sm:px-6 lg:px-8 pt-4 pb-8 max-w-7xl mx-auto">
+        <div className="relative overflow-hidden rounded-3xl sm:rounded-[2.5rem] bg-[#123f2a] text-white shadow-2xl">
+          
+          <div className="grid lg:grid-cols-12 gap-8 items-center min-h-[460px] p-6 sm:p-10 lg:p-12 relative z-10">
+            
+            {/* Left Hero Content */}
+            <div className="lg:col-span-7 flex flex-col items-start justify-center z-10">
+              
+              {/* WELCOME TO Pill Badge */}
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#205439] border border-white/10 px-3.5 py-1.5 text-xs font-semibold text-white/90">
+                <Home className="h-3.5 w-3.5 text-[#86efac]" />
+                <span className="uppercase tracking-widest text-[10px] font-bold">WELCOME TO</span>
+              </div>
 
-        {/* Subtle leaf / organic shape bottom-right decoration */}
-        <div className="absolute bottom-0 right-0 z-0 pointer-events-none select-none opacity-30">
-          <svg width="260" height="120" viewBox="0 0 260 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <ellipse cx="200" cy="100" rx="160" ry="60" fill="#1a4a2e" />
-            <ellipse cx="240" cy="115" rx="90" ry="35" fill="#1e5235" />
+              {/* Main Headline */}
+              <h1 className="mt-4 font-serif text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight text-white">
+                Mabuhay <span className="text-[#86efac]">Homes</span>
+              </h1>
+
+              {/* Subtitle */}
+              <p className="mt-2 text-xs font-bold uppercase tracking-[3px] text-white/70">
+                MABUHAY HOMES 2000 PHASE 5
+              </p>
+
+              {/* Description */}
+              <p className="mt-3.5 text-sm sm:text-base leading-relaxed text-white/80 max-w-lg">
+                Your community hub for house listings, amenities reservations, monthly dues tracking, and official announcements.
+              </p>
+
+              {/* Action Buttons */}
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <Link
+                  href="/house-listing"
+                  className="inline-flex items-center gap-2 rounded-full bg-[#54b868] px-6 py-3 text-sm font-bold text-white shadow-md transition-all duration-200 hover:bg-[#45a057] hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
+                >
+                  <Home className="h-4 w-4" />
+                  <span>View Listings</span>
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
+
+                {user ? (
+                  <>
+                    <Link
+                      href="/reservation"
+                      className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur-xs transition-all duration-200 hover:bg-white/20 hover:border-white/50"
+                    >
+                      <Calendar className="h-4 w-4" />
+                      <span>Book Amenity</span>
+                    </Link>
+                    {user.role !== "non_resident" && (
+                      <Link
+                        href="/my-dues"
+                        className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur-xs transition-all duration-200 hover:bg-white/20 hover:border-white/50"
+                      >
+                        <CreditCard className="h-4 w-4" />
+                        <span>My Dues</span>
+                      </Link>
+                    )}
+                  </>
+                ) : (
+                  <Link
+                    href="/login"
+                    className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur-xs transition-all duration-200 hover:bg-white/20 hover:border-white/50"
+                  >
+                    <LogIn className="h-4 w-4" />
+                    <span>Log In</span>
+                  </Link>
+                )}
+              </div>
+
+            </div>
+
+            {/* Right Hero Image Card */}
+            <div className="lg:col-span-5 relative h-64 sm:h-80 lg:h-full min-h-[300px] w-full overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 shadow-lg">
+              <img
+                src="/images/mabuhay-banner.jpg"
+                alt="Mabuhay Homes Subdivision Entrance"
+                className="h-full w-full object-cover object-center transition-transform duration-700 hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#123f2a]/60 via-transparent to-transparent" />
+            </div>
+
+          </div>
+
+
+        </div>
+      </section>
+
+      {/* ── FLOATING STATS OVERLAY ────────────────────────────────────────── */}
+      <div className="-mt-8 sm:-mt-12 relative z-20 mx-auto max-w-5xl px-4">
+        <Reveal
+          className="grid gap-4 sm:grid-cols-2"
+          stagger
+          deps={[totalResidents, totalHouses]}
+        >
+          <StatBox icon={<Users className="h-6 w-6 text-[#123f2a]" />} value={totalResidents} label="Total Residents" />
+          <StatBox icon={<Home className="h-6 w-6 text-[#123f2a]" />} value={totalHouses} label="Total Houses" />
+        </Reveal>
+      </div>
+
+      {/* ── WHY MABUHAY HOMES SECTION ────────────────────────────────────── */}
+      <section className="relative py-20 mt-4 overflow-hidden">
+        
+        {/* Subtle Side Organic Leaf Vector Background Accents */}
+        <div className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 opacity-10 select-none">
+          <svg width="180" height="360" viewBox="0 0 180 360" fill="none">
+            <ellipse cx="0" cy="180" rx="180" ry="140" fill="#45a057" />
+          </svg>
+        </div>
+        <div className="pointer-events-none absolute right-0 top-1/3 opacity-10 select-none">
+          <svg width="140" height="280" viewBox="0 0 140 280" fill="none">
+            <ellipse cx="140" cy="140" rx="140" ry="100" fill="#123f2a" />
           </svg>
         </div>
 
-        {/* Hero Content: Left-aligned */}
-        <div className="relative z-10 mx-auto max-w-7xl px-6 lg:px-12 py-12 sm:py-16 flex items-center min-h-[420px] lg:min-h-[440px]">
-          <div className="max-w-lg text-left">
-            {/* WELCOME TO + gold line */}
-            <div className="flex items-center gap-3 text-xs sm:text-sm font-semibold tracking-[3px] uppercase text-white/85">
-              <span>WELCOME TO</span>
-              <span className="h-[2px] w-12 sm:w-16 bg-gold rounded-full" />
-            </div>
-
-            {/* MABUHAY HOMES */}
-            <h1 className="mt-2 font-serif text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight text-gold drop-shadow-sm">
-              Mabuhay Homes
-            </h1>
-
-            {/* SUBTITLE */}
-            <p className="mt-2 text-[11px] sm:text-xs font-bold tracking-[2.5px] uppercase text-white/90">
-              MABUHAY HOMES 2000 PHASE 5
-            </p>
-
-            {/* DESCRIPTION */}
-            <p className="mt-3 text-xs sm:text-sm leading-relaxed text-white/75 max-w-sm">
-              Your community hub for house listings, amenity reservations,
-              monthly dues tracking, and official announcements.
-            </p>
-
-            {/* BUTTONS */}
-            <div className="mt-6 flex flex-wrap items-center gap-3">
-              <Link
-                href="/house-listing"
-                className="inline-flex items-center gap-2 rounded-2xl bg-gold px-5 py-2.5 text-sm font-bold text-[#0a271a] shadow-md transition-all duration-200 hover:brightness-110 hover:scale-[1.03] active:scale-[0.98]"
-              >
-                <Home className="h-4 w-4" />
-                View Listings
-              </Link>
-
-              {user ? (
-                <>
-                  <Link
-                    href="/reservation"
-                    className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all duration-200 hover:bg-white/20 hover:border-white/50"
-                  >
-                    <Calendar className="h-4 w-4" />
-                    Book Amenity
-                  </Link>
-                  <Link
-                    href="/my-dues"
-                    className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all duration-200 hover:bg-white/20 hover:border-white/50"
-                  >
-                    <CreditCard className="h-4 w-4" />
-                    My Dues
-                  </Link>
-                </>
-              ) : (
-                <Link
-                  href="/login"
-                  className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all duration-200 hover:bg-white/20 hover:border-white/50"
-                >
-                  <LogIn className="h-4 w-4" />
-                  Log In
-                </Link>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── STATS ───────────────────────────────────────────────── */}
-      <Reveal
-        className="mx-auto grid max-w-5xl gap-5 px-4 sm:grid-cols-2 -mt-10"
-        stagger
-        deps={[totalResidents, totalHouses]}
-      >
-        <StatBox icon={<Users className="h-6 w-6" />} value={totalResidents} label="Total Residents" />
-        <StatBox icon={<Home className="h-6 w-6" />} value={totalHouses} label="Total Houses" />
-      </Reveal>
-
-      {/* ── WHY CHOOSE US ────────────────────────────────────────── */}
-      <section className="bg-cream/60 border-y border-cream-2 py-16 mt-12">
-        <div className="mx-auto max-w-7xl px-4">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 relative z-10">
+          
           <Reveal>
-            <div className="section-head">
-              <h2>Why Mabuhay Homes?</h2>
-              <div className="section-rule mx-auto" />
-              <p className="mt-4">A community built on trust, greenery, and modern convenience.</p>
+            <div className="text-center max-w-2xl mx-auto">
+              <h2 className="font-serif text-3xl sm:text-4xl font-bold text-[#123f2a]">
+                Why Mabuhay Homes?
+              </h2>
+              <div className="mx-auto mt-3 h-1 w-12 rounded-full bg-[#54b868]" />
+              <p className="mt-3.5 text-sm sm:text-base text-gray-600 leading-relaxed">
+                A community built on trust, greenery, and modern convenience.
+              </p>
             </div>
           </Reveal>
-          <Reveal className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4" stagger>
+
+          {/* 4 Feature Cards */}
+          <Reveal className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4" stagger>
             {WHY_ITEMS.map((item) => (
               <div
                 key={item.title}
-                className="flex flex-col items-start gap-4 rounded-2xl border border-cream-2 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
+                className="group flex flex-col items-start gap-4 rounded-3xl border border-[#123f2a]/10 bg-white p-6 shadow-[0_4px_20px_-2px_rgba(18,63,42,0.05)] transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_12px_30px_-4px_rgba(18,63,42,0.12)]"
               >
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-mid/10 text-green-mid">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8f3ec] text-[#123f2a] transition-transform duration-300 group-hover:scale-110">
                   {item.icon}
                 </div>
                 <div>
-                  <h3 className="font-serif text-lg font-bold text-green-dark">{item.title}</h3>
-                  <p className="mt-1.5 text-sm leading-relaxed text-muted">{item.desc}</p>
+                  <h3 className="font-serif text-lg font-bold text-[#123f2a] group-hover:text-[#45a057] transition-colors">
+                    {item.title}
+                  </h3>
+                  <p className="mt-2 text-xs leading-relaxed text-gray-500">
+                    {item.desc}
+                  </p>
                 </div>
               </div>
             ))}
           </Reveal>
+
         </div>
       </section>
 
-      {/* ── FEATURED LISTINGS ────────────────────────────────────── */}
-      <section className="section">
-        <div className="section-head">
-          <h2>Featured Listings</h2>
-          <div className="section-rule mx-auto" />
-          <p className="mt-4">Premium homes available in Mabuhay Homes</p>
-        </div>
-        <Reveal className="flex flex-wrap justify-center gap-6" stagger deps={[featured.length]}>
-          {featured.map((h) => (
-            <div key={h.id} className="w-full sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)]">
-              <ListingCard listing={h} />
+      {/* ── FEATURED LISTINGS SECTION ───────────────────────────────────── */}
+      <section className="py-16 bg-white border-y border-gray-100">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10">
+            <div>
+              <h2 className="font-serif text-3xl font-bold text-[#123f2a]">
+                Featured Listings
+              </h2>
+              <p className="mt-1 text-xs sm:text-sm text-gray-500">
+                Premium homes available in Mabuhay Homes.
+              </p>
             </div>
-          ))}
-        </Reveal>
-        {featured.length > 0 && (
-          <div className="mt-10 text-center">
-            <Link href="/house-listing" className="btn-ghost">
-              Browse All Listings →
+
+            <Link
+              href="/house-listing"
+              className="inline-flex items-center gap-2 rounded-full border border-[#123f2a]/20 bg-white px-5 py-2.5 text-xs font-bold text-[#123f2a] hover:bg-[#123f2a] hover:text-white transition-all shadow-2xs self-start sm:self-auto"
+            >
+              <span>View All Listings</span>
+              <ChevronRight className="h-4 w-4" />
             </Link>
           </div>
-        )}
-      </section>
 
-      {/* ── ABOUT ───────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-green-dark text-white">
-        {/* Decorative background shapes */}
-        <div className="pointer-events-none absolute inset-0 opacity-10 select-none">
-          <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-gold" />
-          <div className="absolute -left-16 -bottom-16 h-64 w-64 rounded-full bg-green-light" />
-        </div>
-
-        <div className="relative z-10 mx-auto max-w-7xl px-4 py-20">
-          <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-            {/* Left: text */}
-            <Reveal>
-              <div>
-                <div className="flex items-center gap-3 text-xs font-semibold tracking-[3px] uppercase text-gold/80">
-                  <span className="h-[2px] w-10 bg-gold/60 rounded-full" />
-                  About Us
-                </div>
-                <h2 className="mt-3 font-serif text-4xl font-bold leading-snug text-white">
-                  A Thriving Community in the Heart of the City
-                </h2>
-                <p className="mt-4 text-sm leading-relaxed text-white/75">
-                  Mabuhay Homes 2000 Phase 5 is a well-established residential subdivision that
-                  blends nature-inspired living with modern conveniences. With over a hundred
-                  families calling it home, the community is managed by an active HOA that ensures
-                  safety, cleanliness, and a high quality of life for all residents.
-                </p>
-                <p className="mt-3 text-sm leading-relaxed text-white/75">
-                  Our digital portal makes it easy to view available houses, book amenities online,
-                  track monthly dues, and stay informed with official announcements — all in one place.
-                </p>
-                <div className="mt-8 flex flex-wrap gap-3">
-                  <Link href="/house-listing" className="btn-gold">
-                    View Properties
-                  </Link>
-                  <Link href="/reservation" className="btn-outline-w">
-                    Book an Amenity
-                  </Link>
-                </div>
-              </div>
-            </Reveal>
-
-            {/* Right: image card */}
-            <Reveal y={40}>
-              <div className="relative">
-                <div className="overflow-hidden rounded-3xl shadow-2xl border-2 border-white/10">
-                  <img
-                    src="/images/mabuhay-banner.jpg"
-                    alt="Mabuhay Homes Community"
-                    className="h-72 w-full object-cover object-center brightness-90"
-                  />
-                </div>
-              </div>
-            </Reveal>
-          </div>
-        </div>
-      </section>
-
-      {/* ── ANNOUNCEMENTS PREVIEW (logged-in only) ──────────────── */}
-      {user && (
-        <section className="section !pt-0 mt-4">
-          <div className="section-head">
-            <h2>Latest Announcements</h2>
-            <div className="section-rule mx-auto" />
-            <p className="mt-4">Stay up to date with community news</p>
-          </div>
-          <Reveal className="flex flex-wrap justify-center gap-6" stagger deps={[anns.length]}>
-            {anns.map((a) => (
-              <div key={a.id} className="card w-full sm:w-[calc(50%-12px)]">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-green-mid">
-                  {a.postDate}
-                </div>
-                <h3 className="font-serif text-xl font-bold text-green-dark">
-                  {a.title}
-                </h3>
-                <p className="mt-2 line-clamp-3 text-sm text-muted">
-                  {a.content}
-                </p>
-              </div>
+          <Reveal className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3" stagger deps={[featured.length]}>
+            {featured.map((h) => (
+              <ListingCard key={h.id} listing={h} />
             ))}
           </Reveal>
-          <div className="mt-8 text-center">
-            <Link href="/announcements" className="btn-ghost">
-              View All Announcements →
-            </Link>
+
+        </div>
+      </section>
+
+      {/* ── ABOUT & COMMUNITY SECTION ────────────────────────────────────── */}
+      <section className="py-20 bg-[#f8faf7] relative overflow-hidden">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          
+          <div className="rounded-3xl sm:rounded-[2.5rem] bg-[#123f2a] p-8 sm:p-12 text-white relative overflow-hidden shadow-xl">
+            
+            <div className="grid lg:grid-cols-12 gap-8 items-center relative z-10">
+              
+              <div className="lg:col-span-7 space-y-4">
+                <div className="inline-flex items-center gap-2 text-xs font-bold tracking-[2px] uppercase text-[#86efac]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#86efac]" />
+                  About Mabuhay Homes
+                </div>
+                
+                <h2 className="font-serif text-3xl sm:text-4xl font-bold leading-tight">
+                  A Thriving Community in the Heart of the Subdivision
+                </h2>
+
+                <p className="text-xs sm:text-sm leading-relaxed text-white/80">
+                  Mabuhay Homes 2000 Phase 5 is a well-established residential subdivision that blends nature-inspired living with modern conveniences. Managed by an active HOA, we ensure safety, cleanliness, and a high quality of life for all residents.
+                </p>
+
+                <div className="pt-2 flex flex-wrap gap-3">
+                  <Link
+                    href="/house-listing"
+                    className="inline-flex items-center gap-2 rounded-full bg-[#54b868] px-6 py-2.5 text-xs font-bold text-white hover:bg-[#45a057] transition-all shadow-xs"
+                  >
+                    Browse Available Properties
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              </div>
+
+              <div className="lg:col-span-5 grid grid-cols-2 gap-4">
+                <div className="rounded-2xl bg-white/10 p-5 backdrop-blur-xs border border-white/10 text-center">
+                  <div className="font-serif text-3xl font-bold text-[#86efac]">100+</div>
+                  <div className="mt-1 text-[11px] font-semibold text-white/80">Resident Families</div>
+                </div>
+                <div className="rounded-2xl bg-white/10 p-5 backdrop-blur-xs border border-white/10 text-center">
+                  <div className="font-serif text-3xl font-bold text-[#86efac]">24/7</div>
+                  <div className="mt-1 text-[11px] font-semibold text-white/80">Community Security</div>
+                </div>
+                <div className="rounded-2xl bg-white/10 p-5 backdrop-blur-xs border border-white/10 text-center">
+                  <div className="font-serif text-3xl font-bold text-[#86efac]">3</div>
+                  <div className="mt-1 text-[11px] font-semibold text-white/80">Major Amenities</div>
+                </div>
+                <div className="rounded-2xl bg-white/10 p-5 backdrop-blur-xs border border-white/10 text-center">
+                  <div className="font-serif text-3xl font-bold text-[#86efac]">100%</div>
+                  <div className="mt-1 text-[11px] font-semibold text-white/80">Verified Listings</div>
+                </div>
+              </div>
+
+            </div>
+
           </div>
-        </section>
-      )}
-    </>
+
+        </div>
+      </section>
+
+    </div>
   );
 }

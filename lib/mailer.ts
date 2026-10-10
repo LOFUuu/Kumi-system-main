@@ -95,34 +95,63 @@ export async function sendVerificationEmail(to: string, verifyUrl: string): Prom
     return;
   }
 
-  try {
-    await getTransporter().sendMail({
-      from: `"Mabuhay Homes Community Portal" <${user}>`,
-      to,
-      subject: "Verify your Mabuhay Homes account",
-      text:
-        `Thanks for signing up for the Mabuhay Homes community portal. ` +
-        `Open the link below to verify your email address and activate your account. ` +
-        `The link expires in 24 hours.\n\n${verifyUrl}\n\n` +
-        `If you didn't sign up, you can ignore this email.`,
-      html:
-        `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#1b2a1e">` +
-        `<h2 style="color:#123f2a">Verify your Mabuhay Homes account</h2>` +
-        `<p>Thanks for signing up for the community portal. Click the button below to ` +
-        `verify your email address and activate your account. The link expires in <strong>24 hours</strong>.</p>` +
-        `<p style="text-align:center;margin:28px 0">` +
-        `<a href="${verifyUrl}" style="background:#1c6b3c;color:#fff;text-decoration:none;` +
-        `padding:12px 22px;border-radius:8px;font-weight:bold;display:inline-block">Verify email</a>` +
-        `</p>` +
-        `<p>If the button doesn't work, copy and paste this link into your browser:</p>` +
-        `<p style="word-break:break-all;color:#555">${verifyUrl}</p>` +
-        `<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0" />` +
-        `<p style="color:#888;font-size:12px">If you didn't sign up, ignore this email.</p>` +
-        `</div>`,
-    });
-  } catch (err: any) {
-    console.warn(`[Mailer Warning] Could not send email via SMTP (${err?.message || err}). Verification link for ${to}: ${verifyUrl}`);
-  }
+  await getTransporter().sendMail({
+    from: `"Mabuhay Homes Community Portal" <${user}>`,
+    to,
+    subject: "Verify your Mabuhay Homes account",
+    text:
+      `Thanks for signing up for the Mabuhay Homes community portal. ` +
+      `Open the link below to verify your email address and activate your account. ` +
+      `The link expires in 24 hours.\n\n${verifyUrl}\n\n` +
+      `If you didn't sign up, you can ignore this email.`,
+    html:
+      `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#1b2a1e">` +
+      `<h2 style="color:#123f2a">Verify your Mabuhay Homes account</h2>` +
+      `<p>Thanks for signing up for the community portal. Click the button below to ` +
+      `verify your email address and activate your account. The link expires in <strong>24 hours</strong>.</p>` +
+      `<p style="text-align:center;margin:28px 0">` +
+      `<a href="${verifyUrl}" style="background:#1c6b3c;color:#fff;text-decoration:none;` +
+      `padding:12px 22px;border-radius:8px;font-weight:bold;display:inline-block">Verify email</a>` +
+      `</p>` +
+      `<p>If the button doesn't work, copy and paste this link into your browser:</p>` +
+      `<p style="word-break:break-all;color:#555">${verifyUrl}</p>` +
+      `<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0" />` +
+      `<p style="color:#888;font-size:12px">If you didn't sign up, ignore this email.</p>` +
+      `</div>`,
+  });
+}
+
+export async function sendContactEmail(data: {
+  fullName: string;
+  email: string;
+  subject?: string;
+  message: string;
+}): Promise<void> {
+  const user = process.env.EMAIL_USER;
+  if (!user) throw new Error("EMAIL_USER is not configured");
+
+  const recipient = process.env.ADMIN_EMAIL || user;
+
+  await getTransporter().sendMail({
+    from: `"Mabuhay Homes Contact Form" <${user}>`,
+    to: recipient,
+    replyTo: `"${data.fullName}" <${data.email}>`,
+    subject: `[Contact HOA] ${data.subject || "New Inquiry from " + data.fullName}`,
+    text:
+      `New Contact HOA Submission:\n\n` +
+      `Name: ${data.fullName}\n` +
+      `Email: ${data.email}\n` +
+      `Subject: ${data.subject || "N/A"}\n\n` +
+      `Message:\n${data.message}\n`,
+    html:
+      `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#1b2a1e;padding:20px;border:1px solid #e2e8f0;border-radius:8px">` +
+      `<h2 style="color:#123f2a">New Contact HOA Submission</h2>` +
+      `<p><strong>From:</strong> ${data.fullName} (&lt;${data.email}&gt;)</p>` +
+      `<p><strong>Subject:</strong> ${data.subject || "N/A"}</p>` +
+      `<hr style="border:none;border-top:1px solid #eee;margin:16px 0" />` +
+      `<p style="white-space:pre-wrap">${data.message}</p>` +
+      `</div>`,
+  });
 }
 
 export interface AdminListingNotificationPayload {
@@ -176,6 +205,41 @@ export async function sendAdminListingNotificationEmail(
       `</p>` +
       `<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0" />` +
       `<p style="color:#888;font-size:11px">This automated security notification was sent by the Mabuhay Homes Community Portal.</p>` +
+      `</div>`,
+  });
+}
+
+export async function sendNewsletterWelcomeEmail(to: string): Promise<void> {
+  const user = process.env.EMAIL_USER;
+  if (!user) {
+    console.warn(`[Mailer Warning] EMAIL_USER not configured. Skipping welcome email for ${to}`);
+    return;
+  }
+
+  await getTransporter().sendMail({
+    from: `"Mabuhay Homes Community Portal" <${user}>`,
+    to,
+    subject: "Welcome to Mabuhay Homes Newsletter!",
+    text:
+      `Thank you for subscribing to the Mabuhay Homes 2000 Phase 5 Newsletter!\n\n` +
+      `You will now receive regular updates, official HOA announcements, upcoming community events, and house listing updates directly in your inbox.\n\n` +
+      `Best regards,\n` +
+      `Mabuhay Homes HOA Team`,
+    html:
+      `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#1b2a1e;padding:24px;border:1px solid #e8f3ec;border-radius:12px;background:#ffffff">` +
+      `<h2 style="color:#123f2a;margin-top:0">Welcome to Mabuhay Homes Newsletter! 🎉</h2>` +
+      `<p>Thank you for subscribing to the <strong>Mabuhay Homes 2000 Phase 5</strong> community newsletter!</p>` +
+      `<p>You will now receive official community announcements, HOA updates, upcoming events, and property listing alerts right in your inbox.</p>` +
+      `<div style="background:#e8f3ec;padding:16px;border-radius:8px;margin:20px 0;color:#123f2a">` +
+      `<strong>Community Hub Quick Links:</strong>` +
+      `<ul style="margin:8px 0 0 0;padding-left:20px">` +
+      `<li>House Listings &amp; Available Homes</li>` +
+      `<li>Amenity Reservations</li>` +
+      `<li>Monthly Dues Tracking</li>` +
+      `</ul>` +
+      `</div>` +
+      `<hr style="border:none;border-top:1px solid #eee;margin:24px 0" />` +
+      `<p style="color:#666;font-size:12px;margin-bottom:0">Mabuhay Homes 2000 Phase 5 HOA • Community Portal</p>` +
       `</div>`,
   });
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   User,
   Mail,
@@ -13,14 +14,38 @@ import {
   CheckCircle2,
   MailCheck,
   TriangleAlert,
+  Loader2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 
 export default function RegisterPage() {
-  const { registerAccount } = useAuth();
+  const router = useRouter();
+  const { user, loading, registerAccount } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    if (!loading && user) {
+      const target = user.role === "admin"
+        ? "/admin"
+        : user.role === "counselor"
+        ? "/admin/residents"
+        : "/";
+      router.replace(target);
+    }
+  }, [user, loading, router]);
+
+  if (loading || user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-green-deep via-green-dark to-green-mid">
+        <div className="flex items-center gap-3 text-gold">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span className="font-semibold text-sm">Redirecting…</span>
+        </div>
+      </div>
+    );
+  }
   const [showConfirm, setShowConfirm] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const [isConfirmFocused, setIsConfirmFocused] = useState(false);

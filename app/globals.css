@@ -1,20 +1,24 @@
 @import "tailwindcss";
 
 /* ============================================================
-   Mabuhay Homes — Design System
-   Mirrors the PHP style.css: green/gold palette + serif/sans
+   Mabuhay Homes — Modern Forest Green & Sage Design System
+   Inspired by the Mabuhay Homes reference design.
    ============================================================ */
 
 @theme {
-  --color-green-deep: #0d1b12;
-  --color-green-dark: #1b4332;
-  --color-green-mid: #2d6a4f;
-  --color-green-light: #52b788;
+  --color-green-deep: #0e3020;
+  --color-green-dark: #123f2a;
+  --color-green-mid: #1e5a3c;
+  --color-green-light: #45a057;
+  --color-green-action: #54b868;
+  --color-mint-accent: #86efac;
+  --color-sage-light: #e8f3ec;
+  --color-sage-border: #d1e7dd;
   --color-gold: #f4c430;
   --color-gold-muted: #e9b84a;
-  --color-cream: #fdf8f0;
-  --color-cream-2: #f0ebe0;
-  --color-muted: #6b7a6e;
+  --color-cream: #f8faf7;
+  --color-cream-2: #e8eee9;
+  --color-muted: #5e6e62;
   --color-danger: #b91c1c;
   --color-danger-bg: #fef2f2;
 
@@ -24,8 +28,8 @@
 }
 
 :root {
-  --background: #ffffff;
-  --foreground: #1b2b22;
+  --background: #f8faf7;
+  --foreground: #12281c;
 }
 
 * {
@@ -50,8 +54,6 @@ body {
 }
 
 @layer base {
-  /* Layered so utility text colors (e.g. `.btn-green` -> `text-white`) can
-     override anchor color instead of `color: inherit` always winning. */
   a {
     color: inherit;
     text-decoration: none;
@@ -60,20 +62,26 @@ body {
 
 @layer components {
   /* ─── Buttons ─────────────────────────────────────────── */
+  .btn-primary-green {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-[#54b868] px-6 py-3 font-semibold text-white shadow-md transition-all duration-200 hover:bg-[#45a057] hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98];
+  }
+  .btn-hero-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-white/30 bg-white/10 px-5 py-3 font-semibold text-white backdrop-blur-sm transition-all duration-200 hover:bg-white/20 hover:border-white/50 hover:shadow-sm active:scale-[0.98];
+  }
+  .btn-outline-pill {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-[#123f2a]/20 bg-white px-5 py-2.5 text-sm font-semibold text-[#123f2a] shadow-xs transition-all duration-200 hover:border-[#123f2a] hover:bg-[#123f2a] hover:text-white hover:shadow-sm active:scale-[0.98];
+  }
   .btn-gold {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gold px-5 py-3 font-semibold text-green-deep transition-all duration-200 hover:brightness-110 hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98];
-  }
-  .btn-outline-w {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/40 px-5 py-3 font-semibold text-white transition-all duration-200 hover:bg-white/15 hover:border-white/60;
-  }
-  .btn-green {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-green-dark to-green-mid px-5 py-3 font-semibold text-white transition-all duration-200 hover:brightness-110 hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-gold px-5 py-2.5 font-semibold text-green-deep shadow-sm transition-all duration-200 hover:brightness-110 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98];
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-cream-2 bg-cream px-5 py-3 font-semibold text-green-dark transition-all duration-200 hover:bg-white hover:shadow-sm hover:-translate-y-0.5;
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-[#d1e7dd] bg-white px-5 py-2.5 font-semibold text-[#123f2a] shadow-xs transition-all duration-200 hover:bg-[#e8f3ec] hover:border-[#45a057] hover:shadow-sm hover:-translate-y-0.5;
+  }
+  .btn-green {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-[#123f2a] px-6 py-3 font-semibold text-white shadow-md transition-all duration-200 hover:bg-[#1b5338] hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98];
   }
   .btn-sm {
-    @apply !px-3 !py-2 !text-xs !rounded-lg;
+    @apply !px-3.5 !py-1.5 !text-xs !rounded-full;
   }
 
   /* ─── Map Badges ──────────────────────────────────────── */
@@ -81,23 +89,23 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 4px 10px;
+    padding: 5px 12px;
     border-radius: 9999px;
     font-family: inherit;
     font-size: 11px;
     font-weight: 700;
     color: #ffffff;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
     white-space: nowrap;
     border: 1.5px solid rgba(255, 255, 255, 0.9);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
   }
   .kumi-map-badge:hover, .kumi-map-badge.active {
     transform: scale(1.08);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
   }
-  .kumi-map-badge.house { background-color: #1a3826; }
-  .kumi-map-badge.park  { background-color: #2d6a4f; }
+  .kumi-map-badge.house { background-color: #123f2a; }
+  .kumi-map-badge.park  { background-color: #1e5a3c; }
   .kumi-map-badge.pool  { background-color: #0284c7; }
   .kumi-map-badge.court { background-color: #ea580c; }
   .kumi-map-badge.clubhouse { background-color: #7c3aed; }
@@ -106,9 +114,9 @@ body {
   /* ─── Leaflet Popups ──────────────────────────────────── */
   .leaflet-popup-content-wrapper {
     padding: 0 !important;
-    border-radius: 16px !important;
+    border-radius: 20px !important;
     overflow: hidden !important;
-    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1) !important;
+    box-shadow: 0 12px 30px -5px rgba(18,63,42,0.2) !important;
   }
   .leaflet-popup-content {
     margin: 0 !important;
@@ -130,12 +138,12 @@ body {
 
   /* ─── Cards ───────────────────────────────────────────── */
   .card {
-    @apply rounded-2xl border border-cream-2 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5;
+    @apply rounded-3xl border border-[#123f2a]/10 bg-white p-6 shadow-[0_4px_20px_-2px_rgba(18,63,42,0.05)] transition-all duration-300 hover:shadow-[0_12px_30px_-4px_rgba(18,63,42,0.1)] hover:-translate-y-1;
   }
 
   /* ─── Inputs ──────────────────────────────────────────── */
   .field {
-    @apply w-full rounded-xl border border-cream-2 bg-cream px-4 py-3 text-sm text-green-deep outline-none transition-all duration-150 focus:border-green-mid focus:bg-white focus:ring-2 focus:ring-green-mid/10;
+    @apply w-full rounded-2xl border border-[#d1e7dd] bg-[#f8faf7] px-4 py-3 text-sm text-[#123f2a] outline-none transition-all duration-150 focus:border-[#45a057] focus:bg-white focus:ring-2 focus:ring-[#45a057]/15;
   }
   .field-label {
     @apply mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-muted;
@@ -143,10 +151,10 @@ body {
 
   /* ─── Badges ──────────────────────────────────────────── */
   .badge        { @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold; }
-  .badge-sale   { @apply bg-green-light/15 text-green-mid; }
-  .badge-rent   { @apply bg-gold/20 text-green-deep; }
-  .badge-gold   { @apply bg-gold/20 text-green-deep; }
-  .badge-green  { @apply bg-green-light/15 text-green-mid; }
+  .badge-sale   { @apply bg-[#45a057] text-white shadow-xs; }
+  .badge-rent   { @apply bg-gold text-[#123f2a] shadow-xs font-bold; }
+  .badge-gold   { @apply bg-gold/20 text-[#123f2a]; }
+  .badge-green  { @apply bg-[#e8f3ec] text-[#123f2a] font-medium; }
   .badge-danger { @apply bg-danger-bg text-danger; }
   .badge-muted  { @apply bg-cream-2 text-muted; }
 
@@ -158,23 +166,23 @@ body {
     @apply mb-10 text-center;
   }
   .section-head h2 {
-    @apply font-serif text-4xl font-bold text-green-dark;
+    @apply font-serif text-3xl sm:text-4xl font-bold text-[#123f2a];
   }
   .section-head p {
-    @apply mt-2 text-muted;
+    @apply mt-2.5 text-sm sm:text-base text-muted;
   }
 
-  /* Decorative gold rule below section headings */
+  /* Decorative green rule below section headings */
   .section-rule {
-    @apply mx-auto mt-4 h-1 w-16 rounded-full bg-gold;
+    @apply mx-auto mt-3 h-1 w-12 rounded-full bg-[#54b868];
   }
 }
 
 /* ─── Thin scrollbars ─────────────────────────────────────── */
 .scroll-thin::-webkit-scrollbar        { width: 8px; height: 8px; }
-.scroll-thin::-webkit-scrollbar-thumb  { background: rgba(45,106,79,0.25); border-radius: 9999px; }
+.scroll-thin::-webkit-scrollbar-thumb  { background: rgba(30,90,60,0.2); border-radius: 9999px; }
 
-/* ─── Hide native browser password reveal / clear icons (AUTH-ISSUE-01) ─── */
+/* ─── Hide native browser password reveal / clear icons ─── */
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear,
 input[type="text"]::-ms-clear,
@@ -183,4 +191,3 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
   width: 0 !important;
   height: 0 !important;
 }
-

@@ -13,9 +13,21 @@ import type {
   PropertyViewing,
 } from "./mock-data";
 
+/** Error thrown by API helpers — carries an optional machine-readable `code`. */
+export class ApiError extends Error {
+  code?: string;
+  email?: string;
+  constructor(message: string, code?: string, email?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.email = email;
+  }
+}
+
 async function getJSON<T>(url: string, headers?: Record<string, string>): Promise<T> {
   const res = await fetch(url, { cache: "no-store", headers });
-  if (!res.ok) throw new Error(`Request failed: ${url} (${res.status})`);
+  if (!res.ok) throw new ApiError(`Request failed: ${url} (${res.status})`);
   return res.json() as Promise<T>;
 }
 
@@ -29,7 +41,9 @@ async function send<T>(url: string, method: string, body?: unknown, headers?: Re
   const json = await res.json().catch(() => null);
   if (!res.ok) {
     const message = (json as any)?.error || `Request failed: ${url} (${res.status})`;
-    throw new Error(message);
+    const code = (json as any)?.code as string | undefined;
+    const email = (json as any)?.email as string | undefined;
+    throw new ApiError(message, code, email);
   }
   return json as T;
 }

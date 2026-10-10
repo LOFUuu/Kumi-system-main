@@ -206,9 +206,9 @@ export default function MyDuesPage() {
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="font-serif text-4xl font-bold text-green-dark">My Dues</h1>
+          <h1 className="font-serif text-4xl font-bold text-green-dark">Monthly Homeownership Dues</h1>
           <p className="mt-1 text-sm text-muted">
-            Track your fixed ₱100 monthly homeownership dues and complete past payment history.
+            Track your fixed ₱100 monthly HOA dues. For amenity reservation payments and complete transaction receipts, view <a href="/history" className="font-semibold text-green-mid underline">History</a>.
           </p>
         </div>
 

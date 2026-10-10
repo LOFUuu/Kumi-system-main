@@ -123,11 +123,10 @@ export async function POST(req: NextRequest) {
     description: String(body.description || ""),
     ownerId: bodyOwnerId || uploadedById || 0,
     ownerName,
-    images: String(body.images || "")
-      ? String(body.images)
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
+    images: Array.isArray(body.images)
+      ? body.images.filter((s: unknown) => typeof s === "string" && Boolean(s.trim()))
+      : typeof body.images === "string" && Boolean(body.images.trim())
+      ? [body.images.trim()]
       : [],
     lat: 14.3049,
     lng: 120.98636,

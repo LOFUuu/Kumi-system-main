@@ -25,7 +25,7 @@ interface AuthContextValue {
     lotNo?: string;
   }) => Promise<void>;
   loginWithGoogle: (credential: string, opts?: { next?: string }) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   setRolePreview: (role: Role) => void;
 }
 
@@ -161,9 +161,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = target;
   };
 
-  const logout = () => {
-    fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
-    persist(null);
+  const logout = async (): Promise<void> => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", cache: "no-store" });
+    } catch (err) {
+      console.error("[Auth] Logout request failed:", err);
+    } finally {
+      persist(null);
+    }
   };
 
   const setRolePreview = (role: Role) => {

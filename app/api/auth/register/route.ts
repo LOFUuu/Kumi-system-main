@@ -68,7 +68,15 @@ export async function POST(req: NextRequest) {
   const origin = new URL(req.url).origin;
   const verifyUrl = `${origin}/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
 
-  await sendVerificationEmail(email, verifyUrl);
+  try {
+    await sendVerificationEmail(email, verifyUrl);
+  } catch (err: any) {
+    console.error("[Register] Could not send verification email:", err);
+    return NextResponse.json(
+      { error: "Account created, but we couldn't send the verification email. Please check your email settings or try again." },
+      { status: 502 }
+    );
+  }
 
   return NextResponse.json({ ok: true }, { status: existing ? 202 : 201 });
 }

@@ -4,9 +4,11 @@ import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Lock, TriangleAlert, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Lock, TriangleAlert, Eye, EyeOff, Loader2, MailCheck } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
+import { ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 
 function LoginForm() {
   const searchParams = useSearchParams();
@@ -17,22 +19,32 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState("");
+  const [resending, setResending] = useState(false);
+  const [resentOk, setResentOk] = useState(false);
 
   const next = searchParams.get("next") || "";
   const reason = searchParams.get("reason");
 
   useEffect(() => {
-    if (!loading && user?.role === "admin") {
-      router.replace("/admin");
+    if (!loading && user) {
+      const target = user.role === "admin"
+        ? "/admin"
+        : user.role === "counselor"
+        ? "/admin/residents"
+        : next && !next.startsWith("/login") && !next.startsWith("/register")
+        ? next
+        : "/";
+      router.replace(target);
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, next]);
 
-  if (loading || user?.role === "admin") {
+  if (loading || user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-green-deep via-green-dark to-green-mid">
         <div className="flex items-center gap-3 text-gold">
           <Loader2 className="h-6 w-6 animate-spin" />
-          <span className="font-semibold text-sm">Redirecting to Admin Dashboard…</span>
+          <span className="font-semibold text-sm">Redirecting…</span>
         </div>
       </div>
     );
@@ -46,11 +58,30 @@ function LoginForm() {
     }
     setSubmitting(true);
     setError("");
+    setUnverifiedEmail("");
+    setResentOk(false);
     try {
       await login(email, password, next ? { next } : undefined);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid email or password.");
+      if (err instanceof ApiError && err.code === "EMAIL_NOT_VERIFIED") {
+        setUnverifiedEmail(err.email || email);
+      } else {
+        setError(err instanceof Error ? err.message : "Invalid email or password.");
+      }
       setSubmitting(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setResending(true);
+    setResentOk(false);
+    try {
+      await api.resendVerification(unverifiedEmail);
+      setResentOk(true);
+    } catch {
+      setError("Could not resend the verification email. Please try again.");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -96,6 +127,30 @@ function LoginForm() {
           {error && (
             <div className="mb-4 flex items-start gap-2 rounded-xl bg-danger-bg p-3 text-sm text-danger">
               <TriangleAlert className="mt-0.5 h-4 w-4 flex-shrink-0" /> <span>{error}</span>
+            </div>
+          )}
+
+          {unverifiedEmail && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              <div className="flex items-start gap-2">
+                <MailCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
+                <span>
+                  <strong>Email not verified.</strong> Please check your inbox for the verification
+                  link we sent to <strong>{unverifiedEmail}</strong>.
+                </span>
+              </div>
+              {resentOk ? (
+                <p className="mt-3 text-xs font-semibold text-green-700">✓ Verification email resent! Check your inbox.</p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={resending}
+                  className="mt-3 text-xs font-semibold text-amber-700 underline hover:text-amber-900 disabled:opacity-60"
+                >
+                  {resending ? "Sending…" : "Resend verification email"}
+                </button>
+              )}
             </div>
           )}
 

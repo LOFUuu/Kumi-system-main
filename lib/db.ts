@@ -27,12 +27,29 @@ import {
   MONTH_NAMES,
 } from "./dues";
 
-// Convert a Mongoose doc (lean) to a plain object that matches the existing
-// app interfaces: expose the numeric _id we seeded as `id` and drop internals
-// plus credentials/security fields so they never leak to the client.
+function normalizeImages(imgs: any): string[] {
+  if (!imgs) return [];
+  const list = Array.isArray(imgs) ? imgs : typeof imgs === "string" ? [imgs] : [];
+  const result: string[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const curr = String(list[i] || "").trim();
+    if (!curr) continue;
+    if (/^data:image\/[a-zA-Z]+;base64$/i.test(curr) && i + 1 < list.length) {
+      result.push(curr + "," + String(list[i + 1]).trim());
+      i++;
+    } else {
+      result.push(curr);
+    }
+  }
+  return result;
+}
+
 function serialize<T>(doc: any): T {
   if (doc == null) return doc;
   const { _id, __v, createdAt, updatedAt, password, passwordHash, resetToken, resetTokenExpiry, emailVerified, verificationToken, verificationTokenExpiry, ...rest } = doc;
+  if (rest.images) {
+    rest.images = normalizeImages(rest.images);
+  }
   return { ...rest, id: _id } as T;
 }
 
@@ -259,8 +276,8 @@ export async function unarchiveAmenity(id: number | string): Promise<boolean> {
 export async function getBlockedDates(amenityId: number): Promise<string[]> {
   await dbConnect();
 
-  const [privateDates, publicGroups, amenity] = await Promise.all([
-    Reservation.find({ amenityId, reservationType: "private", status: "approved" })
+  const [approvedDates, publicGroups, amenity] = await Promise.all([
+    Reservation.find({ amenityId, status: "approved" })
       .distinct("date"),
     Reservation.aggregate<{ _id: string; pax: number }>([
       { $match: { amenityId, reservationType: "public", status: "approved" } },
@@ -274,7 +291,7 @@ export async function getBlockedDates(amenityId: number): Promise<string[]> {
     .filter((g) => g._id && g.pax >= capacity)
     .map((g) => g._id);
 
-  return Array.from(new Set([...privateDates, ...publicFull])).filter(Boolean);
+  return Array.from(new Set([...approvedDates, ...publicFull])).filter(Boolean);
 }
 
 // True if `date` is available for a new public booking with the given pax.

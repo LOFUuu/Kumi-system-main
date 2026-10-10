@@ -580,10 +580,11 @@ export default function AdminResidentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">
-                {paginatedUsers.map((u) => {
+                {paginatedUsers.map((u, idx) => {
                   const verification = getVerificationStatus(u);
                   const isSelected = selectedUser?.id === u.id;
                   const regDate = formatRegisteredDate(u.createdAt, u.id);
+                  const openUpward = idx >= Math.max(1, paginatedUsers.length - 3);
 
                   return (
                     <tr
@@ -686,7 +687,7 @@ export default function AdminResidentsPage() {
 
                             {openMenuId === u.id && (
                               <div
-                                className="absolute right-0 top-full z-[500] mt-1 w-48 rounded-xl border border-cream-2 bg-white py-1 shadow-xl animate-fade-in"
+                                className={`absolute right-0 ${openUpward ? "bottom-full mb-1" : "top-full mt-1"} z-[500] w-48 rounded-xl border border-cream-2 bg-white py-1 shadow-xl animate-fade-in`}
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {/* View Details */}

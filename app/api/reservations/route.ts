@@ -57,6 +57,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Booking date must be today or a future date." }, { status: 400 });
   }
 
+  const userEmail = String(body.userEmail || "").trim().toLowerCase();
+
+  // Prevent duplicate same-slot active (pending or approved) reservation for the same account
+  const duplicateQuery: Record<string, unknown> = {
+    amenityId,
+    date,
+    bookingType,
+    status: { $in: ["pending", "approved"] },
+  };
+
+  if (userEmail) {
+    duplicateQuery.userEmail = userEmail;
+  } else {
+    duplicateQuery.residentName = residentName;
+  }
+
+  const existingDuplicate = await Reservation.findOne(duplicateQuery as any);
+  if (existingDuplicate) {
+    return NextResponse.json(
+      { error: "You already have an active (pending or approved) reservation for this amenity, date, and session." },
+      { status: 409 }
+    );
+  }
+
   if (reservationType === "private") {
     const blocked = await getBlockedDates(amenityId);
     if (blocked.includes(date)) {

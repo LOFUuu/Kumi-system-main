@@ -19,26 +19,22 @@ declare global {
 
 const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
-// GIS uid only allows initialize() once per page load with a given client id;
-// track it at module scope so navigating between pages doesn't re-initialize.
-let gsiInitialized = false;
-
 export default function GoogleSignInButton({ redirectTo }: { redirectTo?: string }) {
   const { loginWithGoogle } = useAuth();
   const buttonRef = useRef<HTMLDivElement>(null);
-  const startedRef = useRef(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!CLIENT_ID || !buttonRef.current) return;
 
-    const start = () => {
+    let isSubscribed = true;
+
+    const renderGsiButton = () => {
       const gsi = window.google?.accounts?.id;
       const container = buttonRef.current;
-      if (!gsi || startedRef.current || !container) return;
-      startedRef.current = true;
+      if (!gsi || !container || !isSubscribed) return;
 
-      if (!gsiInitialized) {
+      try {
         gsi.initialize({
           client_id: CLIENT_ID,
           callback: async (response) => {
@@ -54,31 +50,57 @@ export default function GoogleSignInButton({ redirectTo }: { redirectTo?: string
             }
           },
         });
-        gsiInitialized = true;
-      }
 
-      gsi.renderButton(container, {
-        theme: "outline",
-        size: "large",
-        text: "continue_with",
-        width: Math.max(200, container.clientWidth),
-      });
+        container.innerHTML = "";
+        gsi.renderButton(container, {
+          theme: "outline",
+          size: "large",
+          text: "continue_with",
+          shape: "pill",
+          width: Math.max(220, container.clientWidth || 280),
+        });
+      } catch (e) {
+        console.error("[GIS Error]:", e);
+      }
     };
 
     if (window.google?.accounts?.id) {
-      start();
-      return;
+      renderGsiButton();
+    } else {
+      let script = document.querySelector<HTMLScriptElement>(
+        'script[src="https://accounts.google.com/gsi/client"]'
+      );
+      if (!script) {
+        script = document.createElement("script");
+        script.src = "https://accounts.google.com/gsi/client";
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+      }
+
+      const handleLoad = () => {
+        if (isSubscribed) renderGsiButton();
+      };
+      const handleError = () => {
+        if (isSubscribed) setError("Failed to load Google Sign-In SDK.");
+      };
+
+      script.addEventListener("load", handleLoad);
+      script.addEventListener("error", handleError);
+
+      if (window.google?.accounts?.id) {
+        renderGsiButton();
+      }
+
+      return () => {
+        isSubscribed = false;
+        script?.removeEventListener("load", handleLoad);
+        script?.removeEventListener("error", handleError);
+      };
     }
 
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.onload = start;
-    script.onerror = () => setError("Failed to load Google Sign-In.");
-    document.head.appendChild(script);
-
     return () => {
-      document.head.removeChild(script);
+      isSubscribed = false;
     };
   }, [loginWithGoogle, redirectTo]);
 
@@ -87,7 +109,7 @@ export default function GoogleSignInButton({ redirectTo }: { redirectTo?: string
       <button
         type="button"
         onClick={() => setError("Google Sign-In is not configured yet in environment variables.")}
-        className="flex w-full items-center justify-center gap-3 rounded-xl border border-gray-200 bg-white py-2.5 px-4 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 active:scale-[0.99]"
+        className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white py-2.5 px-4 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 active:scale-[0.99]"
       >
         <svg className="h-5 w-5 flex-shrink-0" viewBox="0 0 24 24">
           <path
@@ -113,10 +135,10 @@ export default function GoogleSignInButton({ redirectTo }: { redirectTo?: string
   }
 
   return (
-    <div>
+    <div className="w-full">
       <div
         ref={buttonRef}
-        className="flex w-full items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-white min-h-[44px] shadow-sm transition hover:bg-gray-50"
+        className="flex w-full items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white min-h-[44px] shadow-sm transition hover:bg-gray-50"
       />
       {error && <p className="mt-2 text-center text-xs font-medium text-danger">{error}</p>}
     </div>

@@ -12,8 +12,8 @@ function hashPassword(password) {
 mongoose.connect(process.env.MONGODB_URI).then(async () => {
   const newPassword = process.env.ADMIN_NEW_PASSWORD || "Mabuhay!P5#2026Admin";
   const newHash = hashPassword(newPassword);
-  const result = await mongoose.connection.db.collection("users").updateOne(
-    { email: "admin@mabuhay.com" },
+  const result = await mongoose.connection.db.collection("users").updateMany(
+    { $or: [{ email: "admin@mabuhay.com" }, { email: "mabuhay2000phase5@gmail.com" }, { role: "admin" }] },
     { $set: { passwordHash: newHash } }
   );
   console.log("Updated:", result.modifiedCount, "document(s)");

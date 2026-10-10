@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sendNewsletterWelcomeEmail } from "@/lib/mailer";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +28,17 @@ export async function POST(req: NextRequest) {
   }
 
   subscribers.add(email);
+
+  // Send real welcome email to the subscriber via Nodemailer
+  try {
+    await sendNewsletterWelcomeEmail(email);
+  } catch (err) {
+    console.error("[Newsletter Mailer Error]:", err);
+  }
+
   return NextResponse.json(
-    { message: "Thank you for subscribing! You will receive community updates and news." },
+    { message: "Thank you for subscribing! A welcome email has been sent to your inbox." },
     { status: 200 }
   );
 }
+
