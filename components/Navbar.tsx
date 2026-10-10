@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import { Search, ChevronDown, LogOut, Shield } from "lucide-react";
+import { ChevronDown, LogOut, Shield } from "lucide-react";
+import SmartSearchInput from "./SmartSearchInput";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -12,10 +13,7 @@ export default function Navbar() {
   const [showLogout, setShowLogout] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const router = useRouter();
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -27,26 +25,6 @@ export default function Navbar() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  // Handle Search Submission
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const query = searchQuery.trim();
-    if (!query) return;
-
-    if (pathname === "/house-listing") {
-      router.push(`/house-listing?q=${encodeURIComponent(query)}`);
-    } else if (pathname === "/reservation") {
-      router.push(`/reservation?q=${encodeURIComponent(query)}`);
-    } else if (pathname === "/my-dues") {
-      router.push(`/my-dues?q=${encodeURIComponent(query)}`);
-    } else if (pathname === "/history") {
-      router.push(`/history?q=${encodeURIComponent(query)}`);
-    } else {
-      router.push(`/house-listing?q=${encodeURIComponent(query)}`);
-    }
-    setMobileOpen(false);
-  };
 
   // Admin pages or logged-in admin user — hide the public navbar
   if (pathname.startsWith("/admin") || user?.role === "admin") return null;
@@ -111,24 +89,10 @@ export default function Navbar() {
         {/* RIGHT CONTROLS (SEARCH, NOTIF, PROFILE, LOGOUT) */}
         <div className="flex items-center justify-end gap-1.5 sm:gap-2.5 shrink-0 md:flex-1">
           
-          {/* Functional Desktop Search Form */}
-          <form onSubmit={handleSearchSubmit} className="relative hidden lg:block w-36 xl:w-44">
-            <button
-              type="submit"
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#123f2a] transition-colors"
-              title="Search"
-              aria-label="Submit Search"
-            >
-              <Search className="h-3.5 w-3.5" />
-            </button>
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 w-full rounded-full border border-gray-200 bg-gray-50/80 pl-8 pr-3 text-xs text-[#123f2a] placeholder-gray-400 outline-none transition-all focus:border-[#45a057] focus:bg-white focus:ring-2 focus:ring-[#45a057]/15 flex items-center"
-            />
-          </form>
+          {/* Smart Autocomplete Desktop Search */}
+          <div className="hidden lg:block w-36 xl:w-48">
+            <SmartSearchInput placeholder="Search..." variant="navbar" />
+          </div>
 
 
           {/* User Profile Pill Dropdown */}
@@ -247,22 +211,13 @@ export default function Navbar() {
       {mobileOpen && (
         <div className="md:hidden border-t border-gray-100 bg-white px-4 pb-4 pt-2 space-y-2 shadow-lg">
           {/* Mobile Search Input */}
-          <form onSubmit={handleSearchSubmit} className="relative w-full my-2">
-            <button
-              type="submit"
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#123f2a]"
-              aria-label="Search"
-            >
-              <Search className="h-4 w-4" />
-            </button>
-            <input
-              type="text"
+          <div className="my-2">
+            <SmartSearchInput
               placeholder="Search listings, amenities..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10 w-full rounded-full border border-gray-200 bg-gray-50 pl-9 pr-4 text-xs text-[#123f2a] placeholder-gray-400 outline-none focus:border-[#45a057] focus:bg-white"
+              variant="navbar"
+              onSelectCallback={() => setMobileOpen(false)}
             />
-          </form>
+          </div>
 
           {nav.map((item) => {
             const active = pathname === item.href;
