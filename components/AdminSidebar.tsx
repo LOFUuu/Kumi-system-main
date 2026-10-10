@@ -19,7 +19,6 @@ import {
   ChevronRight,
   LayoutDashboard,
   Eye,
-  Database,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
@@ -33,7 +32,6 @@ const LINKS: { href: string; label: string; icon: LucideIcon; sub?: boolean; amb
   { href: "/admin/payments", label: "Payments", icon: CreditCard },
   { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
   { href: "/admin/reports", label: "Reports", icon: BarChart3 },
-  { href: "/admin/erd", label: "Database ERD", icon: Database },
   { href: "/admin/archive", label: "Archive", icon: Archive, amber: true },
 ];
 

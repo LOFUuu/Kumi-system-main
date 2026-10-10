@@ -10,6 +10,7 @@ import {
   Compass,
   X,
   HelpCircle,
+  ArrowRight,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { findSmartSuggestions, SYSTEM_SEARCH_TARGETS, type SearchTarget } from "@/lib/fuzzy-search";

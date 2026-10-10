@@ -119,27 +119,9 @@ export default function Footer() {
 
           {/* Social Icons */}
           <div className="mt-5 flex gap-2">
-            <SocialIcon href="https://facebook.com" label="Facebook">
+            <SocialIcon href="https://www.facebook.com/mabuhay.homes.phase.v" label="Facebook">
               <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
                 <path d="M13 22v-8h2.7l.4-3H13V9c0-.9.3-1.5 1.6-1.5H16V4.8a23 23 0 00-2.4-.1c-2.4 0-4 1.5-4 4.1V11H7v3h2.6v8H13z" />
-              </svg>
-            </SocialIcon>
-            <SocialIcon href="https://x.com" label="Twitter">
-              <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
-                <path d="M22 5.9c-.7.3-1.5.6-2.3.7.8-.5 1.5-1.3 1.8-2.3-.8.5-1.7.8-2.6 1a4.1 4.1 0 00-7 3.7A11.6 11.6 0 013 4.9a4.1 4.1 0 001.3 5.5c-.6 0-1.2-.2-1.8-.5v.1c0 2 1.4 3.6 3.3 4a4.1 4.1 0 01-1.9.1 4.1 4.1 0 003.8 2.8A8.2 8.2 0 012 18.4a11.6 11.6 0 006.3 1.8c7.5 0 11.7-6.3 11.7-11.7v-.5c.8-.6 1.5-1.3 2-2.1z" />
-              </svg>
-            </SocialIcon>
-            <SocialIcon href="https://youtube.com" label="YouTube">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-4 w-4">
-                <path d="M2.5 8.5a3 3 0 013-3h13a3 3 0 013 3v7a3 3 0 01-3 3h-13a3 3 0 01-3-3v-7z" />
-                <path d="M10 9l6 3-6 3V9z" fill="currentColor" stroke="none" />
-              </svg>
-            </SocialIcon>
-            <SocialIcon href="https://instagram.com" label="Instagram">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-4 w-4">
-                <rect x="3" y="3" width="18" height="18" rx="5" />
-                <circle cx="12" cy="12" r="4" />
-                <circle cx="17.5" cy="6.5" r=".8" fill="currentColor" />
               </svg>
             </SocialIcon>
           </div>

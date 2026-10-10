@@ -1,7 +1,7 @@
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
 
-let transporter: Transporter | null = null;
+let cachedTransporter: Transporter | null = null;
 
 function getTransporter(): Transporter {
   const user = process.env.EMAIL_USER;
@@ -9,12 +9,21 @@ function getTransporter(): Transporter {
   if (!user || !rawPass) {
     throw new Error("EMAIL_USER/EMAIL_PASS are not configured in environment variables.");
   }
-  const pass = rawPass.replace(/\s+/g, "");
-  
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass },
-  });
+
+  if (!cachedTransporter) {
+    const pass = rawPass.replace(/\s+/g, "");
+    cachedTransporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: { user, pass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    });
+  }
+
+  return cachedTransporter;
 }
 
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
