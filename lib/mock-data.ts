@@ -323,6 +323,19 @@ export interface GcashPayment {
   gcashRef?: string;
 }
 
+export interface PaymentConfig {
+  id?: string;
+  category: "amenity" | "dues";
+  accountName: string;
+  accountNumber: string;
+  qrCodeUrl?: string;
+  instructions?: string;
+  isActive: boolean;
+  updatedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Transaction {
   id: number;
   residentName: string;
@@ -336,6 +349,24 @@ export interface Transaction {
   status: "pending" | "approved" | "voided";
   createdAt: string;
   payment?: GcashPayment;
+  // ── Archiving ───────────────────────────────────────────────────────────
+  isArchived?: boolean;
+  archiveReason?: string;
+  archivedBy?: string;
+  archivedAt?: string;
+  // ── Enriched relationship metadata (computed/joined) ────────────────────
+  amenityName?: string;
+  reservationDate?: string;
+  bookingType?: "day" | "night";
+  reservationType?: "public" | "private";
+  dueMonth?: string;
+  dueDate?: string;
+  amountDue?: number;
+  amountPaid?: number;
+  billingMonth?: string;
+  billingYear?: number;
+  blockNo?: string;
+  lotNo?: string;
 }
 
 export const MOCK_TRANSACTIONS: Transaction[] = [

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUsers, createUser, setEmailVerified, updateUserById } from "@/lib/db";
+import { createUser, getUserByEmailForAuth, setEmailVerified, updateUserById } from "@/lib/db";
 import { createSessionCookieValue } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -77,8 +77,7 @@ export async function POST(req: NextRequest) {
   // address itself, so these accounts are immediately email-verified — and any
   // account registered by password that was still unverified gets auto-verified
   // here, since signing in via Google proves ownership of the inbox.
-  const users = await getUsers();
-  let user = users.find((u) => u.email.trim().toLowerCase() === email);
+  let user = await getUserByEmailForAuth(email);
   if (!user) {
     const fullName = profile.name?.trim() || email.split("@")[0] || "Resident";
     const assignedRole = isAdminEmail ? "admin" : "non_resident";
@@ -94,11 +93,24 @@ export async function POST(req: NextRequest) {
       }
     }
     // Proves ownership of the inbox, so a pending password sign-up becomes
-    // immediately usable.
+    // immediately usable, while preserving the existing password.
     await setEmailVerified(email, true);
   }
 
-  const res = NextResponse.json({ user });
+  // Strip sensitive credentials before returning user in response
+  const publicUser = {
+    id: user.id,
+    fullName: user.fullName,
+    email: user.email,
+    role: user.role,
+    isActive: user.isActive,
+    blockNo: user.blockNo,
+    lotNo: user.lotNo,
+    phone: user.phone,
+    cedula: user.cedula,
+  };
+
+  const res = NextResponse.json({ user: publicUser });
   res.cookies.set("kumi_session", createSessionCookieValue(user), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

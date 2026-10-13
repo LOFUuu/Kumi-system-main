@@ -15,37 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
-
-/* ── Password strength helpers ──────────────────────────────────────────── */
-
-interface StrengthResult {
-  score: number;       // 0–4
-  label: string;
-  color: string;       // Tailwind bg colour
-  checks: {
-    label: string;
-    pass: boolean;
-  }[];
-}
-
-function evaluatePassword(pw: string): StrengthResult {
-  const checks = [
-    { label: "At least 8 characters",           pass: pw.length >= 8 },
-    { label: "Contains a number (0-9)",          pass: /\d/.test(pw) },
-    { label: "Contains a letter (a-z / A-Z)",   pass: /[a-zA-Z]/.test(pw) },
-    { label: "Contains a special character",     pass: /[^a-zA-Z0-9]/.test(pw) },
-  ];
-  const score = checks.filter((c) => c.pass).length;
-  const label = ["", "Weak", "Fair", "Good", "Strong"][score] ?? "";
-  const color = [
-    "",
-    "bg-red-400",
-    "bg-amber-400",
-    "bg-sky-400",
-    "bg-emerald-500",
-  ][score] ?? "";
-  return { score, label, color, checks };
-}
+import { validatePassword } from "@/lib/password-validation";
 
 /* ── Main reset form ────────────────────────────────────────────────────── */
 
@@ -62,16 +32,13 @@ function ResetForm() {
   const [submitting, setSubmitting]   = useState(false);
   const [done, setDone]               = useState(false);
 
-  const strength = useMemo(() => evaluatePassword(password), [password]);
+  const strength = useMemo(() => validatePassword(password), [password]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters long.");
-      return;
-    }
-    if (!/(?=.*[a-zA-Z])(?=.*\d)/.test(password)) {
-      setError("Password must contain at least one letter and one number.");
+    const pwCheck = validatePassword(password);
+    if (!pwCheck.valid) {
+      setError(pwCheck.error || "Password does not meet the strength requirements.");
       return;
     }
     if (password !== confirm) {
@@ -190,7 +157,7 @@ function ResetForm() {
                     <div className="mt-2 space-y-2">
                       <div className="flex items-center gap-2">
                         <div className="flex flex-1 gap-1">
-                          {[1, 2, 3, 4].map((i) => (
+                          {[1, 2, 3, 4, 5].map((i) => (
                             <div
                               key={i}
                               className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
@@ -267,7 +234,7 @@ function ResetForm() {
 
                 <button
                   type="submit"
-                  disabled={submitting || strength.score < 2 || password !== confirm}
+                  disabled={submitting || !strength.valid || password !== confirm}
                   className="btn-green w-full disabled:opacity-60 flex items-center justify-center gap-2"
                 >
                   {submitting ? (

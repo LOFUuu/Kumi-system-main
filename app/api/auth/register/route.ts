@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createUser, deleteUserById, getUserByEmailForAuth, saveVerificationToken } from "@/lib/db";
 import { createVerificationToken, hashPassword } from "@/lib/password";
+import { validatePassword } from "@/lib/password-validation";
 import { sendVerificationEmail } from "@/lib/mailer";
 import type { Role } from "@/lib/mock-data";
 
@@ -29,8 +30,16 @@ export async function POST(req: NextRequest) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   }
-  if (password.length < 8) {
-    return NextResponse.json({ error: "Password must be at least 8 characters long." }, { status: 400 });
+
+  // ── Strong password validation ────────────────────────────────────────
+  const pwCheck = validatePassword(password);
+  if (!pwCheck.valid) {
+    // Return all unmet requirements so the user can fix them at once
+    const missing = pwCheck.checks.filter((c) => !c.pass).map((c) => c.label);
+    return NextResponse.json(
+      { error: `Password does not meet the requirements. Missing: ${missing.join(", ")}.` },
+      { status: 400 }
+    );
   }
 
   const existing = await getUserByEmailForAuth(email);

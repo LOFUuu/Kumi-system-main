@@ -7,13 +7,14 @@ import QRCode from "react-qr-code";
 import { Lock, Check, Upload, Image as ImageIcon, X, Smartphone, Receipt, FileText } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { buildPlaceholderQR } from "@/lib/payment";
+import { buildPlaceholderQR, HOAGCashNumber } from "@/lib/payment";
 import AvailabilityCalendar from "@/components/AvailabilityCalendar";
 import {
   formatPHP,
   getBookingTotal,
   getRate,
   type Amenity,
+  type PaymentConfig,
 } from "@/lib/mock-data";
 
 function BookingForm() {
@@ -41,6 +42,7 @@ function BookingForm() {
   const [receiptPreview, setReceiptPreview] = useState<string>("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [gcashConfig, setGcashConfig] = useState<PaymentConfig | null>(null);
 
   const isResident = user?.role === "resident";
 
@@ -83,6 +85,7 @@ function BookingForm() {
       if (a) setAmenity(a);
     });
     api.availability(id).then((r) => setBlocked(r.blocked)).catch(() => {});
+    api.paymentConfig("amenity").then(setGcashConfig).catch(() => {});
   }, [id]);
 
   const rate = amenity ? getRate(amenity, bookingType, isResident) : 0;
@@ -290,16 +293,35 @@ function BookingForm() {
 
             <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
               <div className="mx-auto w-fit rounded-2xl bg-white p-3 shadow-sm">
-                <QRCode value={buildPlaceholderQR(downpayment)} size={150} />
+                {gcashConfig?.qrCodeUrl ? (
+                  <img
+                    src={gcashConfig.qrCodeUrl}
+                    alt="GCash QR Code"
+                    className="h-[150px] w-[150px] object-contain mx-auto rounded-lg"
+                  />
+                ) : (
+                  <QRCode
+                    value={buildPlaceholderQR(downpayment, gcashConfig?.accountNumber || HOAGCashNumber)}
+                    size={150}
+                  />
+                )}
               </div>
-              <div className="mt-3 font-serif text-2xl font-bold tracking-[3px] text-blue-600">0917 123 4567</div>
-              <div className="text-xs font-semibold text-muted">MABUHAY HOMES HOA — Scan to Pay</div>
+              <div className="mt-3 font-serif text-2xl font-bold tracking-[3px] text-blue-600">
+                {gcashConfig?.accountNumber || "0917 123 4567"}
+              </div>
+              <div className="text-xs font-semibold text-muted">
+                {gcashConfig?.accountName || "MABUHAY HOMES HOA — Scan to Pay"}
+              </div>
               <p className="mt-1 inline-block rounded-full bg-blue-100 px-3 py-0.5 text-[10px] font-semibold text-blue-700">
-                Demo QR — live GCash QR replaces this when the gateway is connected
+                Official HOA Amenity Payment Account
               </p>
               <p className="mt-3 text-[11px] text-muted">
-                Amount updates automatically with your reservation type, session, and pax.
-                Send exactly <strong className="text-green-mid">{formatPHP(downpayment)}</strong> now, or upload your receipt and enter your reference number below.
+                {gcashConfig?.instructions || (
+                  <>
+                    Amount updates automatically with your reservation type, session, and pax.
+                    Send exactly <strong className="text-green-mid">{formatPHP(downpayment)}</strong> now, or upload your receipt and enter your reference number below.
+                  </>
+                )}
               </p>
             </div>
 

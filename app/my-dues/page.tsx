@@ -11,7 +11,9 @@ import {
   getCurrentDueMonth,
   DEFAULT_MONTHLY_DUE,
 } from "@/lib/dues";
-import { formatPHP, type DuesRecord } from "@/lib/mock-data";
+import { formatPHP, type DuesRecord, type PaymentConfig } from "@/lib/mock-data";
+import QRCode from "react-qr-code";
+import { buildPlaceholderQR, HOAGCashNumber } from "@/lib/payment";
 import {
   Upload,
   X,
@@ -48,6 +50,11 @@ export default function MyDuesPage() {
   const [payId, setPayId] = useState<DuesRecord | null>(null);
   const [amount, setAmount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<"gcash">("gcash");
+  const [gcashConfig, setGcashConfig] = useState<PaymentConfig | null>(null);
+
+  useEffect(() => {
+    api.paymentConfig("dues").then(setGcashConfig).catch(() => {});
+  }, []);
   const [gcashRef, setGcashRef] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string>("");
@@ -520,9 +527,30 @@ export default function MyDuesPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-center">
-                    <div className="text-xs font-bold text-blue-700">MABUHAY HOMES HOA GCASH</div>
-                    <div className="font-mono text-sm font-bold text-blue-900 mt-0.5">0917 123 4567</div>
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-center">
+                    <div className="mx-auto w-fit rounded-xl bg-white p-2.5 shadow-xs mb-2.5">
+                      {gcashConfig?.qrCodeUrl ? (
+                        <img
+                          src={gcashConfig.qrCodeUrl}
+                          alt="GCash QR Code"
+                          className="h-28 w-28 object-contain mx-auto rounded-md"
+                        />
+                      ) : (
+                        <QRCode
+                          value={buildPlaceholderQR(amount || 100, gcashConfig?.accountNumber || HOAGCashNumber)}
+                          size={112}
+                        />
+                      )}
+                    </div>
+                    <div className="text-xs font-bold text-blue-900 uppercase tracking-wider">
+                      {gcashConfig?.accountName || "MABUHAY HOMES HOA GCASH"}
+                    </div>
+                    <div className="font-mono text-base font-bold text-blue-600 mt-0.5">
+                      {gcashConfig?.accountNumber || "0917 123 4567"}
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted">
+                      {gcashConfig?.instructions || "Official HOA Monthly Dues Account · Scan or send payment"}
+                    </p>
                   </div>
 
                   <div>

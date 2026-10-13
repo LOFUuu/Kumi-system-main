@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import dbConnect from "./mongoose";
 import {
   Listing,
@@ -7,6 +8,7 @@ import {
   Reservation,
   DuesRecord,
   Transaction,
+  PaymentConfig,
 } from "../models";
 import type {
   HouseListing,
@@ -16,6 +18,7 @@ import type {
   Reservation as ReservationType,
   DuesRecord as DuesType,
   Transaction as TransactionType,
+  PaymentConfig as PaymentConfigType,
 } from "./mock-data";
 import {
   DEFAULT_MONTHLY_DUE,
@@ -331,9 +334,21 @@ export async function getAnnouncements(activeOnly = false): Promise<Announcement
 
 function userFilter(id: number | string) {
   const numId = Number(id);
-  return Number.isFinite(numId)
-    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
-    : { $or: [{ _id: String(id) }, { id: String(id) }] };
+  const conditions: any[] = [];
+  if (Number.isFinite(numId)) {
+    conditions.push({ _id: numId });
+    conditions.push({ id: numId });
+  }
+  conditions.push({ _id: String(id) });
+  conditions.push({ id: String(id) });
+  if (typeof id === "string" && /^[0-9a-fA-F]{24}$/.test(id)) {
+    try {
+      conditions.push({ _id: new mongoose.Types.ObjectId(id) });
+    } catch {
+      // Ignore if invalid
+    }
+  }
+  return { $or: conditions };
 }
 
 export async function getUsers(): Promise<UserType[]> {
@@ -835,16 +850,207 @@ export async function getDuesRecord(id: number | string): Promise<DuesType | nul
   return doc ? serialize<DuesType>(doc) : null;
 }
 
-export async function getTransactions(): Promise<TransactionType[]> {
+export const DEFAULT_PAYMENT_CONFIGS: Record<"amenity" | "dues", Omit<PaymentConfigType, "id">> = {
+  amenity: {
+    category: "amenity",
+    accountName: "MABUHAY HOMES HOA",
+    accountNumber: "0917 123 4567",
+    qrCodeUrl: "",
+    instructions: "Amount updates automatically with your reservation type, session, and pax. Send downpayment now, or upload your receipt and enter your reference number below.",
+    isActive: true,
+    updatedBy: "System",
+  },
+  dues: {
+    category: "dues",
+    accountName: "MABUHAY HOMES HOA",
+    accountNumber: "0917 123 4567",
+    qrCodeUrl: "",
+    instructions: "Please send your exact monthly dues via GCash. Keep your reference number and upload your receipt screenshot for swift verification.",
+    isActive: true,
+    updatedBy: "System",
+  },
+};
+
+export async function getPaymentConfigs(): Promise<Record<"amenity" | "dues", PaymentConfigType>> {
   await dbConnect();
-  const docs = await Transaction.find().lean();
-  return docs.map((d) => serialize<TransactionType>(d));
+  const docs = await PaymentConfig.find().lean();
+  const map: Record<string, any> = {};
+  for (const d of docs) {
+    if (d && (d as any).category) {
+      map[(d as any).category] = {
+        id: String((d as any)._id),
+        category: (d as any).category,
+        accountName: (d as any).accountName || "MABUHAY HOMES HOA",
+        accountNumber: (d as any).accountNumber || "0917 123 4567",
+        qrCodeUrl: (d as any).qrCodeUrl || "",
+        instructions: (d as any).instructions || "",
+        isActive: (d as any).isActive !== false,
+        updatedBy: (d as any).updatedBy || "System",
+        updatedAt: (d as any).updatedAt ? new Date((d as any).updatedAt).toISOString() : undefined,
+      };
+    }
+  }
+
+  return {
+    amenity: map.amenity || { ...DEFAULT_PAYMENT_CONFIGS.amenity },
+    dues: map.dues || { ...DEFAULT_PAYMENT_CONFIGS.dues },
+  };
+}
+
+export async function getPaymentConfig(category: "amenity" | "dues"): Promise<PaymentConfigType> {
+  await dbConnect();
+  const doc = await PaymentConfig.findOne({ category } as any).lean() as any;
+  if (!doc) {
+    const def = DEFAULT_PAYMENT_CONFIGS[category];
+    return { ...def };
+  }
+  return {
+    id: String(doc._id),
+    category: doc.category,
+    accountName: doc.accountName || "MABUHAY HOMES HOA",
+    accountNumber: doc.accountNumber || "0917 123 4567",
+    qrCodeUrl: doc.qrCodeUrl || "",
+    instructions: doc.instructions || "",
+    isActive: doc.isActive !== false,
+    updatedBy: doc.updatedBy || "System",
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : undefined,
+  };
+}
+
+export async function upsertPaymentConfig(
+  category: "amenity" | "dues",
+  data: Partial<PaymentConfigType>
+): Promise<PaymentConfigType> {
+  await dbConnect();
+  const updateData: Record<string, unknown> = {
+    ...data,
+    category,
+  };
+  delete (updateData as any)._id;
+  delete (updateData as any).id;
+
+  const doc = await PaymentConfig.findOneAndUpdate(
+    { category } as any,
+    { $set: updateData },
+    { new: true, upsert: true }
+  ).lean() as any;
+
+  return {
+    id: String(doc._id),
+    category: doc.category,
+    accountName: doc.accountName,
+    accountNumber: doc.accountNumber,
+    qrCodeUrl: doc.qrCodeUrl || "",
+    instructions: doc.instructions || "",
+    isActive: doc.isActive !== false,
+    updatedBy: doc.updatedBy,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : undefined,
+  };
+}
+
+export interface TransactionFilter {
+  isArchived?: boolean;
+  includeArchived?: boolean;
+  refType?: "amenity" | "dues" | "listing" | string;
+  status?: string;
+}
+
+export async function getTransactions(filter?: TransactionFilter): Promise<TransactionType[]> {
+  await dbConnect();
+  const query: Record<string, unknown> = {};
+
+  if (filter?.isArchived !== undefined) {
+    query.isArchived = filter.isArchived;
+  } else if (!filter?.includeArchived) {
+    query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
+  }
+
+  if (filter?.refType && filter.refType !== "all") {
+    query.refType = filter.refType;
+  }
+
+  if (filter?.status && filter.status !== "all") {
+    query.status = filter.status;
+  }
+
+  const docs = await Transaction.find(query).sort({ _id: -1 }).lean();
+
+  // Prefetch linked reservations and dues records to enrich transaction metadata
+  const amenityRefIds = docs.filter((d: any) => d.refType === "amenity" && d.refId).map((d: any) => d.refId);
+  const duesRefIds = docs.filter((d: any) => d.refType === "dues" && d.refId).map((d: any) => d.refId);
+
+  const [reservations, duesRecords] = await Promise.all([
+    amenityRefIds.length ? Reservation.find({ _id: { $in: amenityRefIds } }).lean() : [],
+    duesRefIds.length ? DuesRecord.find({ _id: { $in: duesRefIds } }).lean() : [],
+  ]);
+
+  const resMap = new Map<number, any>(reservations.map((r: any) => [r._id, r]));
+  const duesMap = new Map<number, any>(duesRecords.map((d: any) => [d._id, d]));
+
+  return docs.map((d: any) => {
+    const rawCreatedAt = d.createdAt || d.updatedAt;
+    let createdAtIso = "";
+    if (rawCreatedAt) {
+      if (typeof rawCreatedAt === "string") {
+        createdAtIso = rawCreatedAt;
+      } else {
+        try {
+          createdAtIso = new Date(rawCreatedAt).toISOString();
+        } catch {
+          createdAtIso = String(rawCreatedAt);
+        }
+      }
+    }
+
+    const base = serialize<TransactionType>(d);
+
+    let enriched: Partial<TransactionType> = {};
+    if (d.refType === "amenity" && d.refId && resMap.has(d.refId)) {
+      const res = resMap.get(d.refId);
+      enriched = {
+        amenityName: res.amenityName,
+        reservationDate: res.date,
+        bookingType: res.bookingType,
+        reservationType: res.reservationType,
+      };
+    } else if (d.refType === "dues" && d.refId && duesMap.has(d.refId)) {
+      const due = duesMap.get(d.refId);
+      enriched = {
+        dueMonth: due.dueMonth,
+        dueDate: due.dueDate,
+        amountDue: due.amountDue,
+        amountPaid: due.amountPaid,
+        billingMonth: due.billingMonth,
+        billingYear: due.billingYear,
+        blockNo: due.blockNo,
+        lotNo: due.lotNo,
+      };
+    }
+
+    return {
+      ...base,
+      ...enriched,
+      isArchived: Boolean(d.isArchived),
+      archiveReason: d.archiveReason || undefined,
+      archivedBy: d.archivedBy || undefined,
+      archivedAt: d.archivedAt ? new Date(d.archivedAt).toISOString() : undefined,
+      createdAt: createdAtIso || base.createdAt || "",
+    };
+  });
 }
 
 export async function getTransactionById(id: number | string): Promise<TransactionType | null> {
   await dbConnect();
   const doc = await Transaction.findOne({ _id: Number(id) } as any).lean();
-  return doc ? serialize<TransactionType>(doc) : null;
+  if (!doc) return null;
+  const res = serialize<TransactionType>(doc);
+  const rawCreatedAt = (doc as any).createdAt || (doc as any).updatedAt;
+  const createdAtIso = rawCreatedAt ? (typeof rawCreatedAt === "string" ? rawCreatedAt : new Date(rawCreatedAt).toISOString()) : "";
+  return {
+    ...res,
+    isArchived: Boolean((doc as any).isArchived),
+    createdAt: createdAtIso || res.createdAt,
+  };
 }
 
 export async function getPaymentByIntent(intentId: string): Promise<TransactionType | null> {
@@ -858,10 +1064,127 @@ export async function updateTransactionById(
   patch: Partial<Pick<TransactionType, "status" | "receiptPath">>
 ): Promise<TransactionType | null> {
   await dbConnect();
+  const numId = Number(id);
   const doc = await Transaction.findOneAndUpdate(
-    { _id: Number(id) } as any,
+    { _id: numId } as any,
     { $set: patch },
     { new: true }
   ).lean();
-  return doc ? serialize<TransactionType>(doc) : null;
+
+  if (!doc) return null;
+
+  // Synchronize status with linked Reservation or DuesRecord
+  if (patch.status) {
+    if (doc.refType === "amenity" && doc.refId) {
+      const resStatus = patch.status === "approved" ? "approved" : patch.status === "voided" ? "declined" : "pending";
+      await Reservation.updateOne(
+        { _id: doc.refId } as any,
+        {
+          $set: {
+            status: resStatus,
+            ...(patch.status === "approved" ? { approvedAt: new Date().toISOString() } : {}),
+            ...(patch.receiptPath ? { receiptPath: patch.receiptPath } : {}),
+          },
+        }
+      );
+    } else if (doc.refType === "dues" && doc.refId) {
+      const dueRecord = await DuesRecord.findOne({ _id: doc.refId } as any).lean() as any;
+      if (dueRecord) {
+        if (patch.status === "approved") {
+          const paidAt = doc.createdAt || new Date().toISOString().slice(0, 10);
+          const status = computeDuesStatus({
+            dueMonth: dueRecord.dueMonth,
+            dueDate: dueRecord.dueDate,
+            amountDue: dueRecord.amountDue,
+            amountPaid: dueRecord.amountPaid,
+            paidAt,
+          });
+          await DuesRecord.updateOne(
+            { _id: doc.refId } as any,
+            { $set: { status, paidAt } }
+          );
+        } else if (patch.status === "voided") {
+          const adjustedPaid = Math.max(0, (dueRecord.amountPaid || 0) - (doc.amount || 0));
+          const creditBalance = Math.max(0, adjustedPaid - dueRecord.amountDue);
+          const status = computeDuesStatus({
+            dueMonth: dueRecord.dueMonth,
+            dueDate: dueRecord.dueDate,
+            amountDue: dueRecord.amountDue,
+            amountPaid: adjustedPaid,
+            paidAt: dueRecord.paidAt,
+          });
+          await DuesRecord.updateOne(
+            { _id: doc.refId } as any,
+            { $set: { amountPaid: adjustedPaid, creditBalance, status } }
+          );
+        }
+      }
+    }
+  }
+
+  // Also sync receiptPath if attached
+  if (patch.receiptPath) {
+    if (doc.refType === "amenity" && doc.refId) {
+      await Reservation.updateOne(
+        { _id: doc.refId } as any,
+        { $set: { receiptPath: patch.receiptPath } }
+      );
+    }
+  }
+
+  return serialize<TransactionType>(doc);
+}
+
+export async function archiveTransaction(
+  id: number | string,
+  reason?: string,
+  archivedBy = "admin"
+): Promise<boolean> {
+  await dbConnect();
+  const numId = Number(id);
+  const filter = Number.isFinite(numId)
+    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+    : { _id: id };
+  const res = await Transaction.updateOne(
+    filter as any,
+    {
+      $set: {
+        isArchived: true,
+        archiveReason: reason || "Archived by Admin",
+        archivedBy,
+        archivedAt: new Date().toISOString(),
+      },
+    }
+  );
+  return res.matchedCount > 0 || res.modifiedCount > 0;
+}
+
+export async function unarchiveTransaction(id: number | string): Promise<boolean> {
+  await dbConnect();
+  const numId = Number(id);
+  const filter = Number.isFinite(numId)
+    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+    : { _id: id };
+  const res = await Transaction.updateOne(
+    filter as any,
+    {
+      $set: {
+        isArchived: false,
+        archiveReason: null,
+        archivedBy: null,
+        archivedAt: null,
+      },
+    }
+  );
+  return res.matchedCount > 0 || res.modifiedCount > 0;
+}
+
+export async function deleteTransaction(id: number | string): Promise<boolean> {
+  await dbConnect();
+  const numId = Number(id);
+  const filter = Number.isFinite(numId)
+    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+    : { _id: id };
+  const res = await Transaction.deleteOne(filter as any);
+  return res.deletedCount > 0;
 }

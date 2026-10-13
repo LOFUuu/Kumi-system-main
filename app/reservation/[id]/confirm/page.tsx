@@ -20,7 +20,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { formatPHP, type GcashPayment, type Reservation } from "@/lib/mock-data";
+import { formatPHP, type GcashPayment, type Reservation, type PaymentConfig } from "@/lib/mock-data";
 
 function ConfirmBody() {
   const searchParams = useSearchParams();
@@ -37,6 +37,11 @@ function ConfirmBody() {
   const [step, setStep] = useState<"form" | "review">("form");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showFullReceipt, setShowFullReceipt] = useState(false);
+  const [gcashConfig, setGcashConfig] = useState<PaymentConfig | null>(null);
+
+  useEffect(() => {
+    api.paymentConfig("amenity").then(setGcashConfig).catch(() => {});
+  }, []);
 
   const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -339,17 +344,31 @@ function ConfirmBody() {
                 {payment && (
                   <>
                     <div className="mx-auto w-fit rounded-2xl bg-white p-4 shadow-sm">
-                      <QRCode value={payment.qrPayload} size={170} />
+                      {gcashConfig?.qrCodeUrl ? (
+                        <img
+                          src={gcashConfig.qrCodeUrl}
+                          alt="GCash QR Code"
+                          className="h-[170px] w-[170px] object-contain mx-auto rounded-lg"
+                        />
+                      ) : (
+                        <QRCode value={payment.qrPayload} size={170} />
+                      )}
                     </div>
-                    <div className="mt-4 font-serif text-2xl font-bold tracking-[3px] text-blue-600">0917 123 4567</div>
-                    <div className="text-xs font-semibold text-muted">MABUHAY HOMES HOA — Scan to Pay</div>
-                    {paymentPlaceholder && (
-                      <p className="mt-2 inline-block rounded-full bg-blue-100 px-3 py-1 text-[11px] font-semibold text-blue-700">
-                        Demo QR — real GCash merchant QR replaces this when gateway is connected
-                      </p>
-                    )}
+                    <div className="mt-4 font-serif text-2xl font-bold tracking-[3px] text-blue-600">
+                      {gcashConfig?.accountNumber || "0917 123 4567"}
+                    </div>
+                    <div className="text-xs font-semibold text-muted">
+                      {gcashConfig?.accountName || "MABUHAY HOMES HOA — Scan to Pay"}
+                    </div>
+                    <p className="mt-2 inline-block rounded-full bg-blue-100 px-3 py-1 text-[11px] font-semibold text-blue-700">
+                      Official HOA Amenity Payment Account
+                    </p>
                     <p className="mt-3 text-sm text-muted">
-                      Pay exactly <strong className="text-green-mid">{formatPHP(reservation.downpayment)}</strong> in the GCash app.
+                      {gcashConfig?.instructions || (
+                        <>
+                          Pay exactly <strong className="text-green-mid">{formatPHP(reservation.downpayment)}</strong> in the GCash app.
+                        </>
+                      )}
                     </p>
                   </>
                 )}

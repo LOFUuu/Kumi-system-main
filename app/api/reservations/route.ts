@@ -5,6 +5,7 @@ import {
   getBlockedDates,
   isDateAvailableForPublic,
   getNextId,
+  getPaymentConfig,
 } from "@/lib/db";
 import { Reservation, Transaction } from "@/models";
 import { createPayment } from "@/lib/payment";
@@ -138,7 +139,8 @@ export async function POST(req: NextRequest) {
   } as any);
 
   const txnId = await getNextId(Transaction);
-  const { payment, placeholder } = createPayment(downpayment);
+  const amenityGcash = await getPaymentConfig("amenity");
+  const { payment, placeholder } = createPayment(downpayment, amenityGcash.accountNumber);
   if (gcashRef) {
     payment.gcashRef = gcashRef;
     payment.status = "paid";

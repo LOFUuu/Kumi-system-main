@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTransactionById, updateTransactionById } from "@/lib/db";
+import { getTransactionById, updateTransactionById, deleteTransaction } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -45,3 +45,36 @@ export async function PATCH(
     );
   }
 }
+
+// DELETE /api/transactions/[id] — Permanently delete archived transaction (Admin only)
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const role = req.headers.get("x-user-role");
+    if (role !== "admin" && role !== "counselor") {
+      return NextResponse.json(
+        { error: "Access denied. Only administrators can permanently delete transactions." },
+        { status: 403 }
+      );
+    }
+
+    const { id } = await params;
+    const numId = Number(id);
+    if (!Number.isFinite(numId)) {
+      return NextResponse.json({ error: "Invalid transaction id" }, { status: 400 });
+    }
+
+    const ok = await deleteTransaction(numId);
+    if (!ok) {
+      return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, deletedId: numId });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to permanently delete transaction";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+

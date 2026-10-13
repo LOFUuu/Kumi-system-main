@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useState, Suspense } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Users,
@@ -113,37 +113,45 @@ export default function AdminSidebar() {
             }
 
             return (
-              <Link
-                key={l.href}
-                href={l.href}
-                title={collapsed ? l.label : undefined}
-                className={`group flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-xs font-bold transition-all duration-200 ${
-                  collapsed ? "justify-center" : ""
-                } ${
-                  l.sub && !collapsed ? "ml-4 text-xs" : l.sub && collapsed ? "ml-0" : ""
-                } ${
-                  active
-                    ? isArchive
-                      ? "bg-amber-100 text-amber-800 shadow-2xs"
-                      : "bg-[#123f2a] text-white shadow-xs"
-                    : isArchive
-                    ? "text-amber-700 hover:bg-amber-50"
-                    : "text-gray-700 hover:bg-[#e8f3ec] hover:text-[#123f2a]"
-                }`}
-              >
-                <l.icon
-                  className={`flex-shrink-0 transition-transform duration-200 group-hover:scale-110 ${
-                    l.sub ? "h-[15px] w-[15px]" : "h-[17px] w-[17px]"
-                  } ${active ? "text-[#86efac]" : ""}`}
-                />
-                <span
-                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${
-                    collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+              <div key={l.href}>
+                <Link
+                  href={l.href}
+                  title={collapsed ? l.label : undefined}
+                  className={`group flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-xs font-bold transition-all duration-200 ${
+                    collapsed ? "justify-center" : ""
+                  } ${
+                    l.sub && !collapsed ? "ml-4 text-xs" : l.sub && collapsed ? "ml-0" : ""
+                  } ${
+                    active
+                      ? isArchive
+                        ? "bg-amber-100 text-amber-800 shadow-2xs"
+                        : "bg-[#123f2a] text-white shadow-xs"
+                      : isArchive
+                      ? "text-amber-700 hover:bg-amber-50"
+                      : "text-gray-700 hover:bg-[#e8f3ec] hover:text-[#123f2a]"
                   }`}
                 >
-                  {l.label}
-                </span>
-              </Link>
+                  <l.icon
+                    className={`flex-shrink-0 transition-transform duration-200 group-hover:scale-110 ${
+                      l.sub ? "h-[15px] w-[15px]" : "h-[17px] w-[17px]"
+                    } ${active ? "text-[#86efac]" : ""}`}
+                  />
+                  <span
+                    className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${
+                      collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+                    }`}
+                  >
+                    {l.label}
+                  </span>
+                </Link>
+
+                {/* Submenu for Payments when on Payments section */}
+                {l.href === "/admin/payments" && !collapsed && pathname.startsWith("/admin/payments") && (
+                  <Suspense fallback={null}>
+                    <PaymentsSubNav />
+                  </Suspense>
+                )}
+              </div>
             );
           })}
         </nav>
@@ -170,5 +178,55 @@ export default function AdminSidebar() {
 
       </div>
     </aside>
+  );
+}
+
+function PaymentsSubNav() {
+  const searchParams = useSearchParams();
+  const currentTab = searchParams.get("tab") || "amenity";
+
+  return (
+    <div className="ml-5 mt-1 space-y-0.5 border-l-2 border-emerald-100 pl-2">
+      <Link
+        href="/admin/payments?tab=amenity"
+        className={`block rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+          currentTab === "amenity"
+            ? "bg-[#e8f3ec] text-[#123f2a] font-bold"
+            : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+        }`}
+      >
+        Amenity Payments
+      </Link>
+      <Link
+        href="/admin/payments?tab=dues"
+        className={`block rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+          currentTab === "dues"
+            ? "bg-[#e8f3ec] text-[#123f2a] font-bold"
+            : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+        }`}
+      >
+        Monthly Due Payments
+      </Link>
+      <Link
+        href="/admin/payments?tab=settings"
+        className={`block rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+          currentTab === "settings"
+            ? "bg-[#e8f3ec] text-[#123f2a] font-bold"
+            : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+        }`}
+      >
+        GCash Configuration
+      </Link>
+      <Link
+        href="/admin/payments?tab=archive"
+        className={`block rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+          currentTab === "archive"
+            ? "bg-amber-100/70 text-amber-900 font-bold"
+            : "text-amber-700/80 hover:text-amber-900 hover:bg-amber-50"
+        }`}
+      >
+        Payment Archive
+      </Link>
+    </div>
   );
 }

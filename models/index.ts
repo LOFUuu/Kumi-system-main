@@ -8,6 +8,7 @@ import type {
   DuesRecord as DuesType,
   Transaction as TransactionType,
   PropertyViewing as PropertyViewingType,
+  PaymentConfig as PaymentConfigType,
 } from "../lib/mock-data";
 
 const listingSchema = new Schema<HouseListing>(
@@ -87,7 +88,7 @@ const announcementSchema = new Schema<AnnouncementType>(
 
 const userSchema = new Schema<UserType>(
   {
-    _id: { type: Number },
+    _id: { type: Schema.Types.Mixed },
     fullName: { type: String, required: true },
     email: { type: String, required: true },
     role: { type: String, enum: ["admin", "counselor", "resident", "non_resident"], required: true },
@@ -182,6 +183,24 @@ const transactionSchema = new Schema<TransactionType>(
       paidAt: String,
       gcashRef: String,
     },
+    // ── Archiving ───────────────────────────────────────────────────────────
+    isArchived: { type: Boolean, default: false },
+    archiveReason: { type: String, default: null },
+    archivedBy: { type: String, default: null },
+    archivedAt: { type: String, default: null },
+  } as any,
+  { timestamps: true }
+);
+
+const paymentConfigSchema = new Schema<PaymentConfigType>(
+  {
+    category: { type: String, enum: ["amenity", "dues"], required: true, unique: true },
+    accountName: { type: String, default: "MABUHAY HOMES HOA" },
+    accountNumber: { type: String, default: "0917 123 4567" },
+    qrCodeUrl: { type: String, default: "" },
+    instructions: { type: String, default: "" },
+    isActive: { type: Boolean, default: true },
+    updatedBy: { type: String, default: "Admin" },
   } as any,
   { timestamps: true }
 );
@@ -208,10 +227,11 @@ const propertyViewingSchema = new Schema<PropertyViewingType>(
   { timestamps: true }
 );
 
-// Clear cached models in dev if schema path for transactionStatus is missing
+// Clear cached models in dev if schema path is missing
 if (models.Listing && !(models.Listing.schema as any).path("transactionStatus")) delete (models as any).Listing;
 if (models.Amenity && !(models.Amenity.schema as any).path("isArchived")) delete (models as any).Amenity;
 if (models.User && !(models.User.schema as any).path("isArchived")) delete (models as any).User;
+if (models.Transaction && !(models.Transaction.schema as any).path("isArchived")) delete (models as any).Transaction;
 
 export const Listing = (models.Listing as mongoose.Model<HouseListing>) || model<HouseListing>("Listing", listingSchema);
 export const Amenity = (models.Amenity as mongoose.Model<AmenityType>) || model<AmenityType>("Amenity", amenitySchema);
@@ -221,3 +241,4 @@ export const Reservation = (models.Reservation as mongoose.Model<ReservationType
 export const DuesRecord = (models.DuesRecord as mongoose.Model<DuesType>) || model<DuesType>("DuesRecord", duesSchema);
 export const Transaction = (models.Transaction as mongoose.Model<TransactionType>) || model<TransactionType>("Transaction", transactionSchema);
 export const PropertyViewing = (models.PropertyViewing as mongoose.Model<PropertyViewingType>) || model<PropertyViewingType>("PropertyViewing", propertyViewingSchema);
+export const PaymentConfig = (models.PaymentConfig as mongoose.Model<PaymentConfigType>) || model<PaymentConfigType>("PaymentConfig", paymentConfigSchema);

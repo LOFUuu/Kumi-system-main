@@ -5,6 +5,7 @@ import {
   setUserPassword,
 } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { validatePassword } from "@/lib/password-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +24,15 @@ export async function POST(req: NextRequest) {
   if (!token || !email) {
     return NextResponse.json({ error: "This reset link is invalid or incomplete." }, { status: 400 });
   }
-  if (newPassword.length < 8) {
-    return NextResponse.json({ error: "New password must be at least 8 characters long." }, { status: 400 });
+
+  // ── Strong password validation ────────────────────────────────────────
+  const pwCheck = validatePassword(newPassword);
+  if (!pwCheck.valid) {
+    const missing = pwCheck.checks.filter((c) => !c.pass).map((c) => c.label);
+    return NextResponse.json(
+      { error: `Password does not meet the requirements. Missing: ${missing.join(", ")}.` },
+      { status: 400 }
+    );
   }
 
   const user = await getUserByEmailForAuth(email);

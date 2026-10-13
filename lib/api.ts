@@ -11,6 +11,7 @@ import type {
   Transaction,
   GcashPayment,
   PropertyViewing,
+  PaymentConfig,
 } from "./mock-data";
 
 /** Error thrown by API helpers — carries an optional machine-readable `code`. */
@@ -158,7 +159,35 @@ export const api = {
     send<{ user: User }>("/api/users/me", "PATCH", payload, howaHeaders()),
   reservations: () => getJSON<Reservation[]>("/api/reservations"),
   dues: () => getJSON<DuesRecord[]>("/api/dues"),
-  transactions: () => getJSON<Transaction[]>("/api/transactions"),
+  transactions: (filter?: { isArchived?: boolean; includeArchived?: boolean; refType?: string; status?: string }) => {
+    const q = new URLSearchParams();
+    if (filter?.isArchived !== undefined) q.set("isArchived", String(filter.isArchived));
+    if (filter?.includeArchived) q.set("includeArchived", "true");
+    if (filter?.refType && filter.refType !== "all") q.set("refType", filter.refType);
+    if (filter?.status && filter.status !== "all") q.set("status", filter.status);
+    const qs = q.toString();
+    return getJSON<Transaction[]>(`/api/transactions${qs ? `?${qs}` : ""}`, howaHeaders());
+  },
+  archivedTransactions: (refType?: string) => {
+    const q = new URLSearchParams({ isArchived: "true" });
+    if (refType && refType !== "all") q.set("refType", refType);
+    return getJSON<Transaction[]>(`/api/transactions?${q.toString()}`, howaHeaders());
+  },
+  archiveTransaction: (id: number, reason?: string) =>
+    send<{ ok: boolean }>(`/api/transactions/${id}/archive`, "POST", { reason }, howaHeaders()),
+  restoreTransaction: (id: number) =>
+    send<{ ok: boolean }>(`/api/transactions/${id}/archive`, "DELETE", undefined, howaHeaders()),
+  deleteTransaction: (id: number) =>
+    send<{ ok: boolean }>(`/api/transactions/${id}`, "DELETE", undefined, howaHeaders()),
+
+  // ── GCash / Payment Configuration ──────────────────────────────────────
+  paymentConfigs: () =>
+    getJSON<Record<"amenity" | "dues", PaymentConfig>>("/api/payments/config"),
+  paymentConfig: (category: "amenity" | "dues") =>
+    getJSON<PaymentConfig>(`/api/payments/config?category=${category}`),
+  updatePaymentConfig: (category: "amenity" | "dues", payload: Partial<PaymentConfig> & { syncBoth?: boolean }) =>
+    send<{ config: PaymentConfig; syncBoth?: boolean }>("/api/payments/config", "PUT", { category, ...payload }, howaHeaders()),
+
   importDues: (records: any[]) =>
     send<{
       ok: boolean;

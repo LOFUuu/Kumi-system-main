@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -19,6 +19,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
+import { validatePassword } from "@/lib/password-validation";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -68,6 +69,8 @@ export default function RegisterPage() {
   const showConfirmSection =
     form.password.length > 0 || form.confirm.length > 0 || isConfirmFocused;
 
+  const pwStrength = useMemo(() => validatePassword(form.password), [form.password]);
+
   const set =
     (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
       setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -83,8 +86,9 @@ export default function RegisterPage() {
       setError("Enter a valid email address.");
       return;
     }
-    if (form.password.length < 8) {
-      setError("Password must be at least 8 characters long.");
+    const pwCheck = validatePassword(form.password);
+    if (!pwCheck.valid) {
+      setError(pwCheck.error || "Password does not meet the strength requirements.");
       return;
     }
     if (form.password !== form.confirm) {
@@ -288,13 +292,52 @@ export default function RegisterPage() {
                     {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   </button>
                 </div>
+
+                {/* Password strength bar and requirements checklist */}
+                {form.password.length > 0 && (
+                  <div className="mt-2.5 space-y-2 rounded-xl bg-gray-50/90 p-3 border border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <div className="flex flex-1 gap-1">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <div
+                            key={i}
+                            className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+                              i <= pwStrength.score ? pwStrength.color : "bg-gray-200"
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      {pwStrength.label && (
+                        <span className="text-[11px] font-semibold text-gray-600 w-12 text-right">
+                          {pwStrength.label}
+                        </span>
+                      )}
+                    </div>
+
+                    <ul className="grid grid-cols-1 sm:grid-cols-2 gap-y-1 gap-x-2 pt-1">
+                      {pwStrength.checks.map((c) => (
+                        <li
+                          key={c.label}
+                          className={`flex items-center gap-1.5 text-[11px] transition-colors ${
+                            c.pass ? "text-emerald-700 font-medium" : "text-gray-400"
+                          }`}
+                        >
+                          <CheckCircle2
+                            className={`h-3.5 w-3.5 shrink-0 ${c.pass ? "text-emerald-600" : "text-gray-300"}`}
+                          />
+                          <span>{c.label}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* CONFIRM PASSWORD (Animated slide down / hide) */}
               <div
                 className={`overflow-hidden transition-all duration-300 ease-in-out ${
                   showConfirmSection
-                    ? "max-h-28 opacity-100 mt-4 pointer-events-auto"
+                    ? "max-h-36 opacity-100 mt-4 pointer-events-auto"
                     : "max-h-0 opacity-0 mt-0 pointer-events-none"
                 }`}
               >
@@ -325,6 +368,21 @@ export default function RegisterPage() {
                     {showConfirm ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   </button>
                 </div>
+
+                {/* Confirm password matching indicator */}
+                {form.confirm.length > 0 && (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
+                    {form.password === form.confirm ? (
+                      <span className="flex items-center gap-1 text-emerald-600 font-medium">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Passwords match
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-amber-600 font-medium">
+                        <TriangleAlert className="h-3.5 w-3.5" /> Passwords do not match
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* CREATE ACCOUNT BUTTON */}

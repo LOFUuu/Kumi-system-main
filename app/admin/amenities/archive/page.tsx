@@ -14,6 +14,7 @@ import {
   MapPin,
   Trash2,
   AlertTriangle,
+  CreditCard,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatPHP, type Amenity, type HouseListing, type User } from "@/lib/mock-data";
@@ -221,6 +222,14 @@ export default function AdminArchivePage() {
           <Users className="h-4 w-4" />
           <span>Residents Archive ({residents.length})</span>
         </button>
+
+        <Link
+          href="/admin/payments?tab=archive"
+          className="flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold transition bg-emerald-50 text-emerald-900 border border-emerald-300 hover:bg-emerald-100"
+        >
+          <CreditCard className="h-4 w-4 text-emerald-700" />
+          <span>Payment Archive →</span>
+        </Link>
       </div>
 
       {/* ── Notifications ─────────────────────────────────────────── */}
