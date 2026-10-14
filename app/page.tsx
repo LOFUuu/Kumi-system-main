@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   TreePine,
   HandshakeIcon,
-  Star,
+  Building2,
   ChevronRight,
   ArrowRight,
   Megaphone,
@@ -40,7 +40,7 @@ const WHY_ITEMS = [
     desc: "Our Homeowners' Association actively manages amenities, dues, and community programs.",
   },
   {
-    icon: <Star className="h-6 w-6 text-[#123f2a]" />,
+    icon: <Building2 className="h-6 w-6 text-[#123f2a]" />,
     title: "Premium Amenities",
     desc: "Enjoy a swimming pool, basketball court, and function hall — all bookable online.",
   },

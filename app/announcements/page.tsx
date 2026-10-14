@@ -16,7 +16,6 @@ import {
   ArrowRight,
   Bell,
   Clock,
-  Sparkles,
   Info,
   Lock,
 } from "lucide-react";
@@ -244,7 +243,7 @@ export default function AnnouncementsPage() {
             <Lock className="h-8 w-8" />
           </div>
           <div className="mt-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-gold-muted">
-            <Sparkles className="h-3.5 w-3.5" />
+            <Bell className="h-3.5 w-3.5" />
             RESIDENT PORTAL ACCESS
           </div>
           <h2 className="mt-2 font-serif text-3xl font-bold text-green-dark">
@@ -430,7 +429,7 @@ export default function AnnouncementsPage() {
                         </span>
                         {isPriority && (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
-                            <Sparkles className="h-3 w-3 text-gold" /> Priority
+                            <Bell className="h-3 w-3 text-amber-600" /> Priority
                           </span>
                         )}
                       </div>

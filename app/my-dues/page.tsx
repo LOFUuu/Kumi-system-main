@@ -25,7 +25,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  Sparkles,
+
   History,
   Coins,
   Building,
@@ -255,7 +255,7 @@ export default function MyDuesPage() {
           <div className="relative z-10 flex flex-wrap items-center justify-between gap-6">
             <div className="space-y-2">
               <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold backdrop-blur-sm">
-                <Sparkles className="h-3.5 w-3.5 text-gold" />
+                <CalendarDays className="h-3.5 w-3.5 text-white/80" />
                 Current Billing Period: {formatBillingPeriod(currentRecord.dueMonth)}
               </div>
               <h2 className="font-serif text-3xl font-bold text-gold">

@@ -15,7 +15,7 @@ import {
   Trophy,
   DoorOpen,
   Leaf,
-  Sparkles,
+  Loader,
   ChevronRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -28,7 +28,7 @@ const CommunityMap = dynamic(() => import("@/components/CommunityMap"), {
   loading: () => (
     <div className="flex h-[580px] w-full items-center justify-center rounded-3xl bg-[#edf3ee] text-[#1a3826] font-semibold text-sm">
       <div className="flex items-center gap-2">
-        <Sparkles className="h-5 w-5 animate-pulse text-[#2d6a4f]" />
+        <Loader className="h-5 w-5 animate-spin text-[#2d6a4f]" />
         Loading Community Map…
       </div>
     </div>
@@ -309,7 +309,7 @@ export default function MapPage() {
                   A safe, peaceful, and connected community for a better tomorrow.
                 </p>
               </div>
-              <Sparkles className="h-5 w-5 shrink-0 text-[#2d6a4f]/40" />
+
             </div>
           </div>
         </div>
