@@ -279,11 +279,20 @@ export async function unarchiveAmenity(id: number | string): Promise<boolean> {
 export async function getBlockedDates(amenityId: number): Promise<string[]> {
   await dbConnect();
 
+  const nonArchived = {
+    $or: [
+      { isArchived: false },
+      { isArchived: "false" },
+      { isArchived: 0 },
+      { isArchived: { $exists: false } },
+    ],
+  };
+
   const [approvedDates, publicGroups, amenity] = await Promise.all([
-    Reservation.find({ amenityId, status: "approved" })
+    Reservation.find({ amenityId, status: "approved", ...nonArchived } as any)
       .distinct("date"),
     Reservation.aggregate<{ _id: string; pax: number }>([
-      { $match: { amenityId, reservationType: "public", status: "approved" } },
+      { $match: { amenityId, reservationType: "public", status: "approved", ...nonArchived } },
       { $group: { _id: "$date", pax: { $sum: "$paxCount" } } },
     ]),
     Amenity.findOne({ _id: Number(amenityId) } as any),
@@ -307,10 +316,19 @@ export async function isDateAvailableForPublic(
   const blocked = await getBlockedDates(amenityId);
   if (blocked.includes(date)) return false;
 
+  const nonArchived = {
+    $or: [
+      { isArchived: false },
+      { isArchived: "false" },
+      { isArchived: 0 },
+      { isArchived: { $exists: false } },
+    ],
+  };
+
   const [amenity, approvedPaxDoc] = await Promise.all([
     Amenity.findOne({ _id: Number(amenityId) } as any),
     Reservation.aggregate<{ pax: number }>([
-      { $match: { amenityId, reservationType: "public", status: "approved", date } },
+      { $match: { amenityId, reservationType: "public", status: "approved", date, ...nonArchived } },
       { $group: { _id: null, pax: { $sum: "$paxCount" } } },
     ]),
   ]);
@@ -631,10 +649,146 @@ export async function getMasterIndex(): Promise<{ blockNo: string; lotNo: string
   return units;
 }
 
-export async function getReservations(): Promise<ReservationType[]> {
+export async function getReservations(includeArchived = false): Promise<ReservationType[]> {
   await dbConnect();
-  const docs = await Reservation.find().lean();
+  const filter = includeArchived
+    ? {}
+    : {
+        $or: [
+          { isArchived: false },
+          { isArchived: "false" },
+          { isArchived: 0 },
+          { isArchived: { $exists: false } },
+        ],
+      };
+  const docs = await Reservation.find(filter as any).sort({ _id: -1 }).lean();
   return docs.map((d) => serialize<ReservationType>(d));
+}
+
+export async function getArchivedReservations(): Promise<ReservationType[]> {
+  await dbConnect();
+  const docs = await Reservation.find({
+    $or: [{ isArchived: true }, { isArchived: "true" }, { isArchived: 1 }],
+  } as any)
+    .sort({ archivedAt: -1, _id: -1 })
+    .lean();
+  return docs.map((d) => serialize<ReservationType>(d));
+}
+
+export async function archiveReservation(
+  id: number | string,
+  reason?: string
+): Promise<ReservationType | null> {
+  await dbConnect();
+  const resId = Number(id);
+  const now = new Date().toISOString();
+  const doc = await Reservation.findOneAndUpdate(
+    { _id: resId } as any,
+    {
+      $set: {
+        isArchived: true,
+        archivedAt: now,
+        archiveReason: reason || "Archived by Administrator",
+      },
+    },
+    { new: true }
+  ).lean();
+  return doc ? serialize<ReservationType>(doc) : null;
+}
+
+export async function unarchiveReservation(
+  id: number | string
+): Promise<{ ok: boolean; error?: string; reservation?: ReservationType }> {
+  await dbConnect();
+  const resId = Number(id);
+  const reservation = await Reservation.findOne({ _id: resId } as any);
+  if (!reservation) {
+    return { ok: false, error: "Reservation not found." };
+  }
+
+  // If the reservation was previously approved, check for slot conflicts before restoring!
+  if (reservation.status === "approved") {
+    const nonArchived = {
+      $or: [
+        { isArchived: false },
+        { isArchived: "false" },
+        { isArchived: 0 },
+        { isArchived: { $exists: false } },
+      ],
+    };
+
+    let conflictQuery: any = {
+      _id: { $ne: resId },
+      amenityId: reservation.amenityId,
+      date: reservation.date,
+      status: "approved",
+      ...nonArchived,
+    };
+
+    if (reservation.reservationType !== "private") {
+      conflictQuery = {
+        _id: { $ne: resId },
+        amenityId: reservation.amenityId,
+        date: reservation.date,
+        status: "approved",
+        ...nonArchived,
+        $or: [
+          { reservationType: "private" },
+          { bookingType: reservation.bookingType },
+        ],
+      };
+    }
+
+    const conflict = await Reservation.findOne(conflictQuery as any);
+    if (conflict) {
+      return {
+        ok: false,
+        error: `Slot conflict: Amenity "${reservation.amenityName}" on ${reservation.date} (${reservation.bookingType} session) is already occupied by active approved reservation #${conflict._id} (${conflict.residentName}).`,
+      };
+    }
+
+    if (reservation.reservationType === "public") {
+      const available = await isDateAvailableForPublic(
+        reservation.amenityId,
+        reservation.date,
+        reservation.paxCount
+      );
+      if (!available) {
+        return {
+          ok: false,
+          error: `Capacity exceeded: Amenity "${reservation.amenityName}" has reached full capacity for ${reservation.date}.`,
+        };
+      }
+    }
+  }
+
+  reservation.isArchived = false;
+  reservation.archivedAt = null as any;
+  reservation.archiveReason = null as any;
+  await reservation.save();
+
+  const updated = (await Reservation.findById(resId).lean()) as any;
+  return { ok: true, reservation: serialize<ReservationType>(updated) };
+}
+
+export async function deleteReservation(
+  id: number | string
+): Promise<{ ok: boolean; error?: string }> {
+  await dbConnect();
+  const resId = Number(id);
+  const reservation = await Reservation.findOne({ _id: resId } as any);
+  if (!reservation) {
+    return { ok: false, error: "Reservation not found." };
+  }
+
+  // Preserve financial audit trail by marking linked transaction status as voided
+  await Transaction.updateMany(
+    { refType: "amenity", refId: resId },
+    { $set: { status: "voided" } }
+  );
+
+  await Reservation.deleteOne({ _id: resId } as any);
+  return { ok: true };
 }
 
 export async function generateMonthlyDues(targetMonth?: string): Promise<{ createdCount: number }> {

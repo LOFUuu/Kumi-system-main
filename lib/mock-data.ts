@@ -279,6 +279,9 @@ export interface Reservation {
   approvedAt?: string;
   gcashRef?: string;
   receiptPath?: string;
+  isArchived?: boolean;
+  archivedAt?: string;
+  archiveReason?: string;
 }
 
 export const MOCK_RESERVATIONS: Reservation[] = [

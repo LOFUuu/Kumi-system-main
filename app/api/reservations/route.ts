@@ -66,6 +66,12 @@ export async function POST(req: NextRequest) {
     date,
     bookingType,
     status: { $in: ["pending", "approved"] },
+    $or: [
+      { isArchived: false },
+      { isArchived: "false" },
+      { isArchived: 0 },
+      { isArchived: { $exists: false } },
+    ],
   };
 
   if (userEmail) {

@@ -135,6 +135,10 @@ const reservationSchema = new Schema<ReservationType>(
     approvedAt: String,
     gcashRef: String,
     receiptPath: String,
+    // ── Archiving ───────────────────────────────────────────────────────────
+    isArchived: { type: Boolean, default: false },
+    archivedAt: { type: String, default: null },
+    archiveReason: { type: String, default: null },
   } as any,
   { timestamps: true }
 );
@@ -232,6 +236,7 @@ if (models.Listing && !(models.Listing.schema as any).path("transactionStatus"))
 if (models.Amenity && !(models.Amenity.schema as any).path("isArchived")) delete (models as any).Amenity;
 if (models.User && !(models.User.schema as any).path("isArchived")) delete (models as any).User;
 if (models.Transaction && !(models.Transaction.schema as any).path("isArchived")) delete (models as any).Transaction;
+if (models.Reservation && !(models.Reservation.schema as any).path("isArchived")) delete (models as any).Reservation;
 
 export const Listing = (models.Listing as mongoose.Model<HouseListing>) || model<HouseListing>("Listing", listingSchema);
 export const Amenity = (models.Amenity as mongoose.Model<AmenityType>) || model<AmenityType>("Amenity", amenitySchema);

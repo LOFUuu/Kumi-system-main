@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
+  AlertTriangle,
+  Archive,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
@@ -14,6 +17,7 @@ import {
   Phone,
   ReceiptText,
   Search,
+  Trash2,
   Users,
   Waves,
   X,
@@ -78,6 +82,67 @@ export default function AdminReservationsPage() {
 
   // Lightbox
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // Archive & Delete state
+  const [archiveTarget, setArchiveTarget] = useState<Reservation | null>(null);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [archiving, setArchiving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Reservation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [successMsg, setSuccessMsg] = useState("");
+
+  const notify = (type: "ok" | "err", msg: string) => {
+    if (type === "ok") {
+      setSuccessMsg(msg);
+      setTimeout(() => setSuccessMsg(""), 5000);
+    } else {
+      setError(msg);
+      setTimeout(() => setError(""), 5000);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!archiveTarget) return;
+    setArchiving(true);
+    try {
+      await api.archiveReservation(archiveTarget.id, archiveReason);
+      setRows((prev) => prev.filter((r) => r.id !== archiveTarget.id));
+      if (selected?.id === archiveTarget.id) {
+        closePanel();
+      }
+      notify(
+        "ok",
+        `Reservation #${archiveTarget.id} (${archiveTarget.residentName}) was archived and moved to the HOA Archive Center. Slot is now available.`
+      );
+      setArchiveTarget(null);
+      setArchiveReason("");
+    } catch (err: unknown) {
+      notify("err", err instanceof Error ? err.message : "Failed to archive reservation.");
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api.deleteReservation(deleteTarget.id);
+      setRows((prev) => prev.filter((r) => r.id !== deleteTarget.id));
+      if (selected?.id === deleteTarget.id) {
+        closePanel();
+      }
+      notify(
+        "ok",
+        `Reservation #${deleteTarget.id} has been safely removed and the slot is now released.`
+      );
+      setDeleteTarget(null);
+    } catch (err: unknown) {
+      notify("err", err instanceof Error ? err.message : "Failed to delete reservation.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -172,6 +237,13 @@ export default function AdminReservationsPage() {
             </p>
           </div>
         </div>
+
+        {successMsg && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-green-light/40 bg-green-light/10 p-3.5 text-xs font-semibold text-green-dark">
+            <CheckCircle2 className="h-4 w-4 text-green-mid flex-shrink-0" />
+            {successMsg}
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-sm font-semibold text-danger">
@@ -391,17 +463,41 @@ export default function AdminReservationsPage() {
                       <td className="p-4">
                         <StatusBadge status={r.status} />
                       </td>
-                      <td className="p-4">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openPanel(r);
-                          }}
-                          className="rounded-lg border border-cream-2 bg-cream px-2.5 py-1 text-[11px] font-semibold text-green-dark hover:bg-green-mid hover:text-white transition"
-                        >
-                          View
-                        </button>
+                      <td className="p-4 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openPanel(r);
+                            }}
+                            className="rounded-lg border border-cream-2 bg-cream px-2.5 py-1 text-[11px] font-semibold text-green-dark hover:bg-green-mid hover:text-white transition"
+                          >
+                            View
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setArchiveTarget(r);
+                            }}
+                            title="Archive reservation"
+                            className="rounded-lg border border-amber-200 bg-amber-50 p-1 text-amber-700 hover:bg-amber-100 transition"
+                          >
+                            <Archive className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTarget(r);
+                            }}
+                            title="Delete reservation"
+                            className="rounded-lg border border-rose-200 bg-rose-50 p-1 text-rose-700 hover:bg-rose-100 transition"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -685,6 +781,26 @@ export default function AdminReservationsPage() {
                 </div>
               </div>
             )}
+
+            {/* Auxiliary side panel actions */}
+            <div className="border-t border-cream-2/70 p-4 pt-3 bg-cream/20 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setArchiveTarget(selected)}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 transition"
+              >
+                <Archive className="h-3.5 w-3.5" />
+                Archive
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(selected)}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -746,6 +862,163 @@ export default function AdminReservationsPage() {
                   className="max-h-[65vh] max-w-full rounded-lg object-contain shadow-sm"
                 />
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Archive Modal */}
+      {archiveTarget && (
+        <div
+          className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+          onClick={() => !archiving && setArchiveTarget(null)}
+        >
+          <div
+            className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-cream-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-4">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                <Archive className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-serif text-lg font-bold text-green-dark">Archive Reservation</h3>
+                <p className="text-xs text-muted mt-0.5">
+                  Move this reservation out of the active list and into the HOA Archive Center.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3.5 mb-4 text-xs space-y-1.5 text-amber-900">
+              <div className="flex justify-between">
+                <span className="font-medium text-amber-700">Reservation:</span>
+                <span className="font-bold">#{archiveTarget.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-medium text-amber-700">Resident / Guest:</span>
+                <span className="font-bold">{archiveTarget.residentName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-medium text-amber-700">Amenity:</span>
+                <span>{archiveTarget.amenityName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-medium text-amber-700">Date & Session:</span>
+                <span>{archiveTarget.date} ({archiveTarget.bookingType} session)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-medium text-amber-700">Status:</span>
+                <span className="capitalize font-semibold">{archiveTarget.status}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted mb-3 leading-relaxed">
+              <strong>Note:</strong> Archiving will release this date and session slot so other residents can reserve it, provided no other conflicting reservation exists. All reservation data, receipts, and payment records remain safely preserved in the HOA Archive Center and can be restored anytime.
+            </p>
+
+            <div className="mb-5">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-muted mb-1">
+                Archive Reason (Optional)
+              </label>
+              <input
+                type="text"
+                value={archiveReason}
+                onChange={(e) => setArchiveReason(e.target.value)}
+                placeholder="e.g., Resident requested cancellation, event rescheduled..."
+                className="w-full rounded-xl border border-cream-2 bg-cream/20 px-3 py-2 text-xs text-green-dark outline-none focus:border-green-mid"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={archiving}
+                onClick={() => setArchiveTarget(null)}
+                className="rounded-xl border border-cream-2 px-4 py-2 text-xs font-semibold text-muted hover:bg-cream transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={archiving}
+                onClick={handleArchive}
+                className="flex items-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white hover:bg-amber-700 transition disabled:opacity-50 shadow-xs"
+              >
+                <Archive className="h-4 w-4" />
+                {archiving ? "Archiving…" : "Confirm Archive"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Modal */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+          onClick={() => !deleting && setDeleteTarget(null)}
+        >
+          <div
+            className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-cream-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-4">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-serif text-lg font-bold text-rose-900">Delete Reservation</h3>
+                <p className="text-xs text-muted mt-0.5">
+                  Safely remove this active reservation from the system.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-3.5 mb-4 text-xs space-y-1.5 text-rose-900">
+              <div className="flex justify-between">
+                <span className="font-medium text-rose-700">Reservation:</span>
+                <span className="font-bold">#{deleteTarget.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-medium text-rose-700">Resident / Guest:</span>
+                <span className="font-bold">{deleteTarget.residentName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-medium text-rose-700">Amenity & Date:</span>
+                <span>{deleteTarget.amenityName} — {deleteTarget.date}</span>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 mb-5 text-[11px] text-amber-900 leading-relaxed space-y-1">
+              <div className="font-bold flex items-center gap-1 text-amber-800">
+                <AlertCircle className="h-3.5 w-3.5 text-amber-600" /> Safe Removal Safeguards:
+              </div>
+              <div>
+                • The reserved slot will be freed up immediately for other residents to book.
+              </div>
+              <div>
+                • Associated transaction records and payment history will be safely preserved as voided audit records to keep financial records consistent.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-xl border border-cream-2 px-4 py-2 text-xs font-semibold text-muted hover:bg-cream transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleDelete}
+                className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700 transition disabled:opacity-50 shadow-xs"
+              >
+                <Trash2 className="h-4 w-4" />
+                {deleting ? "Deleting…" : "Confirm Delete"}
+              </button>
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Reservation, Transaction } from "@/models";
+import { deleteReservation } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,12 @@ export async function PATCH(
       date: reservation.date,
       bookingType: reservation.bookingType,
       status: "approved",
+      $or: [
+        { isArchived: false },
+        { isArchived: "false" },
+        { isArchived: 0 },
+        { isArchived: { $exists: false } },
+      ],
     } as any);
 
     if (existingApproved) {
@@ -66,4 +73,17 @@ export async function PATCH(
   void created;
   void modified;
   return NextResponse.json({ reservation: { ...rest, id: _id } });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const resId = Number(id);
+  const result = await deleteReservation(resId);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error || "Failed to delete reservation." }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true });
 }

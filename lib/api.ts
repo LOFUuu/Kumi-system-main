@@ -158,6 +158,13 @@ export const api = {
   updateProfile: (payload: Record<string, unknown>) =>
     send<{ user: User }>("/api/users/me", "PATCH", payload, howaHeaders()),
   reservations: () => getJSON<Reservation[]>("/api/reservations"),
+  archivedReservations: () => getJSON<Reservation[]>("/api/reservations/archived", howaHeaders()),
+  archiveReservation: (id: number, reason?: string) =>
+    send<{ ok: boolean; reservation: Reservation }>(`/api/reservations/${id}/archive`, "POST", { reason }, howaHeaders()),
+  restoreReservation: (id: number) =>
+    send<{ ok: boolean; reservation: Reservation }>(`/api/reservations/${id}/archive`, "DELETE", undefined, howaHeaders()),
+  deleteReservation: (id: number) =>
+    send<{ ok: boolean }>(`/api/reservations/${id}`, "DELETE", undefined, howaHeaders()),
   dues: () => getJSON<DuesRecord[]>("/api/dues"),
   transactions: (filter?: { isArchived?: boolean; includeArchived?: boolean; refType?: string; status?: string }) => {
     const q = new URLSearchParams();

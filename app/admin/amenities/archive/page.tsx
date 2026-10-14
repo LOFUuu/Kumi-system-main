@@ -15,11 +15,15 @@ import {
   Trash2,
   AlertTriangle,
   CreditCard,
+  CalendarDays,
+  Eye,
+  ReceiptText,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { formatPHP, type Amenity, type HouseListing, type User } from "@/lib/mock-data";
+import { formatPHP, type Amenity, type HouseListing, type User, type Reservation } from "@/lib/mock-data";
 
-type ArchiveTab = "amenities" | "listings" | "residents";
+type ArchiveTab = "amenities" | "listings" | "residents" | "reservations";
 
 export default function AdminArchivePage() {
   const [activeTab, setActiveTab] = useState<ArchiveTab>("listings");
@@ -43,6 +47,17 @@ export default function AdminArchivePage() {
   const [restoringResident, setRestoringResident] = useState(false);
   const [deleteResidentTarget, setDeleteResidentTarget] = useState<User | null>(null);
   const [deletingResident, setDeletingResident] = useState(false);
+
+  // Reservations Archive State
+  const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [loadingReservations, setLoadingReservations] = useState(true);
+  const [restoreReservationTarget, setRestoreReservationTarget] = useState<Reservation | null>(null);
+  const [restoringReservation, setRestoringReservation] = useState(false);
+  const [deleteReservationTarget, setDeleteReservationTarget] = useState<Reservation | null>(null);
+  const [deletingReservation, setDeletingReservation] = useState(false);
+  const [viewReservationTarget, setViewReservationTarget] = useState<Reservation | null>(null);
+  const [resSearch, setResSearch] = useState("");
+  const [resStatusFilter, setResStatusFilter] = useState("all");
 
   // Common notifications
   const [successMsg, setSuccessMsg] = useState("");
@@ -85,10 +100,20 @@ export default function AdminArchivePage() {
       .finally(() => setLoadingResidents(false));
   };
 
+  const loadArchivedReservations = () => {
+    setLoadingReservations(true);
+    api
+      .archivedReservations()
+      .then(setReservations)
+      .catch(() => setReservations([]))
+      .finally(() => setLoadingReservations(false));
+  };
+
   useEffect(() => {
     loadArchivedAmenities();
     loadArchivedListings();
     loadArchivedResidents();
+    loadArchivedReservations();
   }, [activeTab]);
 
   const handleRestoreAmenity = async (amenity: Amenity) => {
@@ -147,6 +172,50 @@ export default function AdminArchivePage() {
     }
   };
 
+  const handleRestoreReservation = async (reservation: Reservation) => {
+    setRestoringReservation(true);
+    try {
+      const result = await api.restoreReservation(reservation.id);
+      if (!result.ok) {
+        throw new Error("Failed to restore reservation.");
+      }
+      notify("ok", `Reservation #${reservation.id} (${reservation.residentName}) was successfully restored to active reservations.`);
+      setRestoreReservationTarget(null);
+      loadArchivedReservations();
+    } catch (err: unknown) {
+      notify("err", err instanceof Error ? err.message : "Failed to restore reservation.");
+    } finally {
+      setRestoringReservation(false);
+    }
+  };
+
+  const handleDeleteReservation = async (reservation: Reservation) => {
+    setDeletingReservation(true);
+    try {
+      await api.deleteReservation(reservation.id);
+      notify("ok", `Reservation #${reservation.id} has been permanently deleted from the archive.`);
+      setDeleteReservationTarget(null);
+      setReservations((prev) => prev.filter((r) => r.id !== reservation.id));
+    } catch (err: unknown) {
+      notify("err", err instanceof Error ? err.message : "Failed to delete reservation.");
+    } finally {
+      setDeletingReservation(false);
+    }
+  };
+
+  const filteredReservations = reservations.filter((r) => {
+    const q = resSearch.toLowerCase().trim();
+    const matchSearch =
+      !q ||
+      r.residentName?.toLowerCase().includes(q) ||
+      r.amenityName?.toLowerCase().includes(q) ||
+      r.userEmail?.toLowerCase().includes(q) ||
+      r.date?.includes(q) ||
+      String(r.id).includes(q);
+    const matchStatus = resStatusFilter === "all" || r.status === resStatusFilter;
+    return matchSearch && matchStatus;
+  });
+
   return (
     <div className="pb-16">
       {/* ── Header ────────────────────────────────────────────────── */}
@@ -181,6 +250,12 @@ export default function AdminArchivePage() {
             className="btn-ghost flex items-center gap-1.5 text-xs font-semibold text-green-dark border border-cream-2 shadow-xs px-3.5 py-2 rounded-xl hover:bg-cream transition"
           >
             ← Back to Residents
+          </Link>
+          <Link
+            href="/admin/reservations"
+            className="btn-ghost flex items-center gap-1.5 text-xs font-semibold text-green-dark border border-cream-2 shadow-xs px-3.5 py-2 rounded-xl hover:bg-cream transition"
+          >
+            ← Back to Reservations
           </Link>
         </div>
       </div>
@@ -221,6 +296,18 @@ export default function AdminArchivePage() {
         >
           <Users className="h-4 w-4" />
           <span>Residents Archive ({residents.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("reservations")}
+          className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold transition ${
+            activeTab === "reservations"
+              ? "bg-amber-600 text-white shadow-xs"
+              : "bg-cream/80 text-amber-900 border border-amber-200/60 hover:bg-amber-100/50"
+          }`}
+        >
+          <CalendarDays className="h-4 w-4" />
+          <span>Reservations Archive ({reservations.length})</span>
         </button>
 
         <Link
@@ -542,6 +629,166 @@ export default function AdminArchivePage() {
         </div>
       )}
 
+      {/* ── RESERVATIONS ARCHIVE ─────────────────────────────────────── */}
+      {activeTab === "reservations" && (
+        <div>
+          {loadingReservations ? (
+            <div className="py-20 text-center text-muted">
+              <Archive className="mx-auto h-8 w-8 mb-3 text-amber-300 animate-pulse" />
+              <p className="text-xs">Loading archived reservations…</p>
+            </div>
+          ) : reservations.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-amber-200 bg-amber-50/30 p-16 text-center">
+              <Box className="mx-auto mb-3 h-12 w-12 text-amber-300" />
+              <p className="font-serif text-lg font-semibold text-amber-800">No archived reservations</p>
+              <p className="mt-1 text-xs text-muted max-w-sm">
+                Reservations archived from the Reservations Admin panel will appear here. Their dues, payments, and reservations history is always preserved.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Search & Status Filter */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-semibold text-muted">
+                  {filteredReservations.length} archived {filteredReservations.length === 1 ? "reservation" : "reservations"}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search resident, amenity, date..."
+                      value={resSearch}
+                      onChange={(e) => setResSearch(e.target.value)}
+                      className="rounded-xl border border-amber-200/80 bg-white px-3 py-1.5 text-xs text-green-dark outline-none focus:border-amber-500 w-56 shadow-2xs"
+                    />
+                  </div>
+                  <select
+                    value={resStatusFilter}
+                    onChange={(e) => setResStatusFilter(e.target.value)}
+                    className="rounded-xl border border-amber-200/80 bg-white px-3 py-1.5 text-xs text-green-dark outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
+                  >
+                    <option value="all">Status: All</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="declined">Declined</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-amber-200/80 bg-white shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-amber-100 bg-amber-50/60 text-[11px] font-bold uppercase tracking-wider text-amber-900/80">
+                        <th className="px-4 py-3.5">Guest / Resident</th>
+                        <th className="px-4 py-3.5">Amenity</th>
+                        <th className="px-4 py-3.5">Type</th>
+                        <th className="px-4 py-3.5">Date</th>
+                        <th className="px-4 py-3.5">Session</th>
+                        <th className="px-4 py-3.5 text-center">Pax</th>
+                        <th className="px-4 py-3.5">Downpayment</th>
+                        <th className="px-4 py-3.5">Status</th>
+                        <th className="px-4 py-3.5">Archived On</th>
+                        <th className="px-4 py-3.5">Reason</th>
+                        <th className="px-4 py-3.5 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-amber-100/60">
+                      {filteredReservations.map((r) => (
+                        <tr key={r.id} className="hover:bg-amber-50/30 transition">
+                          <td className="px-4 py-3.5 font-medium text-green-dark">
+                            <div>{r.residentName}</div>
+                            {r.userEmail && <div className="text-[10px] text-muted">{r.userEmail}</div>}
+                          </td>
+                          <td className="px-4 py-3.5 text-green-dark font-semibold">
+                            {r.amenityName}
+                          </td>
+                          <td className="px-4 py-3.5 capitalize">
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                              r.reservationType === "private"
+                                ? "bg-amber-100 text-amber-800 border-amber-300"
+                                : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            }`}>
+                              {r.reservationType}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 font-semibold text-green-dark whitespace-nowrap">
+                            {r.date}
+                          </td>
+                          <td className="px-4 py-3.5 capitalize text-muted">
+                            {r.bookingType}
+                          </td>
+                          <td className="px-4 py-3.5 text-center">{r.paxCount}</td>
+                          <td className="px-4 py-3.5 font-bold text-green-mid whitespace-nowrap">
+                            {formatPHP(r.downpayment)}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold capitalize ${
+                              r.status === "approved"
+                                ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                                : r.status === "declined"
+                                ? "bg-rose-100 text-rose-700 border-rose-200"
+                                : "bg-amber-100 text-amber-700 border-amber-200"
+                            }`}>
+                              {r.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-muted whitespace-nowrap text-[11px]">
+                            {r.archivedAt
+                              ? new Date(r.archivedAt).toLocaleDateString("en-US", {
+                                  month: "short",
+                                  day: "2-digit",
+                                  year: "numeric",
+                                })
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3.5 max-w-[160px]">
+                            <span className="text-amber-800 truncate block text-[11px]" title={r.archiveReason || ""}>
+                              {r.archiveReason || "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                title="View Details"
+                                onClick={() => setViewReservationTarget(r)}
+                                className="flex items-center gap-1 rounded-lg border border-cream-2 bg-white px-2 py-1.5 text-[11px] font-semibold text-green-dark shadow-2xs transition hover:bg-cream"
+                              >
+                                <Eye className="h-3.5 w-3.5 text-green-mid" />
+                                View
+                              </button>
+                              <button
+                                type="button"
+                                title="Restore Reservation"
+                                onClick={() => setRestoreReservationTarget(r)}
+                                className="flex items-center gap-1 rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-amber-800 shadow-2xs transition hover:bg-amber-100"
+                              >
+                                <ArchiveRestore className="h-3.5 w-3.5 text-amber-600" />
+                                Restore
+                              </button>
+                              <button
+                                type="button"
+                                title="Delete Permanently"
+                                onClick={() => setDeleteReservationTarget(r)}
+                                className="flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-rose-600 shadow-2xs transition hover:bg-rose-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── RESTORE LISTING MODAL ───────────────────────────────────── */}
       {restoreListingTarget && (
         <div
@@ -704,6 +951,216 @@ export default function AdminArchivePage() {
                 className="flex-1 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-700 disabled:opacity-60 transition"
               >
                 {deletingResident ? "Deleting…" : "Delete Permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── RESTORE RESERVATION MODAL ───────────────────────────────── */}
+      {restoreReservationTarget && (
+        <div
+          className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          onClick={() => !restoringReservation && setRestoreReservationTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-green-light/20">
+                <ArchiveRestore className="h-5 w-5 text-green-mid" />
+              </span>
+              <h3 className="font-serif text-lg font-bold text-green-dark">Restore Reservation?</h3>
+            </div>
+            <div className="rounded-xl border border-cream-2 bg-cream/30 p-3 mb-3 text-xs space-y-1 text-green-dark">
+              <div><strong>Reservation:</strong> #{restoreReservationTarget.id}</div>
+              <div><strong>Resident:</strong> {restoreReservationTarget.residentName}</div>
+              <div><strong>Amenity:</strong> {restoreReservationTarget.amenityName}</div>
+              <div><strong>Date & Session:</strong> {restoreReservationTarget.date} ({restoreReservationTarget.bookingType})</div>
+              <div><strong>Status:</strong> <span className="capitalize font-semibold">{restoreReservationTarget.status}</span></div>
+            </div>
+            <p className="text-xs text-muted leading-relaxed">
+              Restoring will return this reservation to the active Reservations list. The system will verify that the amenity slot is available and prevent double booking if already occupied.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setRestoreReservationTarget(null)}
+                disabled={restoringReservation}
+                className="btn-ghost flex-1 justify-center !py-2 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRestoreReservation(restoreReservationTarget)}
+                disabled={restoringReservation}
+                className="flex-1 rounded-xl bg-green-mid px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-green-dark disabled:opacity-60 transition"
+              >
+                {restoringReservation ? "Restoring…" : "Restore"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE RESERVATION PERMANENTLY MODAL ────────────────────── */}
+      {deleteReservationTarget && (
+        <div
+          className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          onClick={() => !deletingReservation && setDeleteReservationTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100">
+                <AlertTriangle className="h-5 w-5 text-rose-600" />
+              </span>
+              <h3 className="font-serif text-lg font-bold text-rose-700">Delete Permanently?</h3>
+            </div>
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 leading-relaxed mb-3">
+              ⚠️ This action <strong>cannot be undone</strong>. The archived reservation record for{" "}
+              <strong>{deleteReservationTarget.residentName}</strong> ({deleteReservationTarget.amenityName} on {deleteReservationTarget.date}) will be permanently deleted.
+            </div>
+            <p className="text-xs text-muted leading-relaxed">
+              Historical dues and financial payment records will remain safely preserved for audit compliance.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteReservationTarget(null)}
+                disabled={deletingReservation}
+                className="btn-ghost flex-1 justify-center !py-2 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteReservation(deleteReservationTarget)}
+                disabled={deletingReservation}
+                className="flex-1 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-700 disabled:opacity-60 transition"
+              >
+                {deletingReservation ? "Deleting…" : "Delete Permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── VIEW RESERVATION DETAILS MODAL ─────────────────────────── */}
+      {viewReservationTarget && (
+        <div
+          className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+          onClick={() => setViewReservationTarget(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-cream-2 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-cream-2 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-5 w-5 text-green-mid" />
+                <h3 className="font-serif text-lg font-bold text-green-dark">Archived Reservation Details</h3>
+              </div>
+              <button
+                onClick={() => setViewReservationTarget(null)}
+                className="rounded-lg p-1 text-muted hover:bg-cream"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="rounded-xl border border-cream-2 bg-cream/30 p-3 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-muted">Reservation ID</span>
+                  <span className="font-bold text-green-dark">#{viewReservationTarget.id}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted">Guest / Resident</span>
+                  <span className="font-semibold text-green-dark">{viewReservationTarget.residentName}</span>
+                </div>
+                {viewReservationTarget.userEmail && (
+                  <div className="flex justify-between">
+                    <span className="text-muted">Email</span>
+                    <span className="text-green-dark">{viewReservationTarget.userEmail}</span>
+                  </div>
+                )}
+                {viewReservationTarget.phone && (
+                  <div className="flex justify-between">
+                    <span className="text-muted">Phone</span>
+                    <span className="text-green-dark">{viewReservationTarget.phone}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-cream-2 bg-cream/30 p-3 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-muted">Amenity</span>
+                  <span className="font-semibold text-green-dark">{viewReservationTarget.amenityName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted">Date & Session</span>
+                  <span className="font-semibold text-green-dark">{viewReservationTarget.date} ({viewReservationTarget.bookingType})</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted">Booking Type</span>
+                  <span className="capitalize text-green-dark">{viewReservationTarget.reservationType}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted">Pax Count</span>
+                  <span className="text-green-dark">{viewReservationTarget.paxCount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted">Downpayment</span>
+                  <span className="font-bold text-green-mid">{formatPHP(viewReservationTarget.downpayment)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted">Payment Method</span>
+                  <span className="text-green-dark">{viewReservationTarget.gcashRef ? `GCash (${viewReservationTarget.gcashRef})` : "Cash"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted">Reservation Status</span>
+                  <span className="capitalize font-bold text-green-dark">{viewReservationTarget.status}</span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 space-y-2 text-amber-900">
+                <div className="flex justify-between">
+                  <span className="font-medium text-amber-700">Archived At</span>
+                  <span>{viewReservationTarget.archivedAt ? new Date(viewReservationTarget.archivedAt).toLocaleString() : "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium text-amber-700">Archive Reason</span>
+                  <span>{viewReservationTarget.archiveReason || "—"}</span>
+                </div>
+              </div>
+
+              {viewReservationTarget.receiptPath && (
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1.5 flex items-center gap-1">
+                    <ReceiptText className="h-3.5 w-3.5" /> Receipt / Payment Proof
+                  </div>
+                  <div className="rounded-xl border border-cream-2 overflow-hidden bg-cream/20">
+                    <img
+                      src={viewReservationTarget.receiptPath}
+                      alt="Receipt"
+                      className="max-h-48 w-full object-cover object-top"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setViewReservationTarget(null)}
+                className="rounded-xl border border-cream-2 px-5 py-2 text-xs font-semibold text-green-dark hover:bg-cream transition"
+              >
+                Close
               </button>
             </div>
           </div>
