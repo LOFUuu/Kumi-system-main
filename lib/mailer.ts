@@ -22,20 +22,111 @@ import nodemailer from "nodemailer";
 import type { SendMailOptions } from "nodemailer";
 import { google } from "googleapis";
 
+// ─── Resend HTTP API (Primary for Vercel / Cloud deployments) ────────────────
+
+async function sendViaResend(opts: {
+  from: string;
+  to: string;
+  subject: string;
+  text?: string;
+  html?: string;
+  replyTo?: string;
+}): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY is not set.");
+  }
+
+  // Resend free tier requires 'onboarding@resend.dev' or a custom verified domain
+  const verifiedSender = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+  const fromHeader = opts.from.includes("<") && process.env.RESEND_FROM_EMAIL
+    ? opts.from
+    : `"Mabuhay Homes Community Portal" <${verifiedSender}>`;
+
+  const payload: Record<string, unknown> = {
+    from: fromHeader,
+    to: [opts.to],
+    subject: opts.subject,
+    ...(opts.text ? { text: opts.text } : {}),
+    ...(opts.html ? { html: opts.html } : {}),
+    ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
+  };
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Resend API error (${res.status}): ${body}`);
+  }
+}
+
+// ─── Brevo HTTP API (Alternative Cloud provider) ──────────────────────────────
+
+async function sendViaBrevo(opts: {
+  from: string;
+  to: string;
+  subject: string;
+  text?: string;
+  html?: string;
+  replyTo?: string;
+}): Promise<void> {
+  const apiKey = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
+  if (!apiKey) {
+    throw new Error("BREVO_API_KEY is not set.");
+  }
+
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_USER || "noreply@mabuhayhomes.com";
+  const senderName = "Mabuhay Homes Community Portal";
+
+  const payload: Record<string, unknown> = {
+    sender: { name: senderName, email: senderEmail },
+    to: [{ email: opts.to }],
+    subject: opts.subject,
+    ...(opts.html ? { htmlContent: opts.html } : {}),
+    ...(opts.text ? { textContent: opts.text } : {}),
+    ...(opts.replyTo ? { replyTo: { email: opts.replyTo } } : {}),
+  };
+
+  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": apiKey,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Brevo API error (${res.status}): ${body}`);
+  }
+}
+
 // ─── Gmail API via OAuth2 (Production & Local) ──────────────────────────────
 
 async function sendViaGmailAPI(opts: SendMailOptions): Promise<void> {
-  const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN } = process.env;
-  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN) {
+  const clientId = process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GMAIL_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+  const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+
+  if (!clientId || !clientSecret || !refreshToken) {
     throw new Error("Gmail API credentials (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN) are not set.");
   }
 
   const oAuth2Client = new google.auth.OAuth2(
-    GMAIL_CLIENT_ID,
-    GMAIL_CLIENT_SECRET,
+    clientId,
+    clientSecret,
     "https://developers.google.com/oauthplayground"
   );
-  oAuth2Client.setCredentials({ refresh_token: GMAIL_REFRESH_TOKEN });
+  oAuth2Client.setCredentials({ refresh_token: refreshToken });
 
   const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
 
@@ -77,7 +168,7 @@ async function sendViaNodemailer(options: SendMailOptions): Promise<void> {
   const user = process.env.EMAIL_USER;
   const rawPass = process.env.EMAIL_PASS;
   if (!user || !rawPass) {
-    throw new Error("EMAIL_USER / EMAIL_PASS not set for local SMTP fallback.");
+    throw new Error("EMAIL_USER / EMAIL_PASS not set for SMTP transport.");
   }
   const pass = rawPass.replace(/\s+/g, "");
   const configs = [
@@ -90,9 +181,9 @@ async function sendViaNodemailer(options: SendMailOptions): Promise<void> {
       const t = nodemailer.createTransport({
         ...cfg,
         auth: { user, pass },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000,
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 8000,
       });
       await t.sendMail(options);
       return;
@@ -123,19 +214,63 @@ async function sendMail(opts: {
     ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
   };
 
-  if (process.env.GMAIL_CLIENT_ID && process.env.GMAIL_REFRESH_TOKEN) {
-    console.log(`[Mailer] Sending via Gmail REST API → ${opts.to}`);
-    await sendViaGmailAPI(nmOpts);
-  } else {
-    console.log(`[Mailer] Sending via SMTP (local fallback) → ${opts.to}`);
-    await sendViaNodemailer(nmOpts);
+  // 1. Resend HTTP API (Fastest and immune to Vercel port blocking)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      console.log(`[Mailer] Sending via Resend HTTP API → ${opts.to}`);
+      await sendViaResend(opts);
+      return;
+    } catch (resendErr: any) {
+      console.warn("[Mailer] Resend attempt failed, trying fallback:", resendErr?.message || resendErr);
+    }
   }
+
+  // 2. Brevo HTTP API (Alternative Cloud provider)
+  if (process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY) {
+    try {
+      console.log(`[Mailer] Sending via Brevo HTTP API → ${opts.to}`);
+      await sendViaBrevo(opts);
+      return;
+    } catch (brevoErr: any) {
+      console.warn("[Mailer] Brevo attempt failed, trying fallback:", brevoErr?.message || brevoErr);
+    }
+  }
+
+  // 3. Gmail REST API via OAuth2
+  const hasGmailApi =
+    Boolean(process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID) &&
+    Boolean(process.env.GMAIL_REFRESH_TOKEN);
+  if (hasGmailApi) {
+    try {
+      console.log(`[Mailer] Sending via Gmail REST API → ${opts.to}`);
+      await sendViaGmailAPI(nmOpts);
+      return;
+    } catch (gmailErr: any) {
+      console.warn("[Mailer] Gmail API attempt failed, trying fallback:", gmailErr?.message || gmailErr);
+    }
+  }
+
+  // 4. SMTP Transport (Gmail SMTP for local dev / servers with open outbound ports)
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    console.log(`[Mailer] Sending via SMTP → ${opts.to}`);
+    await sendViaNodemailer(nmOpts);
+    return;
+  }
+
+  throw new Error(
+    "No working email transport configured. Please set RESEND_API_KEY (or BREVO_API_KEY) in Vercel settings (recommended for production) or EMAIL_USER and EMAIL_PASS."
+  );
 }
 
 // ─── From-address helper ──────────────────────────────────────────────────────
 
 function fromAddress(label = "Mabuhay Homes Community Portal"): string {
-  const addr = process.env.GMAIL_USER || process.env.EMAIL_USER || "noreply@mabuhayhomes.com";
+  const addr =
+    process.env.RESEND_FROM_EMAIL ||
+    process.env.BREVO_SENDER_EMAIL ||
+    process.env.GMAIL_USER ||
+    process.env.EMAIL_USER ||
+    "noreply@mabuhayhomes.com";
   return `"${label}" <${addr}>`;
 }
 
@@ -205,7 +340,13 @@ export async function sendGoogleOnlyAccountEmail(to: string, name: string): Prom
 }
 
 export async function sendVerificationEmail(to: string, verifyUrl: string): Promise<void> {
-  if (!process.env.GMAIL_CLIENT_ID && !process.env.EMAIL_USER) {
+  if (
+    !process.env.RESEND_API_KEY &&
+    !process.env.BREVO_API_KEY &&
+    !process.env.SENDINBLUE_API_KEY &&
+    !process.env.GMAIL_CLIENT_ID &&
+    !process.env.EMAIL_USER
+  ) {
     console.warn(`[Mailer] No transport configured. Verification link for ${to}: ${verifyUrl}`);
     return;
   }
@@ -326,7 +467,13 @@ export async function sendAdminListingNotificationEmail(
 }
 
 export async function sendNewsletterWelcomeEmail(to: string): Promise<void> {
-  if (!process.env.GMAIL_CLIENT_ID && !process.env.EMAIL_USER) {
+  if (
+    !process.env.RESEND_API_KEY &&
+    !process.env.BREVO_API_KEY &&
+    !process.env.SENDINBLUE_API_KEY &&
+    !process.env.GMAIL_CLIENT_ID &&
+    !process.env.EMAIL_USER
+  ) {
     console.warn(`[Mailer] No transport configured. Skipping welcome email for ${to}`);
     return;
   }

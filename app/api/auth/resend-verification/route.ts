@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserByEmailForAuth, saveVerificationToken } from "@/lib/db";
 import { createVerificationToken } from "@/lib/password";
 import { sendVerificationEmail } from "@/lib/mailer";
+import { getBaseUrl } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
@@ -31,14 +32,16 @@ export async function POST(req: NextRequest) {
   const expiry = new Date(Date.now() + VERIFICATION_TTL_MS);
   await saveVerificationToken(email, hash, expiry);
 
-  const origin = new URL(req.url).origin;
+  const origin = getBaseUrl(req);
   const verifyUrl = `${origin}/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
 
   try {
     await sendVerificationEmail(email, verifyUrl);
-  } catch {
+  } catch (err: any) {
+    console.error("[ResendVerification] Failed to send verification email:", err?.message || err);
+    console.log(`[ResendVerification] 🔑 Verify Link for ${email}: ${verifyUrl}`);
     return NextResponse.json(
-      { error: "We couldn't send the verification email. Please try again in a moment." },
+      { error: "We couldn't send the verification email. Please check email delivery configuration and try again." },
       { status: 502 }
     );
   }

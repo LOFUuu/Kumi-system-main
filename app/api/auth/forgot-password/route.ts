@@ -44,8 +44,12 @@ export async function POST(req: NextRequest) {
         await sendPasswordResetEmail(email, resetUrl);
       } catch (err: any) {
         console.error("[ForgotPassword] Failed to send password-reset email:", err?.message || err);
+        console.log(`[ForgotPassword] 🔑 Password Reset Link for ${email}: ${resetUrl}`);
         return NextResponse.json(
-          { error: "The reset email could not be sent. Please check email delivery configuration and try again." },
+          {
+            error:
+              "The reset email could not be sent. Please check email delivery configuration (e.g. RESEND_API_KEY or BREVO_API_KEY in Vercel settings) and try again.",
+          },
           { status: 502 }
         );
       }
