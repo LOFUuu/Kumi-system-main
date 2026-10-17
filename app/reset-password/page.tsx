@@ -154,41 +154,25 @@ function ResetForm() {
 
                   {/* Password strength bar */}
                   {password.length > 0 && (
-                    <div className="mt-2 space-y-2">
+                    <div className="mt-2 space-y-1">
                       <div className="flex items-center gap-2">
                         <div className="flex flex-1 gap-1">
-                          {[1, 2, 3, 4, 5].map((i) => (
+                          {[1, 2, 3].map((i) => (
                             <div
                               key={i}
-                              className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+                              className={`h-1 flex-1 rounded-full transition-all duration-300 ${
                                 i <= strength.score ? strength.color : "bg-gray-200"
                               }`}
                             />
                           ))}
                         </div>
                         {strength.label && (
-                          <span className="text-[11px] font-semibold text-muted w-12 text-right">
+                          <span className="text-[10px] font-medium text-muted">
                             {strength.label}
                           </span>
                         )}
                       </div>
-
-                      {/* Requirement checklist */}
-                      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-y-1 gap-x-3">
-                        {strength.checks.map((c) => (
-                          <li
-                            key={c.label}
-                            className={`flex items-center gap-1.5 text-[11px] transition-colors ${
-                              c.pass ? "text-emerald-600" : "text-muted"
-                            }`}
-                          >
-                            <CheckCircle2
-                              className={`h-3 w-3 shrink-0 ${c.pass ? "text-emerald-500" : "text-gray-300"}`}
-                            />
-                            {c.label}
-                          </li>
-                        ))}
-                      </ul>
+                      <p className="text-[11px] text-gray-400">Use at least 8 characters.</p>
                     </div>
                   )}
                 </div>

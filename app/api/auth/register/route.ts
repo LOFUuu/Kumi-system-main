@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createUser, deleteUserById, getUserByEmailForAuth, saveVerificationToken } from "@/lib/db";
+import { createUser, getUserByEmailForAuth, saveVerificationToken, updateUserById, setUserPassword } from "@/lib/db";
 import { createVerificationToken, hashPassword } from "@/lib/password";
 import { validatePassword } from "@/lib/password-validation";
 import { sendVerificationEmail } from "@/lib/mailer";
+import { createSessionCookieValue } from "@/lib/server-auth";
 import type { Role } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
@@ -11,81 +12,118 @@ const PUBLIC_ROLES: Role[] = ["resident", "non_resident"];
 const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export async function POST(req: NextRequest) {
-  let body: Record<string, unknown>;
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
-  const fullName = String(body.fullName ?? "").trim();
-  const email = String(body.email ?? "").trim().toLowerCase();
-  const password = String(body.password ?? "");
-  const rawRole = String(body.role ?? "").trim() as Role;
-  const role: Role = PUBLIC_ROLES.includes(rawRole) ? rawRole : "resident";
+    const fullName = String(body.fullName ?? "").trim();
+    const email = String(body.email ?? "").trim().toLowerCase();
+    const password = String(body.password ?? "");
+    const rawRole = String(body.role ?? "").trim() as Role;
+    const role: Role = PUBLIC_ROLES.includes(rawRole) ? rawRole : "resident";
 
-  if (!fullName) {
-    return NextResponse.json({ error: "Full name is required." }, { status: 400 });
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
-  }
+    if (!fullName) {
+      return NextResponse.json({ error: "Full name is required." }, { status: 400 });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
+    }
 
-  // ── Strong password validation ────────────────────────────────────────
-  const pwCheck = validatePassword(password);
-  if (!pwCheck.valid) {
-    // Return all unmet requirements so the user can fix them at once
-    const missing = pwCheck.checks.filter((c) => !c.pass).map((c) => c.label);
-    return NextResponse.json(
-      { error: `Password does not meet the requirements. Missing: ${missing.join(", ")}.` },
-      { status: 400 }
-    );
-  }
+    const pwCheck = validatePassword(password);
+    if (!pwCheck.valid) {
+      return NextResponse.json(
+        { error: pwCheck.error || "Password must be at least 8 characters." },
+        { status: 400 }
+      );
+    }
 
-  const existing = await getUserByEmailForAuth(email);
-  if (existing && existing.emailVerified !== false) {
-    return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
-  }
+    const existing = await getUserByEmailForAuth(email);
+    if (existing && existing.passwordHash) {
+      return NextResponse.json({ error: "An account with this email already exists. Please log in." }, { status: 409 });
+    }
 
-  // Email + password sign-ups must verify their address before the account is
-  // usable. Google sign-ups are verified by Google itself and skip this.
-  const { token, hash } = createVerificationToken();
-  const expiry = new Date(Date.now() + VERIFICATION_TTL_MS);
+    let user: any;
+    if (existing) {
+      // User existed without password (e.g. created by admin or Google): set password and activate
+      await setUserPassword(email, hashPassword(password));
+      user = await updateUserById(existing.id, {
+        fullName: fullName || existing.fullName,
+        emailVerified: true,
+        isActive: true,
+        address: body.address ? String(body.address).trim() : existing.address,
+        phone: body.phone ? String(body.phone).trim() : existing.phone,
+      });
+      if (!user) user = existing;
+    } else {
+      user = await createUser({
+        fullName,
+        email,
+        role: role as "resident" | "non_resident",
+        passwordHash: hashPassword(password),
+        address: body.address ? String(body.address).trim() : undefined,
+        phone: body.phone ? String(body.phone).trim() : undefined,
+        blockNo: body.blockNo ? String(body.blockNo).trim() : undefined,
+        lotNo: body.lotNo ? String(body.lotNo).trim() : undefined,
+        emailVerified: true,
+      });
+    }
 
-  let userId: number;
-  if (existing) {
-    // Account was registered before but never verified: refresh its token and
-    // re-send the link instead of erroring out.
-    userId = existing.id;
-    await saveVerificationToken(email, hash, expiry);
-  } else {
-    const user = await createUser({
-      fullName,
-      email,
-      role: role as "resident" | "non_resident",
-      passwordHash: hashPassword(password),
-      address: body.address ? String(body.address).trim() : undefined,
-      phone: body.phone ? String(body.phone).trim() : undefined,
-      blockNo: body.blockNo ? String(body.blockNo).trim() : undefined,
-      lotNo: body.lotNo ? String(body.lotNo).trim() : undefined,
-      emailVerified: false,
-    });
-    userId = user.id;
-    await saveVerificationToken(email, hash, expiry);
-  }
+    // Attempt to save token and send verification email in background without blocking or failing signup
+    try {
+      const { token, hash } = createVerificationToken();
+      const expiry = new Date(Date.now() + VERIFICATION_TTL_MS);
+      saveVerificationToken(email, hash, expiry).catch(() => {});
+      const origin = new URL(req.url).origin;
+      const verifyUrl = `${origin}/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+      sendVerificationEmail(email, verifyUrl).catch((err: any) => {
+        console.warn("[Register] Verification email notification skipped:", err?.message || err);
+      });
+    } catch {
+      // Non-blocking
+    }
 
-  const origin = new URL(req.url).origin;
-  const verifyUrl = `${origin}/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+    const publicUser = {
+      id: user?.id,
+      fullName: user?.fullName || fullName,
+      email: user?.email || email,
+      role: user?.role || role,
+      isActive: true,
+      blockNo: user?.blockNo,
+      lotNo: user?.lotNo,
+      phone: user?.phone,
+      cedula: user?.cedula,
+    };
 
-  try {
-    await sendVerificationEmail(email, verifyUrl);
+    const res = NextResponse.json({ ok: true, user: publicUser }, { status: 201 });
+
+    if (user?.id) {
+      res.cookies.set("kumi_session", createSessionCookieValue(user), {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 30 * 24 * 60 * 60,
+      });
+    }
+
+    return res;
   } catch (err: any) {
-    console.error("[Register] Could not send verification email:", err);
+    console.error("[Register] Error creating account:", err);
+    // Never expose raw DB / network errors to the client
+    const raw = err?.message ?? "";
+    const isTechnical =
+      /ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|socket|getaddrinfo|connect\s/i.test(raw) ||
+      /MongoServerError|MongooseError|mysql|mariadb|PROTOCOL_/i.test(raw);
+    const safeMessage = isTechnical
+      ? "We're having trouble connecting right now. Please try again in a moment."
+      : raw || "Failed to create account. Please try again.";
     return NextResponse.json(
-      { error: "Account created, but we couldn't send the verification email. Please check your email settings or try again." },
-      { status: 502 }
+      { error: safeMessage },
+      { status: 500 }
     );
   }
-
-  return NextResponse.json({ ok: true }, { status: existing ? 202 : 201 });
 }

@@ -607,27 +607,60 @@ export async function savePasswordResetToken(
   tokenHash: string,
   expiry: Date
 ): Promise<void> {
-  await dbConnect();
-  await User.updateOne(
-    { email: email.toLowerCase() },
-    { $set: { resetToken: tokenHash, resetTokenExpiry: expiry } }
-  );
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      await User.updateOne(
+        { email: email.toLowerCase() },
+        { $set: { resetToken: tokenHash, resetTokenExpiry: expiry } }
+      );
+    } catch (e) {}
+  }
+  try {
+    await mariaQuery(
+      `UPDATE users SET resetToken = ?, resetTokenExpiry = ? WHERE LOWER(email) = LOWER(?)`,
+      [tokenHash, expiry, email.toLowerCase().trim()]
+    );
+  } catch (e) {}
 }
 
 export async function clearPasswordResetToken(email: string): Promise<void> {
-  await dbConnect();
-  await User.updateOne(
-    { email: email.toLowerCase() },
-    { $set: { resetToken: null, resetTokenExpiry: null } }
-  );
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      await User.updateOne(
+        { email: email.toLowerCase() },
+        { $set: { resetToken: null, resetTokenExpiry: null } }
+      );
+    } catch (e) {}
+  }
+  try {
+    await mariaQuery(
+      `UPDATE users SET resetToken = NULL, resetTokenExpiry = NULL WHERE LOWER(email) = LOWER(?)`,
+      [email.toLowerCase().trim()]
+    );
+  } catch (e) {}
 }
 
 export async function setUserPassword(email: string, passwordHash: string): Promise<void> {
-  await dbConnect();
-  await User.updateOne(
-    { email: email.toLowerCase() },
-    { $set: { passwordHash, resetToken: null, resetTokenExpiry: null } }
-  );
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      await User.updateOne(
+        { email: email.toLowerCase() },
+        { $set: { passwordHash, resetToken: null, resetTokenExpiry: null, emailVerified: true } }
+      );
+    } catch (e) {}
+  }
+  try {
+    await mariaQuery(
+      `UPDATE users SET passwordHash = ?, resetToken = NULL, resetTokenExpiry = NULL, emailVerified = 1 WHERE LOWER(email) = LOWER(?)`,
+      [passwordHash, email.toLowerCase().trim()]
+    );
+  } catch (e) {}
 }
 
 export async function saveVerificationToken(
@@ -635,33 +668,66 @@ export async function saveVerificationToken(
   tokenHash: string,
   expiry: Date
 ): Promise<void> {
-  await dbConnect();
-  await User.updateOne(
-    { email: email.toLowerCase() },
-    { $set: { verificationToken: tokenHash, verificationTokenExpiry: expiry } }
-  );
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      await User.updateOne(
+        { email: email.toLowerCase() },
+        { $set: { verificationToken: tokenHash, verificationTokenExpiry: expiry } }
+      );
+    } catch (e) {}
+  }
+  try {
+    await mariaQuery(
+      `UPDATE users SET verificationToken = ?, verificationTokenExpiry = ? WHERE LOWER(email) = LOWER(?)`,
+      [tokenHash, expiry, email.toLowerCase().trim()]
+    );
+  } catch (e) {}
 }
 
 export async function clearVerificationToken(email: string): Promise<void> {
-  await dbConnect();
-  await User.updateOne(
-    { email: email.toLowerCase() },
-    { $set: { verificationToken: null, verificationTokenExpiry: null } }
-  );
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      await User.updateOne(
+        { email: email.toLowerCase() },
+        { $set: { verificationToken: null, verificationTokenExpiry: null } }
+      );
+    } catch (e) {}
+  }
+  try {
+    await mariaQuery(
+      `UPDATE users SET verificationToken = NULL, verificationTokenExpiry = NULL WHERE LOWER(email) = LOWER(?)`,
+      [email.toLowerCase().trim()]
+    );
+  } catch (e) {}
 }
 
 export async function setEmailVerified(email: string, verified = true): Promise<void> {
-  await dbConnect();
-  await User.updateOne(
-    { email: email.toLowerCase() },
-    {
-      $set: {
-        emailVerified: verified,
-        verificationToken: null,
-        verificationTokenExpiry: null,
-      },
-    }
-  );
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      await User.updateOne(
+        { email: email.toLowerCase() },
+        {
+          $set: {
+            emailVerified: verified,
+            verificationToken: null,
+            verificationTokenExpiry: null,
+          },
+        }
+      );
+    } catch (e) {}
+  }
+  try {
+    await mariaQuery(
+      `UPDATE users SET emailVerified = ?, verificationToken = NULL, verificationTokenExpiry = NULL WHERE LOWER(email) = LOWER(?)`,
+      [verified ? 1 : 0, email.toLowerCase().trim()]
+    );
+  } catch (e) {}
 }
 
 export async function deleteUserById(id: number | string): Promise<void> {

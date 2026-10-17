@@ -21,6 +21,7 @@ const poolOptions: PoolOptions = {
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 10000,
+  connectTimeout: 3000,
 };
 
 export function getMariaDBPool(): Pool {

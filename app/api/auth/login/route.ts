@@ -54,17 +54,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
   }
 
-  // Block login for accounts that haven't verified their email yet.
-  // Admin and counselor accounts are pre-verified by the system so we skip this check for them.
-  if (user.emailVerified === false && user.role !== "admin" && user.role !== "counselor") {
-    return NextResponse.json(
-      {
-        error: "Please verify your email before logging in. Check your inbox for a verification link, or request a new one.",
-        code: "EMAIL_NOT_VERIFIED",
-        email,
-      },
-      { status: 403 }
-    );
+  // Auto-verify account upon successful login if not already verified
+  if (user.emailVerified === false) {
+    const { setEmailVerified } = await import("@/lib/db");
+    setEmailVerified(email, true).catch(() => {});
+    user.emailVerified = true;
   }
 
   const ADMIN_EMAIL = "mabuhay2000phase5@gmail.com";

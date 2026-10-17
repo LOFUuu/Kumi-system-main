@@ -25,12 +25,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "This reset link is invalid or incomplete." }, { status: 400 });
   }
 
-  // ── Strong password validation ────────────────────────────────────────
+  // ── Password validation ────────────────────────────────────────────────
   const pwCheck = validatePassword(newPassword);
   if (!pwCheck.valid) {
-    const missing = pwCheck.checks.filter((c) => !c.pass).map((c) => c.label);
     return NextResponse.json(
-      { error: `Password does not meet the requirements. Missing: ${missing.join(", ")}.` },
+      { error: pwCheck.error || "Password must be at least 8 characters." },
       { status: 400 }
     );
   }
