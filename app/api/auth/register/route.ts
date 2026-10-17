@@ -4,6 +4,7 @@ import { createVerificationToken, hashPassword } from "@/lib/password";
 import { validatePassword } from "@/lib/password-validation";
 import { sendVerificationEmail } from "@/lib/mailer";
 import { createSessionCookieValue } from "@/lib/server-auth";
+import { getBaseUrl } from "@/lib/url";
 import type { Role } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
@@ -29,8 +30,13 @@ export async function POST(req: NextRequest) {
     if (!fullName) {
       return NextResponse.json({ error: "Full name is required." }, { status: 400 });
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
+    }
+
+    // Validate password confirmation if provided
+    if (body.confirm !== undefined && String(body.confirm) !== password) {
+      return NextResponse.json({ error: "Passwords do not match." }, { status: 400 });
     }
 
     const pwCheck = validatePassword(password);
@@ -77,7 +83,7 @@ export async function POST(req: NextRequest) {
       const { token, hash } = createVerificationToken();
       const expiry = new Date(Date.now() + VERIFICATION_TTL_MS);
       saveVerificationToken(email, hash, expiry).catch(() => {});
-      const origin = new URL(req.url).origin;
+      const origin = getBaseUrl(req);
       const verifyUrl = `${origin}/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
       sendVerificationEmail(email, verifyUrl).catch((err: any) => {
         console.warn("[Register] Verification email notification skipped:", err?.message || err);
@@ -113,7 +119,6 @@ export async function POST(req: NextRequest) {
     return res;
   } catch (err: any) {
     console.error("[Register] Error creating account:", err);
-    // Never expose raw DB / network errors to the client
     const raw = err?.message ?? "";
     const isTechnical =
       /ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|socket|getaddrinfo|connect\s/i.test(raw) ||

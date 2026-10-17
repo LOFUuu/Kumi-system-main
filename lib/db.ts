@@ -113,7 +113,11 @@ export async function getListings(filter?: {
       // fallback to offline
     }
   }
-  return maria.getListingsMariaDB(filter);
+  try {
+    return await maria.getListingsMariaDB(filter);
+  } catch {
+    return [];
+  }
 }
 
 export async function getArchivedListings(): Promise<HouseListing[]> {
@@ -132,7 +136,11 @@ export async function getArchivedListings(): Promise<HouseListing[]> {
       }));
     } catch (e) {}
   }
-  return maria.getListingsMariaDB({ isArchived: true });
+  try {
+    return await maria.getListingsMariaDB({ isArchived: true });
+  } catch {
+    return [];
+  }
 }
 
 export async function archiveListing(
@@ -167,12 +175,16 @@ export async function archiveListing(
       return res.matchedCount > 0 || res.modifiedCount > 0;
     } catch (e) {}
   }
-  const updated = await maria.updateListingMariaDB(id, {
-    isArchived: true,
-    archiveReason: reason || (archivedBy === "owner" ? "Archived by Owner" : "Archived by Admin"),
-    archivedBy,
-  });
-  return Boolean(updated);
+  try {
+    const updated = await maria.updateListingMariaDB(id, {
+      isArchived: true,
+      archiveReason: reason || (archivedBy === "owner" ? "Archived by Owner" : "Archived by Admin"),
+      archivedBy,
+    });
+    return Boolean(updated);
+  } catch {
+    return false;
+  }
 }
 
 export async function unarchiveListing(id: number | string): Promise<boolean> {
@@ -198,8 +210,12 @@ export async function unarchiveListing(id: number | string): Promise<boolean> {
       return res.matchedCount > 0 || res.modifiedCount > 0;
     } catch (e) {}
   }
-  const updated = await maria.updateListingMariaDB(id, { isArchived: false, archiveReason: null });
-  return Boolean(updated);
+  try {
+    const updated = await maria.updateListingMariaDB(id, { isArchived: false, archiveReason: null });
+    return Boolean(updated);
+  } catch {
+    return false;
+  }
 }
 
 export async function getListing(id: number | string): Promise<HouseListing | null> {
@@ -220,7 +236,11 @@ export async function getListing(id: number | string): Promise<HouseListing | nu
       }
     } catch (e) {}
   }
-  return maria.getListingMariaDB(id);
+  try {
+    return await maria.getListingMariaDB(id);
+  } catch {
+    return null;
+  }
 }
 
 export async function createListing(data: any): Promise<HouseListing> {
@@ -236,7 +256,11 @@ export async function createListing(data: any): Promise<HouseListing> {
       return res;
     } catch (e) {}
   }
-  return maria.createListingMariaDB(data);
+  try {
+    return await maria.createListingMariaDB(data);
+  } catch (err: any) {
+    throw new Error(err?.message || "Failed to create listing in database.");
+  }
 }
 
 export async function updateListing(id: number | string, data: any): Promise<HouseListing | null> {
@@ -250,7 +274,11 @@ export async function updateListing(id: number | string, data: any): Promise<Hou
       if (doc) return serialize<HouseListing>(doc);
     } catch (e) {}
   }
-  return maria.updateListingMariaDB(id, data);
+  try {
+    return await maria.updateListingMariaDB(id, data);
+  } catch {
+    return null;
+  }
 }
 
 export async function deleteListing(id: number | string): Promise<boolean> {
@@ -264,7 +292,9 @@ export async function deleteListing(id: number | string): Promise<boolean> {
       return true;
     } catch (e) {}
   }
-  await mariaQuery(`DELETE FROM listings WHERE id = ?`, [Number(id)]);
+  try {
+    await mariaQuery(`DELETE FROM listings WHERE id = ?`, [Number(id)]);
+  } catch {}
   return true;
 }
 
@@ -282,7 +312,11 @@ export async function getListingsByOwner(uploadedBy: number): Promise<HouseListi
       }));
     } catch (e) {}
   }
-  return maria.getListingsMariaDB({ status: undefined }).then(l => l.filter(x => x.uploadedBy === uploadedBy));
+  try {
+    return await maria.getListingsMariaDB({ status: undefined }).then(l => l.filter(x => x.uploadedBy === uploadedBy));
+  } catch {
+    return [];
+  }
 }
 
 
@@ -445,20 +479,24 @@ export async function getNextId(collection: any): Promise<number> {
       // fallback to MariaDB
     }
   }
-  const name = String(collection?.modelName || "").toLowerCase();
-  const tableMap: Record<string, string> = {
-    listing: "listings",
-    amenity: "amenities",
-    announcement: "announcements",
-    user: "users",
-    reservation: "reservations",
-    duesrecord: "dues",
-    transaction: "transactions",
-    propertyviewing: "property_viewings",
-  };
-  const table = tableMap[name] || "listings";
-  const rows = await mariaQuery<any[]>(`SELECT MAX(id) as maxId FROM \`${table}\``);
-  return (rows[0]?.maxId || 0) + 1;
+  try {
+    const name = String(collection?.modelName || "").toLowerCase();
+    const tableMap: Record<string, string> = {
+      listing: "listings",
+      amenity: "amenities",
+      announcement: "announcements",
+      user: "users",
+      reservation: "reservations",
+      duesrecord: "dues",
+      transaction: "transactions",
+      propertyviewing: "property_viewings",
+    };
+    const table = tableMap[name] || "listings";
+    const rows = await mariaQuery<any[]>(`SELECT MAX(id) as maxId FROM \`${table}\``);
+    return (rows[0]?.maxId || 0) + 1;
+  } catch {
+    return Date.now();
+  }
 }
 
 export async function getAnnouncements(activeOnly = false): Promise<AnnouncementType[]> {
@@ -472,7 +510,11 @@ export async function getAnnouncements(activeOnly = false): Promise<Announcement
       return docs.map((d) => serialize<AnnouncementType>(d));
     } catch (e) {}
   }
-  return maria.getAnnouncementsMariaDB(activeOnly);
+  try {
+    return await maria.getAnnouncementsMariaDB(activeOnly);
+  } catch {
+    return [];
+  }
 }
 
 function userFilter(id: number | string) {
@@ -512,7 +554,11 @@ export async function getUsers(): Promise<UserType[]> {
       }));
     } catch (e) {}
   }
-  return maria.getUsersMariaDB();
+  try {
+    return await maria.getUsersMariaDB();
+  } catch {
+    return [];
+  }
 }
 
 export async function getArchivedUsers(): Promise<UserType[]> {
@@ -536,7 +582,11 @@ export async function getArchivedUsers(): Promise<UserType[]> {
       }));
     } catch (e) {}
   }
-  return maria.getArchivedUsersMariaDB();
+  try {
+    return await maria.getArchivedUsersMariaDB();
+  } catch {
+    return [];
+  }
 }
 
 export async function archiveUser(id: number | string, reason?: string): Promise<boolean> {
@@ -561,7 +611,11 @@ export async function archiveUser(id: number | string, reason?: string): Promise
       return res.matchedCount > 0 || res.modifiedCount > 0;
     } catch (e) {}
   }
-  return maria.archiveUserMariaDB(id, reason);
+  try {
+    return Boolean(await maria.archiveUserMariaDB(id, reason));
+  } catch {
+    return false;
+  }
 }
 
 export async function unarchiveUser(id: number | string): Promise<boolean> {
@@ -586,20 +640,32 @@ export async function unarchiveUser(id: number | string): Promise<boolean> {
       return res.matchedCount > 0 || res.modifiedCount > 0;
     } catch (e) {}
   }
-  return maria.unarchiveUserMariaDB(id);
+  try {
+    return Boolean(await maria.unarchiveUserMariaDB(id));
+  } catch {
+    return false;
+  }
 }
 
 // Full user lookup (incl. password/reset fields) for server-side auth only.
 export async function getUserByEmailForAuth(email: string): Promise<AuthUser | null> {
+  const normalizedEmail = email.toLowerCase().trim();
   const online = await isOnlineMode();
   if (online) {
     try {
       await dbConnect();
-      const doc = await User.findOne({ email: email.toLowerCase() }).lean();
+      const doc = await User.findOne({ email: normalizedEmail }).lean();
       if (doc) return serializeAuth(doc);
-    } catch (e) {}
+    } catch (e) {
+      console.warn("[DB] MongoDB getUserByEmailForAuth error:", (e as Error)?.message);
+    }
   }
-  return maria.getUserByEmailForAuthMariaDB(email);
+  // Fall back to local MariaDB only if reachable, safely catching connection errors
+  try {
+    return await maria.getUserByEmailForAuthMariaDB(normalizedEmail);
+  } catch {
+    return null;
+  }
 }
 
 export async function savePasswordResetToken(
@@ -741,7 +807,9 @@ export async function deleteUserById(id: number | string): Promise<void> {
       return;
     } catch (e) {}
   }
-  await maria.deleteUserByIdMariaDB(id);
+  try {
+    await maria.deleteUserByIdMariaDB(id);
+  } catch {}
 }
 
 export async function createUser(data: {
@@ -756,6 +824,7 @@ export async function createUser(data: {
   passwordHash?: string;
   emailVerified?: boolean;
 }): Promise<UserType> {
+  const normalizedEmail = data.email.toLowerCase().trim();
   const online = await isOnlineMode();
   if (online) {
     try {
@@ -764,7 +833,7 @@ export async function createUser(data: {
       const doc = await User.create({
         _id: id,
         fullName: data.fullName,
-        email: data.email,
+        email: normalizedEmail,
         role: data.role,
         isActive: true,
         address: data.address || undefined,
@@ -776,11 +845,17 @@ export async function createUser(data: {
         emailVerified: data.emailVerified,
       } as any);
       const res = serialize<UserType>(doc);
-      maria.createUserMariaDB({ ...data, id }).catch(() => {});
+      maria.createUserMariaDB({ ...data, email: normalizedEmail, id }).catch(() => {});
       return res;
-    } catch (e) {}
+    } catch (e) {
+      console.error("[DB] Failed to create user in MongoDB:", e);
+    }
   }
-  return maria.createUserMariaDB(data);
+  try {
+    return await maria.createUserMariaDB({ ...data, email: normalizedEmail });
+  } catch (err: any) {
+    throw new Error(err?.message || "Failed to create user in database.");
+  }
 }
 
 export async function updateUserProfile(
@@ -868,7 +943,11 @@ export async function updateUserById(
       }
     } catch (e) {}
   }
-  return maria.updateUserByIdMariaDB(id, data);
+  try {
+    return await maria.updateUserByIdMariaDB(id, data);
+  } catch {
+    return null;
+  }
 }
 
 // Master index of registered home/unit lots (blockNo + lotNo) drawn from the
@@ -897,19 +976,23 @@ export async function getMasterIndex(): Promise<{ blockNo: string; lotNo: string
       return units;
     } catch (e) {}
   }
-  const users = await maria.getUsersMariaDB();
-  const seen = new Set<string>();
-  const units: { blockNo: string; lotNo: string }[] = [];
-  for (const u of users) {
-    if (u.blockNo && u.lotNo) {
-      const key = `${u.blockNo}|${u.lotNo}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        units.push({ blockNo: u.blockNo, lotNo: u.lotNo });
+  try {
+    const users = await maria.getUsersMariaDB();
+    const seen = new Set<string>();
+    const units: { blockNo: string; lotNo: string }[] = [];
+    for (const u of users) {
+      if (u.blockNo && u.lotNo) {
+        const key = `${u.blockNo}|${u.lotNo}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          units.push({ blockNo: u.blockNo, lotNo: u.lotNo });
+        }
       }
     }
+    return units;
+  } catch {
+    return [];
   }
-  return units;
 }
 
 export async function getReservations(includeArchived = false): Promise<ReservationType[]> {
@@ -931,7 +1014,11 @@ export async function getReservations(includeArchived = false): Promise<Reservat
       return docs.map((d) => serialize<ReservationType>(d));
     } catch (e) {}
   }
-  return maria.getReservationsMariaDB();
+  try {
+    return await maria.getReservationsMariaDB();
+  } catch {
+    return [];
+  }
 }
 
 export async function getArchivedReservations(): Promise<ReservationType[]> {
@@ -1161,7 +1248,11 @@ export async function getDues(): Promise<DuesType[]> {
       return docs.map((d) => serialize<DuesType>(d));
     } catch (e) {}
   }
-  return maria.getDuesMariaDB();
+  try {
+    return await maria.getDuesMariaDB();
+  } catch {
+    return [];
+  }
 }
 
 export async function importDuesRecords(

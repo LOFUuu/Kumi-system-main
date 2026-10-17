@@ -35,18 +35,22 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<AuthUser |
         // failed online, try local
       }
     }
-    // Offline local database lookup
-    if (filter.id) {
-      const u = await getUserByIdMariaDB(filter.id);
-      if (u && u.isActive !== false && !u.isArchived) {
-        return u as AuthUser;
+    // Offline local database lookup (safely caught if MariaDB is down/not configured)
+    try {
+      if (filter.id) {
+        const u = await getUserByIdMariaDB(filter.id);
+        if (u && u.isActive !== false && !u.isArchived) {
+          return u as AuthUser;
+        }
       }
-    }
-    if (filter.email) {
-      const u = await getUserByEmailForAuthMariaDB(filter.email);
-      if (u && u.isActive !== false && !u.isArchived) {
-        return u as AuthUser;
+      if (filter.email) {
+        const u = await getUserByEmailForAuthMariaDB(filter.email);
+        if (u && u.isActive !== false && !u.isArchived) {
+          return u as AuthUser;
+        }
       }
+    } catch {
+      // MariaDB is down or unreachable
     }
     return null;
   };

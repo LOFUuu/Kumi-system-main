@@ -73,51 +73,59 @@ export async function POST(req: NextRequest) {
 
   const isAdminEmail = email === ADMIN_EMAIL;
 
-  // Find-or-create the portal user tied to this email. Google verifies the
-  // address itself, so these accounts are immediately email-verified — and any
-  // account registered by password that was still unverified gets auto-verified
-  // here, since signing in via Google proves ownership of the inbox.
-  let user = await getUserByEmailForAuth(email);
-  if (!user) {
-    const fullName = profile.name?.trim() || email.split("@")[0] || "Resident";
-    const assignedRole = isAdminEmail ? "admin" : "non_resident";
-    user = await createUser({ fullName, email, role: assignedRole, emailVerified: true });
-  } else {
-    // If this is the authorized admin email, ensure the user role is updated to admin
-    if (isAdminEmail && user.role !== "admin") {
-      const updated = await updateUserById(user.id, { role: "admin" });
-      if (updated) {
-        user = updated;
-      } else {
-        user.role = "admin";
+  try {
+    // Find-or-create the portal user tied to this email. Google verifies the
+    // address itself, so these accounts are immediately email-verified — and any
+    // account registered by password that was still unverified gets auto-verified
+    // here, since signing in via Google proves ownership of the inbox.
+    let user = await getUserByEmailForAuth(email);
+    if (!user) {
+      const fullName = profile.name?.trim() || email.split("@")[0] || "Resident";
+      const assignedRole = isAdminEmail ? "admin" : "non_resident";
+      user = await createUser({ fullName, email, role: assignedRole, emailVerified: true });
+    } else {
+      // If this is the authorized admin email, ensure the user role is updated to admin
+      if (isAdminEmail && user.role !== "admin") {
+        const updated = await updateUserById(user.id, { role: "admin" });
+        if (updated) {
+          user = updated;
+        } else {
+          user.role = "admin";
+        }
       }
+      // Proves ownership of the inbox, so a pending password sign-up becomes
+      // immediately usable, while preserving the existing password.
+      await setEmailVerified(email, true);
     }
-    // Proves ownership of the inbox, so a pending password sign-up becomes
-    // immediately usable, while preserving the existing password.
-    await setEmailVerified(email, true);
+
+    // Strip sensitive credentials before returning user in response
+    const publicUser = {
+      id: user.id,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+      blockNo: user.blockNo,
+      lotNo: user.lotNo,
+      phone: user.phone,
+      cedula: user.cedula,
+    };
+
+    const res = NextResponse.json({ user: publicUser });
+    res.cookies.set("kumi_session", createSessionCookieValue(user), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 30 * 24 * 60 * 60,
+    });
+
+    return res;
+  } catch (err: any) {
+    console.error("[GoogleAuth] Error during user sign-in:", err);
+    return NextResponse.json(
+      { error: "Google sign-in could not be completed. Please try again in a moment." },
+      { status: 500 }
+    );
   }
-
-  // Strip sensitive credentials before returning user in response
-  const publicUser = {
-    id: user.id,
-    fullName: user.fullName,
-    email: user.email,
-    role: user.role,
-    isActive: user.isActive,
-    blockNo: user.blockNo,
-    lotNo: user.lotNo,
-    phone: user.phone,
-    cedula: user.cedula,
-  };
-
-  const res = NextResponse.json({ user: publicUser });
-  res.cookies.set("kumi_session", createSessionCookieValue(user), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 30 * 24 * 60 * 60,
-  });
-
-  return res;
 }
