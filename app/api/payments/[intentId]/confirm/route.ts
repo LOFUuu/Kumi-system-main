@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPaymentByIntent } from "@/lib/db";
-import { Transaction } from "@/models";
+import { getPaymentByIntent, updateTransactionById, updateReservation } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -9,11 +8,6 @@ export const maxDuration = 30;
 
 // Marks a payment intent as "paid" using the GCash reference number the user
 // supplies after completing the payment in the GCash app.
-//
-// This is the manual confirmation step that stands in for a live provider
-// webhook until a real GCash gateway is connected. With a real provider, the
-// webhook (/api/payments/webhook) would perform this update automatically and
-// this endpoint would become the "refresh status" path.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ intentId: string }> }
@@ -42,22 +36,26 @@ export async function POST(
   }
 
   const today = new Date().toISOString().slice(0, 10);
+  const currentPayment = txn.payment || ({} as any);
+  const updatedPayment = {
+    ...currentPayment,
+    status: "paid",
+    paidAt: today,
+    ...(gcashRef ? { gcashRef } : {}),
+  };
+
   const updatePayload: Record<string, unknown> = {
-    "payment.status": "paid",
-    "payment.paidAt": today,
+    payment: updatedPayment,
+    status: "pending", // awaiting admin review/approval of receipt
   };
   if (gcashRef) {
     updatePayload.gcashRef = gcashRef;
-    updatePayload["payment.gcashRef"] = gcashRef;
   }
   if (receiptPath) {
     updatePayload.receiptPath = receiptPath;
   }
 
-  await Transaction.updateOne(
-    { "payment.intentId": intentId } as any,
-    { $set: updatePayload } as any
-  );
+  await updateTransactionById(txn.id, updatePayload);
 
   // If this transaction references an amenity reservation, update that reservation too
   if (txn.refType === "amenity" && txn.refId) {
@@ -65,8 +63,7 @@ export async function POST(
     if (gcashRef) resUpdate.gcashRef = gcashRef;
     if (receiptPath) resUpdate.receiptPath = receiptPath;
     if (Object.keys(resUpdate).length > 0) {
-      const { Reservation } = await import("@/models");
-      await Reservation.updateOne({ _id: txn.refId } as any, { $set: resUpdate } as any);
+      await updateReservation(txn.refId, resUpdate);
     }
   }
 

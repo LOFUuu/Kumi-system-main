@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getListing } from "@/lib/db";
-import { Listing } from "@/models";
+import { getListing, updateListing, deleteListing } from "@/lib/db";
 import { howaGuard, requestRole } from "@/lib/role";
 
 export const dynamic = "force-dynamic";
@@ -50,15 +49,10 @@ export async function PATCH(
     if (denied) return NextResponse.json({ error: denied }, { status: 403 });
 
     if (body.action === "approve") {
-      await Listing.updateOne(
-        { _id: numericId } as any,
-        {
-          $set: {
-            verificationStatus: "verified",
-            rejectionReason: null,
-          },
-        } as any
-      );
+      await updateListing(numericId, {
+        verificationStatus: "verified",
+        rejectionReason: null,
+      });
     } else {
       // reject
       const reason = String(body.rejectionReason || "").trim();
@@ -68,15 +62,10 @@ export async function PATCH(
           { status: 400 }
         );
       }
-      await Listing.updateOne(
-        { _id: numericId } as any,
-        {
-          $set: {
-            verificationStatus: "rejected",
-            rejectionReason: reason,
-          },
-        } as any
-      );
+      await updateListing(numericId, {
+        verificationStatus: "rejected",
+        rejectionReason: reason,
+      });
     }
 
     const updated = await getListing(numericId);
@@ -110,16 +99,11 @@ export async function PATCH(
       );
     }
 
-    await Listing.updateOne(
-      { _id: numericId } as any,
-      {
-        $set: {
-          verificationStatus: "pending",
-          proofDocuments: newDocs,
-          rejectionReason: null,
-        },
-      } as any
-    );
+    await updateListing(numericId, {
+      verificationStatus: "pending",
+      proofDocuments: newDocs,
+      rejectionReason: null,
+    });
 
     const updated = await getListing(numericId);
     return NextResponse.json({ listing: updated });
@@ -199,7 +183,7 @@ export async function PATCH(
     }
   }
 
-  await Listing.updateOne({ _id: numericId } as any, { $set: patch } as any);
+  await updateListing(numericId, patch);
   const updated = await getListing(numericId);
   return NextResponse.json({ listing: updated });
 }
@@ -220,6 +204,6 @@ export async function DELETE(
   const existing = await getListing(numericId);
   if (!existing) return NextResponse.json({ error: "Listing not found." }, { status: 404 });
 
-  await Listing.deleteOne({ _id: numericId } as any);
+  await deleteListing(numericId);
   return NextResponse.json({ ok: true });
 }

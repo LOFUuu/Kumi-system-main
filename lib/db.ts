@@ -8,8 +8,12 @@ import {
   Reservation,
   DuesRecord,
   Transaction,
+  PropertyViewing,
   PaymentConfig,
 } from "../models";
+import { isOnlineMode } from "./db-router";
+import * as maria from "./mariadb-service";
+import { mariaQuery } from "./mariadb";
 import type {
   HouseListing,
   Amenity as AmenityType,
@@ -18,6 +22,7 @@ import type {
   Reservation as ReservationType,
   DuesRecord as DuesType,
   Transaction as TransactionType,
+  PropertyViewing as PropertyViewingType,
   PaymentConfig as PaymentConfigType,
 } from "./mock-data";
 import {
@@ -79,43 +84,55 @@ export async function getListings(filter?: {
   includeArchived?: boolean;
   isArchived?: boolean;
 }): Promise<HouseListing[]> {
-  await dbConnect();
-  const query: Record<string, unknown> = {};
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const query: Record<string, unknown> = {};
 
-  if (filter?.isArchived !== undefined) {
-    query.isArchived = filter.isArchived;
-  } else if (!filter?.includeArchived) {
-    query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
-  }
+      if (filter?.isArchived !== undefined) {
+        query.isArchived = filter.isArchived;
+      } else if (!filter?.includeArchived) {
+        query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
+      }
 
-  if (filter?.status) query.status = filter.status;
-  if (filter?.verificationStatus) {
-    if (filter.verificationStatus === "verified") {
-      // Matches explicitly verified listings and legacy database listings,
-      // while strictly hiding pending and rejected listings from the public feed.
-      query.verificationStatus = { $nin: ["pending", "rejected"] };
-    } else {
-      query.verificationStatus = filter.verificationStatus;
+      if (filter?.status) query.status = filter.status;
+      if (filter?.verificationStatus) {
+        if (filter.verificationStatus === "verified") {
+          query.verificationStatus = { $nin: ["pending", "rejected"] };
+        } else {
+          query.verificationStatus = filter.verificationStatus;
+        }
+      }
+      const docs = await Listing.find(query).sort({ createdAt: -1, _id: -1 }).lean();
+      return docs.map((d: any) => ({
+        ...serialize<HouseListing>(d),
+        createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+      }));
+    } catch (e) {
+      // fallback to offline
     }
   }
-  const docs = await Listing.find(query).sort({ createdAt: -1, _id: -1 }).lean();
-  return docs.map((d: any) => ({
-    ...serialize<HouseListing>(d),
-    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
-  }));
+  return maria.getListingsMariaDB(filter);
 }
 
 export async function getArchivedListings(): Promise<HouseListing[]> {
-  await dbConnect();
-  const docs = await Listing.find({
-    $or: [{ isArchived: true }, { isArchived: "true" }, { isArchived: 1 }],
-  } as any)
-    .sort({ updatedAt: -1, _id: -1 })
-    .lean();
-  return docs.map((d: any) => ({
-    ...serialize<HouseListing>(d),
-    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
-  }));
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const docs = await Listing.find({
+        $or: [{ isArchived: true }, { isArchived: "true" }, { isArchived: 1 }],
+      } as any)
+        .sort({ updatedAt: -1, _id: -1 })
+        .lean();
+      return docs.map((d: any) => ({
+        ...serialize<HouseListing>(d),
+        createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+      }));
+    } catch (e) {}
+  }
+  return maria.getListingsMariaDB({ isArchived: true });
 }
 
 export async function archiveListing(
@@ -123,68 +140,149 @@ export async function archiveListing(
   reason?: string,
   archivedBy: "owner" | "admin" = "admin"
 ): Promise<boolean> {
-  await dbConnect();
-  const numId = Number(id);
-  const filter = Number.isFinite(numId)
-    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
-    : { _id: id };
-  const res = await Listing.updateOne(
-    filter as any,
-    {
-      $set: {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(id);
+      const filter = Number.isFinite(numId)
+        ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+        : { _id: id };
+      const res = await Listing.updateOne(
+        filter as any,
+        {
+          $set: {
+            isArchived: true,
+            archiveReason: reason || (archivedBy === "owner" ? "Archived by Owner" : "Archived by Admin"),
+            archivedBy,
+            archivedAt: new Date().toISOString(),
+          },
+        }
+      );
+      maria.updateListingMariaDB(id, {
         isArchived: true,
         archiveReason: reason || (archivedBy === "owner" ? "Archived by Owner" : "Archived by Admin"),
         archivedBy,
-        archivedAt: new Date().toISOString(),
-      },
-    }
-  );
-  return res.matchedCount > 0 || res.modifiedCount > 0;
+      }).catch(() => {});
+      return res.matchedCount > 0 || res.modifiedCount > 0;
+    } catch (e) {}
+  }
+  const updated = await maria.updateListingMariaDB(id, {
+    isArchived: true,
+    archiveReason: reason || (archivedBy === "owner" ? "Archived by Owner" : "Archived by Admin"),
+    archivedBy,
+  });
+  return Boolean(updated);
 }
 
 export async function unarchiveListing(id: number | string): Promise<boolean> {
-  await dbConnect();
-  const numId = Number(id);
-  const filter = Number.isFinite(numId)
-    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
-    : { _id: id };
-  const res = await Listing.updateOne(
-    filter as any,
-    {
-      $set: {
-        isArchived: false,
-        archiveReason: null,
-        archivedAt: null,
-      },
-    }
-  );
-  return res.matchedCount > 0 || res.modifiedCount > 0;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(id);
+      const filter = Number.isFinite(numId)
+        ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+        : { _id: id };
+      const res = await Listing.updateOne(
+        filter as any,
+        {
+          $set: {
+            isArchived: false,
+            archiveReason: null,
+            archivedAt: null,
+          },
+        }
+      );
+      maria.updateListingMariaDB(id, { isArchived: false, archiveReason: null }).catch(() => {});
+      return res.matchedCount > 0 || res.modifiedCount > 0;
+    } catch (e) {}
+  }
+  const updated = await maria.updateListingMariaDB(id, { isArchived: false, archiveReason: null });
+  return Boolean(updated);
 }
 
 export async function getListing(id: number | string): Promise<HouseListing | null> {
-  await dbConnect();
-  const numId = Number(id);
-  const filter = Number.isFinite(numId)
-    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
-    : { _id: id };
-  const doc = await Listing.findOne(filter as any).lean();
-  return doc
-    ? {
-        ...serialize<HouseListing>(doc),
-        createdAt: (doc as any).createdAt ? new Date((doc as any).createdAt).toISOString() : undefined,
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(id);
+      const filter = Number.isFinite(numId)
+        ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+        : { _id: id };
+      const doc = await Listing.findOne(filter as any).lean();
+      if (doc) {
+        return {
+          ...serialize<HouseListing>(doc),
+          createdAt: (doc as any).createdAt ? new Date((doc as any).createdAt).toISOString() : undefined,
+        };
       }
-    : null;
+    } catch (e) {}
+  }
+  return maria.getListingMariaDB(id);
+}
+
+export async function createListing(data: any): Promise<HouseListing> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const id = data._id || data.id || (await getNextId(Listing));
+      const created = await Listing.create({ ...data, _id: id });
+      const plain = (created as any)?.toObject ? (created as any).toObject() : created;
+      const res = serialize<HouseListing>(plain);
+      maria.createListingMariaDB({ ...res, id: res.id || id }).catch(() => {});
+      return res;
+    } catch (e) {}
+  }
+  return maria.createListingMariaDB(data);
+}
+
+export async function updateListing(id: number | string, data: any): Promise<HouseListing | null> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(id);
+      const doc = await Listing.findOneAndUpdate({ _id: numId } as any, { $set: data }, { new: true }).lean();
+      maria.updateListingMariaDB(id, data).catch(() => {});
+      if (doc) return serialize<HouseListing>(doc);
+    } catch (e) {}
+  }
+  return maria.updateListingMariaDB(id, data);
+}
+
+export async function deleteListing(id: number | string): Promise<boolean> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(id);
+      await Listing.deleteOne({ _id: numId } as any);
+      mariaQuery(`DELETE FROM listings WHERE id = ?`, [numId]).catch(() => {});
+      return true;
+    } catch (e) {}
+  }
+  await mariaQuery(`DELETE FROM listings WHERE id = ?`, [Number(id)]);
+  return true;
 }
 
 export async function getListingsByOwner(uploadedBy: number): Promise<HouseListing[]> {
-  await dbConnect();
-  const docs = await Listing.find({ uploadedBy, $or: [{ isArchived: false }, { isArchived: { $exists: false } }] } as any)
-    .sort({ createdAt: -1, _id: -1 })
-    .lean();
-  return docs.map((d: any) => ({
-    ...serialize<HouseListing>(d),
-    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
-  }));
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const docs = await Listing.find({ uploadedBy, $or: [{ isArchived: false }, { isArchived: { $exists: false } }] } as any)
+        .sort({ createdAt: -1, _id: -1 })
+        .lean();
+      return docs.map((d: any) => ({
+        ...serialize<HouseListing>(d),
+        createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+      }));
+    } catch (e) {}
+  }
+  return maria.getListingsMariaDB({ status: undefined }).then(l => l.filter(x => x.uploadedBy === uploadedBy));
 }
 
 
@@ -289,7 +387,7 @@ export async function getBlockedDates(amenityId: number): Promise<string[]> {
   };
 
   const [approvedDates, publicGroups, amenity] = await Promise.all([
-    Reservation.find({ amenityId, status: "approved", ...nonArchived } as any)
+    Reservation.find({ amenityId, reservationType: "private", status: "approved", ...nonArchived } as any)
       .distinct("date"),
     Reservation.aggregate<{ _id: string; pax: number }>([
       { $match: { amenityId, reservationType: "public", status: "approved", ...nonArchived } },
@@ -337,17 +435,44 @@ export async function isDateAvailableForPublic(
 }
 
 export async function getNextId(collection: any): Promise<number> {
-  await dbConnect();
-  const max = await collection.findOne().sort({ _id: -1 }).select({ _id: 1 }).lean();
-  return (max?._id ?? 0) + 1;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const max = await collection.findOne().sort({ _id: -1 }).select({ _id: 1 }).lean();
+      return (max?._id ?? 0) + 1;
+    } catch {
+      // fallback to MariaDB
+    }
+  }
+  const name = String(collection?.modelName || "").toLowerCase();
+  const tableMap: Record<string, string> = {
+    listing: "listings",
+    amenity: "amenities",
+    announcement: "announcements",
+    user: "users",
+    reservation: "reservations",
+    duesrecord: "dues",
+    transaction: "transactions",
+    propertyviewing: "property_viewings",
+  };
+  const table = tableMap[name] || "listings";
+  const rows = await mariaQuery<any[]>(`SELECT MAX(id) as maxId FROM \`${table}\``);
+  return (rows[0]?.maxId || 0) + 1;
 }
 
 export async function getAnnouncements(activeOnly = false): Promise<AnnouncementType[]> {
-  await dbConnect();
-  const filter: Record<string, string> = {};
-  if (activeOnly) filter.status = "active";
-  const docs = await Announcement.find(filter as any).lean();
-  return docs.map((d) => serialize<AnnouncementType>(d));
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const filter: Record<string, string> = {};
+      if (activeOnly) filter.status = "active";
+      const docs = await Announcement.find(filter as any).lean();
+      return docs.map((d) => serialize<AnnouncementType>(d));
+    } catch (e) {}
+  }
+  return maria.getAnnouncementsMariaDB(activeOnly);
 }
 
 function userFilter(id: number | string) {
@@ -370,80 +495,111 @@ function userFilter(id: number | string) {
 }
 
 export async function getUsers(): Promise<UserType[]> {
-  await dbConnect();
-  // Exclude archived residents from the normal residents list
-  const docs = await User.find({
-    $or: [{ isArchived: false }, { isArchived: "false" }, { isArchived: 0 }, { isArchived: { $exists: false } }],
-  } as any)
-    .select("-password -passwordHash -resetToken -resetTokenExpiry -verificationToken -verificationTokenExpiry")
-    .lean();
-  return docs.map((d: any) => ({
-    ...serialize<UserType>(d),
-    emailVerified: d.emailVerified,
-    isArchived: d.isArchived === true || d.isArchived === "true" || d.isArchived === 1,
-    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
-  }));
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const docs = await User.find({
+        $or: [{ isArchived: false }, { isArchived: "false" }, { isArchived: 0 }, { isArchived: { $exists: false } }],
+      } as any)
+        .select("-password -passwordHash -resetToken -resetTokenExpiry -verificationToken -verificationTokenExpiry")
+        .lean();
+      return docs.map((d: any) => ({
+        ...serialize<UserType>(d),
+        emailVerified: d.emailVerified,
+        isArchived: d.isArchived === true || d.isArchived === "true" || d.isArchived === 1,
+        createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+      }));
+    } catch (e) {}
+  }
+  return maria.getUsersMariaDB();
 }
 
 export async function getArchivedUsers(): Promise<UserType[]> {
-  await dbConnect();
-  const docs = await User.find({
-    $or: [{ isArchived: true }, { isArchived: "true" }, { isArchived: 1 }],
-  } as any)
-    .select("-password -passwordHash -resetToken -resetTokenExpiry -verificationToken -verificationTokenExpiry")
-    .sort({ updatedAt: -1, _id: -1 })
-    .lean();
-  return docs.map((d: any) => ({
-    ...serialize<UserType>(d),
-    emailVerified: d.emailVerified,
-    isArchived: true,
-    archiveReason: d.archiveReason ?? null,
-    archivedAt: d.archivedAt ?? null,
-    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
-  }));
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const docs = await User.find({
+        $or: [{ isArchived: true }, { isArchived: "true" }, { isArchived: 1 }],
+      } as any)
+        .select("-password -passwordHash -resetToken -resetTokenExpiry -verificationToken -verificationTokenExpiry")
+        .sort({ updatedAt: -1, _id: -1 })
+        .lean();
+      return docs.map((d: any) => ({
+        ...serialize<UserType>(d),
+        emailVerified: d.emailVerified,
+        isArchived: true,
+        archiveReason: d.archiveReason ?? null,
+        archivedAt: d.archivedAt ?? null,
+        createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+      }));
+    } catch (e) {}
+  }
+  return maria.getArchivedUsersMariaDB();
 }
 
 export async function archiveUser(id: number | string, reason?: string): Promise<boolean> {
-  await dbConnect();
-  const filter = userFilter(id);
-  const res = await User.updateOne(
-    filter as any,
-    {
-      $set: {
-        isArchived: true,
-        archiveReason: reason || "Archived by Admin",
-        archivedAt: new Date().toISOString(),
-        isActive: false,
-      },
-    },
-    { strict: false }
-  );
-  return res.matchedCount > 0 || res.modifiedCount > 0;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const filter = userFilter(id);
+      const res = await User.updateOne(
+        filter as any,
+        {
+          $set: {
+            isArchived: true,
+            archiveReason: reason || "Archived by Admin",
+            archivedAt: new Date().toISOString(),
+            isActive: false,
+          },
+        },
+        { strict: false }
+      );
+      maria.archiveUserMariaDB(id, reason).catch(() => {});
+      return res.matchedCount > 0 || res.modifiedCount > 0;
+    } catch (e) {}
+  }
+  return maria.archiveUserMariaDB(id, reason);
 }
 
 export async function unarchiveUser(id: number | string): Promise<boolean> {
-  await dbConnect();
-  const filter = userFilter(id);
-  const res = await User.updateOne(
-    filter as any,
-    {
-      $set: {
-        isArchived: false,
-        archiveReason: null,
-        archivedAt: null,
-        isActive: true,
-      },
-    },
-    { strict: false }
-  );
-  return res.matchedCount > 0 || res.modifiedCount > 0;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const filter = userFilter(id);
+      const res = await User.updateOne(
+        filter as any,
+        {
+          $set: {
+            isArchived: false,
+            archiveReason: null,
+            archivedAt: null,
+            isActive: true,
+          },
+        },
+        { strict: false }
+      );
+      maria.unarchiveUserMariaDB(id).catch(() => {});
+      return res.matchedCount > 0 || res.modifiedCount > 0;
+    } catch (e) {}
+  }
+  return maria.unarchiveUserMariaDB(id);
 }
 
 // Full user lookup (incl. password/reset fields) for server-side auth only.
 export async function getUserByEmailForAuth(email: string): Promise<AuthUser | null> {
-  await dbConnect();
-  const doc = await User.findOne({ email: email.toLowerCase() }).lean();
-  return serializeAuth(doc);
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = await User.findOne({ email: email.toLowerCase() }).lean();
+      if (doc) return serializeAuth(doc);
+    } catch (e) {}
+  }
+  return maria.getUserByEmailForAuthMariaDB(email);
 }
 
 export async function savePasswordResetToken(
@@ -509,9 +665,17 @@ export async function setEmailVerified(email: string, verified = true): Promise<
 }
 
 export async function deleteUserById(id: number | string): Promise<void> {
-  await dbConnect();
-  const filter = userFilter(id);
-  await User.deleteOne(filter as any);
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const filter = userFilter(id);
+      await User.deleteOne(filter as any);
+      maria.deleteUserByIdMariaDB(id).catch(() => {});
+      return;
+    } catch (e) {}
+  }
+  await maria.deleteUserByIdMariaDB(id);
 }
 
 export async function createUser(data: {
@@ -526,23 +690,31 @@ export async function createUser(data: {
   passwordHash?: string;
   emailVerified?: boolean;
 }): Promise<UserType> {
-  await dbConnect();
-  const id = await getNextId(User);
-  const doc = await User.create({
-    _id: id,
-    fullName: data.fullName,
-    email: data.email,
-    role: data.role,
-    isActive: true,
-    address: data.address || undefined,
-    blockNo: data.blockNo || undefined,
-    lotNo: data.lotNo || undefined,
-    phone: data.phone || undefined,
-    cedula: data.cedula || undefined,
-    passwordHash: data.passwordHash || undefined,
-    emailVerified: data.emailVerified,
-  } as any);
-  return serialize<UserType>(doc);
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const id = await getNextId(User);
+      const doc = await User.create({
+        _id: id,
+        fullName: data.fullName,
+        email: data.email,
+        role: data.role,
+        isActive: true,
+        address: data.address || undefined,
+        blockNo: data.blockNo || undefined,
+        lotNo: data.lotNo || undefined,
+        phone: data.phone || undefined,
+        cedula: data.cedula || undefined,
+        passwordHash: data.passwordHash || undefined,
+        emailVerified: data.emailVerified,
+      } as any);
+      const res = serialize<UserType>(doc);
+      maria.createUserMariaDB({ ...data, id }).catch(() => {});
+      return res;
+    } catch (e) {}
+  }
+  return maria.createUserMariaDB(data);
 }
 
 export async function updateUserProfile(
@@ -592,77 +764,108 @@ export async function updateUserById(
   id: number | string,
   data: Partial<UserType>
 ): Promise<UserType | null> {
-  await dbConnect();
-  const update: Record<string, unknown> = {};
-  if (data.fullName !== undefined) update.fullName = data.fullName;
-  if (data.email !== undefined) update.email = data.email.toLowerCase().trim();
-  if (data.role !== undefined) update.role = data.role;
-  if (data.isActive !== undefined) update.isActive = Boolean(data.isActive);
-  if (data.isArchived !== undefined) update.isArchived = Boolean(data.isArchived);
-  if (data.archiveReason !== undefined) update.archiveReason = data.archiveReason;
-  if (data.archivedAt !== undefined) update.archivedAt = data.archivedAt;
-  if (data.address !== undefined) update.address = data.address || null;
-  if (data.blockNo !== undefined) update.blockNo = data.blockNo || null;
-  if (data.lotNo !== undefined) update.lotNo = data.lotNo || null;
-  if (data.phone !== undefined) update.phone = data.phone || null;
-  if (data.gender !== undefined) update.gender = data.gender || null;
-  if (data.householdMembers !== undefined) update.householdMembers = Number(data.householdMembers) || 1;
-  if (data.householdHead !== undefined) update.householdHead = data.householdHead || null;
-  if (data.cedula !== undefined) update.cedula = data.cedula || null;
-  if (data.emailVerified !== undefined) update.emailVerified = Boolean(data.emailVerified);
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const update: Record<string, unknown> = {};
+      if (data.fullName !== undefined) update.fullName = data.fullName;
+      if (data.email !== undefined) update.email = data.email.toLowerCase().trim();
+      if (data.role !== undefined) update.role = data.role;
+      if (data.isActive !== undefined) update.isActive = Boolean(data.isActive);
+      if (data.isArchived !== undefined) update.isArchived = Boolean(data.isArchived);
+      if (data.archiveReason !== undefined) update.archiveReason = data.archiveReason;
+      if (data.archivedAt !== undefined) update.archivedAt = data.archivedAt;
+      if (data.address !== undefined) update.address = data.address || null;
+      if (data.blockNo !== undefined) update.blockNo = data.blockNo || null;
+      if (data.lotNo !== undefined) update.lotNo = data.lotNo || null;
+      if (data.phone !== undefined) update.phone = data.phone || null;
+      if (data.gender !== undefined) update.gender = data.gender || null;
+      if (data.householdMembers !== undefined) update.householdMembers = Number(data.householdMembers) || 1;
+      if (data.householdHead !== undefined) update.householdHead = data.householdHead || null;
+      if (data.cedula !== undefined) update.cedula = data.cedula || null;
+      if (data.emailVerified !== undefined) update.emailVerified = Boolean(data.emailVerified);
 
-  const filter = userFilter(id);
-  const doc = await User.findOneAndUpdate(
-    filter as any,
-    { $set: update },
-    { new: true }
-  ).lean();
-  return doc
-    ? {
-        ...serialize<UserType>(doc),
-        emailVerified: (doc as any).emailVerified,
-        createdAt: (doc as any).createdAt ? new Date((doc as any).createdAt).toISOString() : undefined,
+      const filter = userFilter(id);
+      const doc = await User.findOneAndUpdate(
+        filter as any,
+        { $set: update },
+        { new: true }
+      ).lean();
+      maria.updateUserByIdMariaDB(id, data).catch(() => {});
+      if (doc) {
+        return {
+          ...serialize<UserType>(doc),
+          emailVerified: (doc as any).emailVerified,
+          createdAt: (doc as any).createdAt ? new Date((doc as any).createdAt).toISOString() : undefined,
+        };
       }
-    : null;
+    } catch (e) {}
+  }
+  return maria.updateUserByIdMariaDB(id, data);
 }
 
 // Master index of registered home/unit lots (blockNo + lotNo) drawn from the
 // resident registry. Listings must reference a unit in this index rather than
 // a free-form name, per the HOA governance model.
 export async function getMasterIndex(): Promise<{ blockNo: string; lotNo: string }[]> {
-  await dbConnect();
-  const docs = await User.find({
-    blockNo: { $exists: true, $ne: "" },
-    lotNo: { $exists: true, $ne: "" },
-  } as any)
-    .select({ blockNo: 1, lotNo: 1, _id: 0 })
-    .lean();
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const docs = await User.find({
+        blockNo: { $exists: true, $ne: "" },
+        lotNo: { $exists: true, $ne: "" },
+      } as any)
+        .select({ blockNo: 1, lotNo: 1, _id: 0 })
+        .lean();
+      const seen = new Set<string>();
+      const units: { blockNo: string; lotNo: string }[] = [];
+      for (const d of docs as any[]) {
+        const key = `${String(d.blockNo)}|${String(d.lotNo)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          units.push({ blockNo: String(d.blockNo), lotNo: String(d.lotNo) });
+        }
+      }
+      return units;
+    } catch (e) {}
+  }
+  const users = await maria.getUsersMariaDB();
   const seen = new Set<string>();
   const units: { blockNo: string; lotNo: string }[] = [];
-  for (const d of docs as any[]) {
-    const key = `${String(d.blockNo)}|${String(d.lotNo)}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      units.push({ blockNo: String(d.blockNo), lotNo: String(d.lotNo) });
+  for (const u of users) {
+    if (u.blockNo && u.lotNo) {
+      const key = `${u.blockNo}|${u.lotNo}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        units.push({ blockNo: u.blockNo, lotNo: u.lotNo });
+      }
     }
   }
   return units;
 }
 
 export async function getReservations(includeArchived = false): Promise<ReservationType[]> {
-  await dbConnect();
-  const filter = includeArchived
-    ? {}
-    : {
-        $or: [
-          { isArchived: false },
-          { isArchived: "false" },
-          { isArchived: 0 },
-          { isArchived: { $exists: false } },
-        ],
-      };
-  const docs = await Reservation.find(filter as any).sort({ _id: -1 }).lean();
-  return docs.map((d) => serialize<ReservationType>(d));
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const filter = includeArchived
+        ? {}
+        : {
+            $or: [
+              { isArchived: false },
+              { isArchived: "false" },
+              { isArchived: 0 },
+              { isArchived: { $exists: false } },
+            ],
+          };
+      const docs = await Reservation.find(filter as any).sort({ _id: -1 }).lean();
+      return docs.map((d) => serialize<ReservationType>(d));
+    } catch (e) {}
+  }
+  return maria.getReservationsMariaDB();
 }
 
 export async function getArchivedReservations(): Promise<ReservationType[]> {
@@ -879,16 +1082,20 @@ export async function generateMonthlyDues(targetMonth?: string): Promise<{ creat
 }
 
 export async function getDues(): Promise<DuesType[]> {
-  await dbConnect();
-  // Ensure current month dues are generated automatically for all residents
-  try {
-    await generateMonthlyDues();
-  } catch (err) {
-    console.error("Error auto-generating monthly dues:", err);
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      try {
+        await generateMonthlyDues();
+      } catch (err) {
+        console.error("Error auto-generating monthly dues:", err);
+      }
+      const docs = await DuesRecord.find().sort({ dueMonth: -1, residentName: 1 }).lean();
+      return docs.map((d) => serialize<DuesType>(d));
+    } catch (e) {}
   }
-
-  const docs = await DuesRecord.find().sort({ dueMonth: -1, residentName: 1 }).lean();
-  return docs.map((d) => serialize<DuesType>(d));
+  return maria.getDuesMariaDB();
 }
 
 export async function importDuesRecords(
@@ -999,9 +1206,34 @@ export async function importDuesRecords(
 }
 
 export async function getDuesRecord(id: number | string): Promise<DuesType | null> {
-  await dbConnect();
-  const doc = await DuesRecord.findOne({ _id: Number(id) } as any).lean();
-  return doc ? serialize<DuesType>(doc) : null;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = await DuesRecord.findOne({ _id: Number(id) } as any).lean();
+      if (doc) return serialize<DuesType>(doc);
+    } catch (e) {}
+  }
+  const rows = await mariaQuery<any[]>(`SELECT * FROM dues WHERE id = ? LIMIT 1`, [Number(id)]);
+  if (!rows.length) return null;
+  const r = rows[0];
+  return {
+    id: r.id,
+    residentId: r.residentId,
+    residentName: r.residentName,
+    blockNo: r.blockNo,
+    lotNo: r.lotNo,
+    dueMonth: r.dueMonth,
+    dueDate: r.dueDate,
+    amountDue: Number(r.amountDue),
+    amountPaid: Number(r.amountPaid),
+    paidAt: r.paidAt || undefined,
+    creditBalance: Number(r.creditBalance),
+    status: r.status,
+    source: r.source,
+    billingMonth: r.billingMonth || undefined,
+    billingYear: r.billingYear || undefined,
+  };
 }
 
 export const DEFAULT_PAYMENT_CONFIGS: Record<"amenity" | "dues", Omit<PaymentConfigType, "id">> = {
@@ -1110,183 +1342,182 @@ export interface TransactionFilter {
 }
 
 export async function getTransactions(filter?: TransactionFilter): Promise<TransactionType[]> {
-  await dbConnect();
-  const query: Record<string, unknown> = {};
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const query: Record<string, unknown> = {};
 
-  if (filter?.isArchived !== undefined) {
-    query.isArchived = filter.isArchived;
-  } else if (!filter?.includeArchived) {
-    query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
-  }
-
-  if (filter?.refType && filter.refType !== "all") {
-    query.refType = filter.refType;
-  }
-
-  if (filter?.status && filter.status !== "all") {
-    query.status = filter.status;
-  }
-
-  const docs = await Transaction.find(query).sort({ _id: -1 }).lean();
-
-  // Prefetch linked reservations and dues records to enrich transaction metadata
-  const amenityRefIds = docs.filter((d: any) => d.refType === "amenity" && d.refId).map((d: any) => d.refId);
-  const duesRefIds = docs.filter((d: any) => d.refType === "dues" && d.refId).map((d: any) => d.refId);
-
-  const [reservations, duesRecords] = await Promise.all([
-    amenityRefIds.length ? Reservation.find({ _id: { $in: amenityRefIds } }).lean() : [],
-    duesRefIds.length ? DuesRecord.find({ _id: { $in: duesRefIds } }).lean() : [],
-  ]);
-
-  const resMap = new Map<number, any>(reservations.map((r: any) => [r._id, r]));
-  const duesMap = new Map<number, any>(duesRecords.map((d: any) => [d._id, d]));
-
-  return docs.map((d: any) => {
-    const rawCreatedAt = d.createdAt || d.updatedAt;
-    let createdAtIso = "";
-    if (rawCreatedAt) {
-      if (typeof rawCreatedAt === "string") {
-        createdAtIso = rawCreatedAt;
-      } else {
-        try {
-          createdAtIso = new Date(rawCreatedAt).toISOString();
-        } catch {
-          createdAtIso = String(rawCreatedAt);
-        }
+      if (filter?.isArchived !== undefined) {
+        query.isArchived = filter.isArchived;
+      } else if (!filter?.includeArchived) {
+        query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
       }
-    }
 
-    const base = serialize<TransactionType>(d);
+      if (filter?.refType && filter.refType !== "all") {
+        query.refType = filter.refType;
+      }
 
-    let enriched: Partial<TransactionType> = {};
-    if (d.refType === "amenity" && d.refId && resMap.has(d.refId)) {
-      const res = resMap.get(d.refId);
-      enriched = {
-        amenityName: res.amenityName,
-        reservationDate: res.date,
-        bookingType: res.bookingType,
-        reservationType: res.reservationType,
-      };
-    } else if (d.refType === "dues" && d.refId && duesMap.has(d.refId)) {
-      const due = duesMap.get(d.refId);
-      enriched = {
-        dueMonth: due.dueMonth,
-        dueDate: due.dueDate,
-        amountDue: due.amountDue,
-        amountPaid: due.amountPaid,
-        billingMonth: due.billingMonth,
-        billingYear: due.billingYear,
-        blockNo: due.blockNo,
-        lotNo: due.lotNo,
-      };
-    }
+      if (filter?.status && filter.status !== "all") {
+        query.status = filter.status;
+      }
 
-    return {
-      ...base,
-      ...enriched,
-      isArchived: Boolean(d.isArchived),
-      archiveReason: d.archiveReason || undefined,
-      archivedBy: d.archivedBy || undefined,
-      archivedAt: d.archivedAt ? new Date(d.archivedAt).toISOString() : undefined,
-      createdAt: createdAtIso || base.createdAt || "",
-    };
-  });
+      const docs = await Transaction.find(query).sort({ _id: -1 }).lean();
+
+      // Prefetch linked reservations and dues records to enrich transaction metadata
+      const amenityRefIds = docs.filter((d: any) => d.refType === "amenity" && d.refId).map((d: any) => d.refId);
+      const duesRefIds = docs.filter((d: any) => d.refType === "dues" && d.refId).map((d: any) => d.refId);
+
+      const [reservations, duesRecords] = await Promise.all([
+        amenityRefIds.length ? Reservation.find({ _id: { $in: amenityRefIds } }).lean() : [],
+        duesRefIds.length ? DuesRecord.find({ _id: { $in: duesRefIds } }).lean() : [],
+      ]);
+
+      const resMap = new Map<number, any>(reservations.map((r: any) => [r._id, r]));
+      const duesMap = new Map<number, any>(duesRecords.map((d: any) => [d._id, d]));
+
+      return docs.map((d: any) => {
+        const rawCreatedAt = d.createdAt || d.updatedAt;
+        let createdAtIso = "";
+        if (rawCreatedAt) {
+          try {
+            createdAtIso = new Date(rawCreatedAt).toISOString();
+          } catch {
+            createdAtIso = String(rawCreatedAt);
+          }
+        }
+
+        const base = serialize<TransactionType>(d);
+
+        let enriched: Partial<TransactionType> = {};
+        if (d.refType === "amenity" && d.refId && resMap.has(d.refId)) {
+          const res = resMap.get(d.refId);
+          enriched = {
+            amenityName: res.amenityName,
+            reservationDate: res.date,
+            bookingType: res.bookingType,
+            reservationType: res.reservationType,
+          };
+        } else if (d.refType === "dues" && d.refId && duesMap.has(d.refId)) {
+          const due = duesMap.get(d.refId);
+          enriched = {
+            dueMonth: due.dueMonth,
+            dueDate: due.dueDate,
+            amountDue: due.amountDue,
+            amountPaid: due.amountPaid,
+            billingMonth: due.billingMonth,
+            billingYear: due.billingYear,
+            blockNo: due.blockNo,
+            lotNo: due.lotNo,
+          };
+        }
+
+        return {
+          ...base,
+          ...enriched,
+          isArchived: Boolean(d.isArchived),
+          archiveReason: d.archiveReason || undefined,
+          archivedBy: d.archivedBy || undefined,
+          archivedAt: d.archivedAt ? new Date(d.archivedAt).toISOString() : undefined,
+          createdAt: createdAtIso || base.createdAt || "",
+        };
+      });
+    } catch (e) {}
+  }
+  return maria.getTransactionsMariaDB();
 }
 
 export async function getTransactionById(id: number | string): Promise<TransactionType | null> {
-  await dbConnect();
-  const doc = await Transaction.findOne({ _id: Number(id) } as any).lean();
-  if (!doc) return null;
-  const res = serialize<TransactionType>(doc);
-  const rawCreatedAt = (doc as any).createdAt || (doc as any).updatedAt;
-  const createdAtIso = rawCreatedAt ? (typeof rawCreatedAt === "string" ? rawCreatedAt : new Date(rawCreatedAt).toISOString()) : "";
-  return {
-    ...res,
-    isArchived: Boolean((doc as any).isArchived),
-    createdAt: createdAtIso || res.createdAt,
-  };
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = await Transaction.findOne({ _id: Number(id) } as any).lean();
+      if (doc) {
+        const res = serialize<TransactionType>(doc);
+        const rawCreatedAt = (doc as any).createdAt || (doc as any).updatedAt;
+        const createdAtIso = rawCreatedAt ? (typeof rawCreatedAt === "string" ? rawCreatedAt : new Date(rawCreatedAt).toISOString()) : "";
+        return {
+          ...res,
+          isArchived: Boolean((doc as any).isArchived),
+          createdAt: createdAtIso || res.createdAt,
+        };
+      }
+    } catch (e) {}
+  }
+  const txns = await maria.getTransactionsMariaDB();
+  return txns.find((t) => t.id === Number(id)) || null;
 }
 
 export async function getPaymentByIntent(intentId: string): Promise<TransactionType | null> {
-  await dbConnect();
-  const doc = await Transaction.findOne({ "payment.intentId": intentId } as any).lean();
-  return doc ? serialize<TransactionType>(doc) : null;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = await Transaction.findOne({ "payment.intentId": intentId } as any).lean();
+      if (doc) return serialize<TransactionType>(doc);
+    } catch (e) {}
+  }
+  const txns = await maria.getTransactionsMariaDB();
+  return txns.find((t) => t.payment?.intentId === intentId) || null;
 }
 
 export async function updateTransactionById(
   id: number | string,
-  patch: Partial<Pick<TransactionType, "status" | "receiptPath">>
+  patch: any
 ): Promise<TransactionType | null> {
-  await dbConnect();
-  const numId = Number(id);
-  const doc = await Transaction.findOneAndUpdate(
-    { _id: numId } as any,
-    { $set: patch },
-    { new: true }
-  ).lean();
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(id);
+      const doc = await Transaction.findOneAndUpdate(
+        { _id: numId } as any,
+        { $set: patch },
+        { new: true }
+      ).lean();
 
-  if (!doc) return null;
-
-  // Synchronize status with linked Reservation or DuesRecord
-  if (patch.status) {
-    if (doc.refType === "amenity" && doc.refId) {
-      const resStatus = patch.status === "approved" ? "approved" : patch.status === "voided" ? "declined" : "pending";
-      await Reservation.updateOne(
-        { _id: doc.refId } as any,
-        {
-          $set: {
-            status: resStatus,
-            ...(patch.status === "approved" ? { approvedAt: new Date().toISOString() } : {}),
-            ...(patch.receiptPath ? { receiptPath: patch.receiptPath } : {}),
-          },
+      if (doc) {
+        // Synchronize status with linked Reservation or DuesRecord
+        if (patch.status) {
+          if (doc.refType === "amenity" && doc.refId) {
+            const resStatus = patch.status === "approved" ? "approved" : patch.status === "voided" ? "declined" : "pending";
+            await Reservation.updateOne(
+              { _id: doc.refId } as any,
+              {
+                $set: {
+                  status: resStatus,
+                  ...(patch.status === "approved" ? { approvedAt: new Date().toISOString() } : {}),
+                  ...(patch.receiptPath ? { receiptPath: patch.receiptPath } : {}),
+                },
+              }
+            );
+          } else if (doc.refType === "dues" && doc.refId) {
+            const dueRecord = await DuesRecord.findOne({ _id: doc.refId } as any).lean() as any;
+            if (dueRecord) {
+              if (patch.status === "approved") {
+                const paidAt = doc.createdAt || new Date().toISOString().slice(0, 10);
+                const status = computeDuesStatus({
+                  dueMonth: dueRecord.dueMonth,
+                  dueDate: dueRecord.dueDate,
+                  amountDue: dueRecord.amountDue,
+                  amountPaid: dueRecord.amountPaid,
+                  paidAt,
+                });
+                await DuesRecord.updateOne(
+                  { _id: doc.refId } as any,
+                  { $set: { status, paidAt } }
+                );
+              }
+            }
+          }
         }
-      );
-    } else if (doc.refType === "dues" && doc.refId) {
-      const dueRecord = await DuesRecord.findOne({ _id: doc.refId } as any).lean() as any;
-      if (dueRecord) {
-        if (patch.status === "approved") {
-          const paidAt = doc.createdAt || new Date().toISOString().slice(0, 10);
-          const status = computeDuesStatus({
-            dueMonth: dueRecord.dueMonth,
-            dueDate: dueRecord.dueDate,
-            amountDue: dueRecord.amountDue,
-            amountPaid: dueRecord.amountPaid,
-            paidAt,
-          });
-          await DuesRecord.updateOne(
-            { _id: doc.refId } as any,
-            { $set: { status, paidAt } }
-          );
-        } else if (patch.status === "voided") {
-          const adjustedPaid = Math.max(0, (dueRecord.amountPaid || 0) - (doc.amount || 0));
-          const creditBalance = Math.max(0, adjustedPaid - dueRecord.amountDue);
-          const status = computeDuesStatus({
-            dueMonth: dueRecord.dueMonth,
-            dueDate: dueRecord.dueDate,
-            amountDue: dueRecord.amountDue,
-            amountPaid: adjustedPaid,
-            paidAt: dueRecord.paidAt,
-          });
-          await DuesRecord.updateOne(
-            { _id: doc.refId } as any,
-            { $set: { amountPaid: adjustedPaid, creditBalance, status } }
-          );
-        }
+        maria.updateTransactionByIdMariaDB(id, patch).catch(() => {});
+        return serialize<TransactionType>(doc);
       }
-    }
+    } catch (e) {}
   }
-
-  // Also sync receiptPath if attached
-  if (patch.receiptPath) {
-    if (doc.refType === "amenity" && doc.refId) {
-      await Reservation.updateOne(
-        { _id: doc.refId } as any,
-        { $set: { receiptPath: patch.receiptPath } }
-      );
-    }
-  }
-
-  return serialize<TransactionType>(doc);
+  return maria.updateTransactionByIdMariaDB(id, patch);
 }
 
 export async function archiveTransaction(
@@ -1294,51 +1525,189 @@ export async function archiveTransaction(
   reason?: string,
   archivedBy = "admin"
 ): Promise<boolean> {
-  await dbConnect();
-  const numId = Number(id);
-  const filter = Number.isFinite(numId)
-    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
-    : { _id: id };
-  const res = await Transaction.updateOne(
-    filter as any,
-    {
-      $set: {
-        isArchived: true,
-        archiveReason: reason || "Archived by Admin",
-        archivedBy,
-        archivedAt: new Date().toISOString(),
-      },
-    }
-  );
-  return res.matchedCount > 0 || res.modifiedCount > 0;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(id);
+      const filter = Number.isFinite(numId)
+        ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+        : { _id: id };
+      const res = await Transaction.updateOne(
+        filter as any,
+        {
+          $set: {
+            isArchived: true,
+            archiveReason: reason || "Archived by Admin",
+            archivedBy,
+            archivedAt: new Date().toISOString(),
+          },
+        }
+      );
+      return res.matchedCount > 0 || res.modifiedCount > 0;
+    } catch (e) {}
+  }
+  return true;
 }
 
 export async function unarchiveTransaction(id: number | string): Promise<boolean> {
-  await dbConnect();
-  const numId = Number(id);
-  const filter = Number.isFinite(numId)
-    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
-    : { _id: id };
-  const res = await Transaction.updateOne(
-    filter as any,
-    {
-      $set: {
-        isArchived: false,
-        archiveReason: null,
-        archivedBy: null,
-        archivedAt: null,
-      },
-    }
-  );
-  return res.matchedCount > 0 || res.modifiedCount > 0;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(id);
+      const filter = Number.isFinite(numId)
+        ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+        : { _id: id };
+      const res = await Transaction.updateOne(
+        filter as any,
+        {
+          $set: {
+            isArchived: false,
+            archiveReason: null,
+            archivedBy: null,
+            archivedAt: null,
+          },
+        }
+      );
+      return res.matchedCount > 0 || res.modifiedCount > 0;
+    } catch (e) {}
+  }
+  return true;
 }
 
 export async function deleteTransaction(id: number | string): Promise<boolean> {
-  await dbConnect();
-  const numId = Number(id);
-  const filter = Number.isFinite(numId)
-    ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
-    : { _id: id };
-  const res = await Transaction.deleteOne(filter as any);
-  return res.deletedCount > 0;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(id);
+      const filter = Number.isFinite(numId)
+        ? { $or: [{ _id: numId }, { _id: String(id) }, { id: numId }] }
+        : { _id: id };
+      const res = await Transaction.deleteOne(filter as any);
+      return res.deletedCount > 0;
+    } catch (e) {}
+  }
+  return true;
 }
+
+// ── Exported Creation/Update Helpers for Dual Mode ──────────────────────────
+export async function createReservation(data: any): Promise<ReservationType> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const id = data._id || data.id || (await getNextId(Reservation));
+      const doc = await Reservation.create({ ...data, _id: id });
+      const plain = (doc as any)?.toObject ? (doc as any).toObject() : doc;
+      const res = serialize<ReservationType>(plain);
+      maria.createReservationMariaDB({ ...data, id }).catch(() => {});
+      return res;
+    } catch (e) {}
+  }
+  return maria.createReservationMariaDB(data);
+}
+
+export async function updateReservation(id: number | string, data: any): Promise<ReservationType | null> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = await Reservation.findOneAndUpdate({ _id: Number(id) } as any, { $set: data }, { new: true }).lean();
+      maria.updateReservationMariaDB(id, data).catch(() => {});
+      if (doc) return serialize<ReservationType>(doc);
+    } catch (e) {}
+  }
+  return maria.updateReservationMariaDB(id, data);
+}
+
+export async function createDuesRecord(data: any): Promise<DuesType> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const id = data._id || data.id || (await getNextId(DuesRecord));
+      const doc = await DuesRecord.create({ ...data, _id: id });
+      const plain = (doc as any)?.toObject ? (doc as any).toObject() : doc;
+      const res = serialize<DuesType>(plain);
+      maria.createDuesRecordMariaDB({ ...data, id }).catch(() => {});
+      return res;
+    } catch (e) {}
+  }
+  return maria.createDuesRecordMariaDB(data);
+}
+
+export async function updateDuesRecord(id: number | string, data: any): Promise<DuesType | null> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = await DuesRecord.findOneAndUpdate({ _id: Number(id) } as any, { $set: data }, { new: true }).lean();
+      maria.updateDuesRecordMariaDB(id, data).catch(() => {});
+      if (doc) return serialize<DuesType>(doc);
+    } catch (e) {}
+  }
+  return maria.updateDuesRecordMariaDB(id, data);
+}
+
+export async function createTransaction(data: any): Promise<TransactionType> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const id = data._id || data.id || (await getNextId(Transaction));
+      const doc = await Transaction.create({ ...data, _id: id });
+      const plain = (doc as any)?.toObject ? (doc as any).toObject() : doc;
+      const res = serialize<TransactionType>(plain);
+      maria.createTransactionMariaDB({ ...data, id }).catch(() => {});
+      return res;
+    } catch (e) {}
+  }
+  return maria.createTransactionMariaDB(data);
+}
+
+export async function getPropertyViewings(filter?: { residentEmail?: string; listingId?: number }): Promise<PropertyViewingType[]> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const query: Record<string, any> = {};
+      if (filter?.residentEmail) query.residentEmail = filter.residentEmail;
+      if (filter?.listingId) query.listingId = filter.listingId;
+      const docs = await PropertyViewing.find(query).sort({ _id: -1 }).lean();
+      return docs.map((d: any) => ({ ...serialize<PropertyViewingType>(d), id: d._id }));
+    } catch (e) {}
+  }
+  return maria.getPropertyViewingsMariaDB(filter);
+}
+
+export async function createPropertyViewing(data: any): Promise<PropertyViewingType> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const id = data._id || data.id || (await getNextId(PropertyViewing));
+      const doc = await PropertyViewing.create({ ...data, _id: id });
+      const plain = (doc as any)?.toObject ? (doc as any).toObject() : doc;
+      const res = serialize<PropertyViewingType>(plain);
+      maria.createPropertyViewingMariaDB({ ...data, id }).catch(() => {});
+      return res;
+    } catch (e) {}
+  }
+  return maria.createPropertyViewingMariaDB(data);
+}
+
+export async function updatePropertyViewing(id: number | string, data: any): Promise<PropertyViewingType | null> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = await PropertyViewing.findOneAndUpdate({ _id: Number(id) } as any, { $set: data }, { new: true }).lean();
+      maria.updatePropertyViewingMariaDB(id, data).catch(() => {});
+      if (doc) return serialize<PropertyViewingType>(doc);
+    } catch (e) {}
+  }
+  return maria.updatePropertyViewingMariaDB(id, data);
+}
+

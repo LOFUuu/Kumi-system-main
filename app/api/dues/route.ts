@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDues, generateMonthlyDues } from "@/lib/db";
-import { DuesRecord } from "@/models";
+import { getDues, generateMonthlyDues, createDuesRecord } from "@/lib/db";
 import { computeDuesStatus, creditFor, getCycleDueDate, DEFAULT_MONTHLY_DUE } from "@/lib/dues";
 
 export const dynamic = "force-dynamic";
@@ -35,11 +34,7 @@ export async function POST(req: NextRequest) {
     const creditBalance = creditFor(amountDue, amountPaid);
     const status = body.status || computeDuesStatus({ dueMonth, dueDate, amountDue, amountPaid, paidAt });
 
-    const maxDoc = await DuesRecord.findOne().sort({ _id: -1 }).select({ _id: 1 }).lean() as any;
-    const newId = (maxDoc?._id ?? 0) + 1;
-
-    const doc = await DuesRecord.create({
-      _id: newId,
+    const doc = await createDuesRecord({
       residentId: body.residentId,
       residentName,
       blockNo: body.blockNo || "",
@@ -54,7 +49,7 @@ export async function POST(req: NextRequest) {
       source: "manual",
       billingMonth: body.billingMonth,
       billingYear: body.billingYear,
-    } as any);
+    });
 
     return NextResponse.json({ ok: true, record: doc });
   } catch (err) {

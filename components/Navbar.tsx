@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { ChevronDown, LogOut, Shield, Menu, X } from "lucide-react";
 import SmartSearchInput from "./SmartSearchInput";
+import SyncStatusBadge from "./SyncStatusBadge";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -172,6 +173,10 @@ export default function Navbar() {
         {/* ── RIGHT CONTROLS (SEARCH, PROFILE, LOGOUT) ─────── */}
         <div className="flex items-center justify-end gap-2 shrink-0">
           
+          <div className="hidden sm:flex items-center mr-1">
+            <SyncStatusBadge compact />
+          </div>
+
           {/* Smart Autocomplete Search (responsive width, shrinks nicely) */}
           <div className="hidden xl:block w-32 2xl:w-44">
             <SmartSearchInput placeholder="Search..." variant="navbar" />

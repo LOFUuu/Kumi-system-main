@@ -4,10 +4,12 @@ import {
   getAmenity,
   getBlockedDates,
   isDateAvailableForPublic,
-  getNextId,
   getPaymentConfig,
+  createReservation,
+  createTransaction,
+  deleteReservation,
 } from "@/lib/db";
-import { Reservation, Transaction } from "@/models";
+import { getAuthenticatedUser } from "@/lib/server-auth";
 import { createPayment } from "@/lib/payment";
 import {
   getBookingTotal,
@@ -61,26 +63,17 @@ export async function POST(req: NextRequest) {
   const userEmail = String(body.userEmail || "").trim().toLowerCase();
 
   // Prevent duplicate same-slot active (pending or approved) reservation for the same account
-  const duplicateQuery: Record<string, unknown> = {
-    amenityId,
-    date,
-    bookingType,
-    status: { $in: ["pending", "approved"] },
-    $or: [
-      { isArchived: false },
-      { isArchived: "false" },
-      { isArchived: 0 },
-      { isArchived: { $exists: false } },
-    ],
-  };
+  const allRes = await getReservations();
+  const existingDuplicate = allRes.find((r) => {
+    if (r.amenityId !== amenityId || r.date !== date || r.bookingType !== bookingType) return false;
+    if (r.status !== "pending" && r.status !== "approved") return false;
+    if (r.isArchived) return false;
+    if (userEmail) {
+      return (r.userEmail || "").toLowerCase() === userEmail;
+    }
+    return (r.residentName || "").toLowerCase() === residentName.toLowerCase();
+  });
 
-  if (userEmail) {
-    duplicateQuery.userEmail = userEmail;
-  } else {
-    duplicateQuery.residentName = residentName;
-  }
-
-  const existingDuplicate = await Reservation.findOne(duplicateQuery as any);
   if (existingDuplicate) {
     return NextResponse.json(
       { error: "You already have an active (pending or approved) reservation for this amenity, date, and session." },
@@ -106,9 +99,7 @@ export async function POST(req: NextRequest) {
   const downpayment =
     reservationType === "private" ? amenity.downpaymentPrivate : amenity.downpayment;
 
-  const id = await getNextId(Reservation);
-  const reservation: ReservationType = {
-    id,
+  const reservation = await createReservation({
     amenityId,
     amenityName: amenity.name,
     residentName,
@@ -121,30 +112,11 @@ export async function POST(req: NextRequest) {
     totalAmount,
     status: "pending",
     notes,
-    userEmail: String(body.userEmail || "") || undefined,
+    userEmail: userEmail || undefined,
     gcashRef: gcashRef || undefined,
     receiptPath: receiptPath || undefined,
-  };
-  await Reservation.create({
-    _id: id,
-    amenityId,
-    amenityName: amenity.name,
-    residentName,
-    phone,
-    bookingType,
-    reservationType,
-    date,
-    paxCount: pax,
-    downpayment,
-    totalAmount,
-    status: "pending",
-    notes,
-    userEmail: reservation.userEmail,
-    gcashRef: gcashRef || undefined,
-    receiptPath: receiptPath || undefined,
-  } as any);
+  });
 
-  const txnId = await getNextId(Transaction);
   const amenityGcash = await getPaymentConfig("amenity");
   const { payment, placeholder } = createPayment(downpayment, amenityGcash.accountNumber);
   if (gcashRef) {
@@ -152,11 +124,11 @@ export async function POST(req: NextRequest) {
     payment.status = "paid";
     payment.paidAt = new Date().toISOString().slice(0, 10);
   }
-  await Transaction.create({
-    _id: txnId,
+
+  const createdTxn = await createTransaction({
     residentName,
     refType: "amenity",
-    refId: id,
+    refId: reservation.id,
     userEmail: reservation.userEmail,
     amount: downpayment,
     paymentMethod: "gcash",
@@ -165,10 +137,64 @@ export async function POST(req: NextRequest) {
     status: "pending",
     createdAt: new Date().toISOString().slice(0, 10),
     payment,
-  } as any);
+  });
 
   return NextResponse.json(
-    { reservation, transactionId: txnId, payment, paymentPlaceholder: placeholder },
+    { reservation, transactionId: createdTxn.id, payment, paymentPlaceholder: placeholder },
     { status: 201 }
   );
 }
+
+export async function DELETE(req: NextRequest) {
+  // Authorization check: verify admin session or admin role
+  const user = await getAuthenticatedUser(req);
+  const headerRole = req.headers.get("x-user-role");
+  const isAdmin = user?.role === "admin" || headerRole === "admin";
+  if (!isAdmin) {
+    return NextResponse.json(
+      { error: "Unauthorized. Admin privileges required to delete reservations." },
+      { status: 403 }
+    );
+  }
+
+  let body: Record<string, any>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const ids = Array.isArray(body.ids)
+    ? body.ids.map(Number).filter(Number.isFinite)
+    : [];
+  if (ids.length === 0) {
+    return NextResponse.json(
+      { error: "No valid reservation IDs provided for bulk deletion." },
+      { status: 400 }
+    );
+  }
+
+  const deletedIds: number[] = [];
+  const failedIds: number[] = [];
+
+  for (const id of ids) {
+    try {
+      const res = await deleteReservation(id);
+      if (res.ok) {
+        deletedIds.push(id);
+      } else {
+        failedIds.push(id);
+      }
+    } catch {
+      failedIds.push(id);
+    }
+  }
+
+  return NextResponse.json({
+    ok: deletedIds.length > 0,
+    deletedCount: deletedIds.length,
+    deletedIds,
+    failedIds,
+  });
+}
+

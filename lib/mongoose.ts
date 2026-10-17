@@ -1,11 +1,5 @@
 import mongoose from "mongoose";
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  throw new Error("Please define the MONGODB_URI environment variable in .env.local");
-}
-
 // Cache the connection across hot reloads in development to avoid exhausting
 // the server's connection pool.
 declare global {
@@ -13,6 +7,11 @@ declare global {
 }
 
 async function dbConnect(): Promise<typeof mongoose> {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    throw new Error("MONGODB_URI is not defined.");
+  }
+
   // Only short-circuit once fully connected. During the "connecting" state
   // (readyState === 2) we must await the pending connect promise, otherwise a
   // query can run before the connection settles and fail with
@@ -21,7 +20,11 @@ async function dbConnect(): Promise<typeof mongoose> {
   if (mongoose.connection.readyState === mongoose.ConnectionStates.connected) return mongoose;
 
   if (!global._mongooseConn) {
-    global._mongooseConn = mongoose.connect(MONGODB_URI!, { bufferCommands: false });
+    global._mongooseConn = mongoose.connect(uri, {
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 2500,
+      connectTimeoutMS: 2500,
+    });
   }
 
   try {

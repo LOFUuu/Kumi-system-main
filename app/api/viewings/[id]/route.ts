@@ -1,16 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import dbConnect from "@/lib/mongoose";
-import { PropertyViewing } from "@/models";
+import { getPropertyViewings, updatePropertyViewing } from "@/lib/db";
 import { howaGuard, isHowaRole, requestRole } from "@/lib/role";
-import type { PropertyViewing as PropertyViewingType } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
-
-function serializeViewing(doc: any): PropertyViewingType {
-  if (!doc) return doc;
-  const { _id, __v, createdAt, updatedAt, ...rest } = doc;
-  return { ...rest, id: _id, createdAt } as PropertyViewingType;
-}
 
 // PATCH /api/viewings/[id] — admin updates viewing status
 export async function PATCH(
@@ -30,9 +22,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  await dbConnect();
-
-  const viewing = await PropertyViewing.findOne({ _id: numericId }).lean();
+  const allViewings = await getPropertyViewings();
+  const viewing = allViewings.find((v) => v.id === numericId);
   if (!viewing) {
     return NextResponse.json({ error: "Viewing not found." }, { status: 404 });
   }
@@ -50,9 +41,8 @@ export async function PATCH(
     if (body.adminNotes !== undefined) patch.adminNotes = String(body.adminNotes).trim();
     if (body.scheduledAt !== undefined) patch.scheduledAt = body.scheduledAt;
 
-    await PropertyViewing.updateOne({ _id: numericId } as any, { $set: patch } as any);
-    const updated = await PropertyViewing.findOne({ _id: numericId }).lean();
-    return NextResponse.json({ viewing: serializeViewing(updated) });
+    const updated = await updatePropertyViewing(numericId, patch);
+    return NextResponse.json({ viewing: updated });
   }
 
   // Resident cancels their own viewing request (only if viewing_requested)
@@ -64,9 +54,8 @@ export async function PATCH(
     if (!["viewing_requested"].includes((viewing as any).status)) {
       return NextResponse.json({ error: "Only pending viewing requests can be cancelled." }, { status: 400 });
     }
-    await PropertyViewing.updateOne({ _id: numericId } as any, { $set: { status: "viewing_declined" } } as any);
-    const updated = await PropertyViewing.findOne({ _id: numericId }).lean();
-    return NextResponse.json({ viewing: serializeViewing(updated) });
+    const updated = await updatePropertyViewing(numericId, { status: "viewing_declined" });
+    return NextResponse.json({ viewing: updated });
   }
 
   return NextResponse.json({ error: "Invalid status transition." }, { status: 400 });

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDuesRecord } from "@/lib/db";
-import { DuesRecord, Transaction } from "@/models";
+import { getDuesRecord, updateDuesRecord, createTransaction } from "@/lib/db";
 import { computeDuesStatus } from "@/lib/dues";
 
 export const dynamic = "force-dynamic";
@@ -35,16 +34,10 @@ export async function POST(
   const creditBalance = Math.max(0, amountPaid - amountDue);
   const status = computeDuesStatus({ dueMonth: record.dueMonth, dueDate: record.dueDate, amountDue, amountPaid, paidAt });
 
-  await DuesRecord.updateOne(
-    { _id: Number(id) } as any,
-    { $set: { amountPaid, creditBalance, paidAt, status } } as any
-  );
+  await updateDuesRecord(id, { amountPaid, creditBalance, paidAt, status });
 
-  const txn = await Transaction.findOne().sort({ _id: -1 }).select({ _id: 1 }).lean() as any;
-  const txnId = (txn?._id ?? 0) + 1;
   const receiptPath = body.receiptPath ? String(body.receiptPath).trim() : undefined;
-  await Transaction.create({
-    _id: txnId,
+  const txn = await createTransaction({
     residentName: record.residentName,
     refType: "dues",
     refId: Number(id),
@@ -55,10 +48,10 @@ export async function POST(
     receiptPath: receiptPath || undefined,
     status: "pending",
     createdAt: paidAt,
-  } as any);
+  });
 
   return NextResponse.json({
     dues: { ...record, amountPaid, creditBalance, paidAt, status },
-    transactionId: txnId,
+    transactionId: txn.id,
   });
 }

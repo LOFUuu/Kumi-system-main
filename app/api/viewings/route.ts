@@ -1,25 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import dbConnect from "@/lib/mongoose";
-import { PropertyViewing } from "@/models";
-import { getListing } from "@/lib/db";
+import { getListing, getPropertyViewings, createPropertyViewing } from "@/lib/db";
 import { isHowaRole, requestRole } from "@/lib/role";
-import type { PropertyViewing as PropertyViewingType } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
 
-function serializeViewing(doc: any): PropertyViewingType {
-  if (!doc) return doc;
-  const { _id, __v, createdAt, updatedAt, ...rest } = doc;
-  return { ...rest, id: _id, createdAt } as PropertyViewingType;
-}
-
-function getNextViewingId(): Promise<number> {
-  return PropertyViewing.findOne({}).sort({ _id: -1 }).lean().then(last => last ? (last as any)._id + 1 : 1);
-}
-
 // GET /api/viewings — admin: all viewings; resident: not used here (see /my)
 export async function GET(req: NextRequest) {
-  await dbConnect();
   const role = requestRole(req);
   if (!isHowaRole(role)) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
@@ -27,16 +13,15 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const statusFilter = searchParams.get("status");
-  const query: Record<string, any> = {};
-  if (statusFilter) query.status = statusFilter;
-
-  const docs = await PropertyViewing.find(query).sort({ _id: -1 }).lean();
-  return NextResponse.json(docs.map(serializeViewing));
+  let docs = await getPropertyViewings();
+  if (statusFilter) {
+    docs = docs.filter((d) => d.status === statusFilter);
+  }
+  return NextResponse.json(docs);
 }
 
 // POST /api/viewings — resident submits a viewing request
 export async function POST(req: NextRequest) {
-  await dbConnect();
   const role = requestRole(req);
   if (!role) {
     return NextResponse.json({ error: "You must be signed in to request a viewing." }, { status: 401 });
@@ -77,11 +62,10 @@ export async function POST(req: NextRequest) {
   }
 
   // Check if this resident already has an active (non-declined) viewing for this listing
-  const existing = await PropertyViewing.findOne({
-    listingId,
-    residentEmail,
-    status: { $in: ["viewing_requested", "viewing_scheduled"] },
-  }).lean();
+  const existingList = await getPropertyViewings({ residentEmail, listingId });
+  const existing = existingList.find((v) =>
+    ["viewing_requested", "viewing_scheduled"].includes(v.status)
+  );
 
   if (existing) {
     return NextResponse.json(
@@ -90,9 +74,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const id = await getNextViewingId();
-  const doc = {
-    _id: id,
+  const viewing = await createPropertyViewing({
     listingId,
     listingName: listing.houseName,
     residentName: residentName || "Resident",
@@ -103,8 +85,7 @@ export async function POST(req: NextRequest) {
     status: "viewing_requested",
     adminNotes: "",
     scheduledAt: null,
-  };
+  });
 
-  await PropertyViewing.create(doc as any);
-  return NextResponse.json({ viewing: serializeViewing({ ...doc, createdAt: new Date().toISOString() }) }, { status: 201 });
+  return NextResponse.json({ viewing }, { status: 201 });
 }

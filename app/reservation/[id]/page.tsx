@@ -2,13 +2,29 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useTransition } from "react";
 import QRCode from "react-qr-code";
-import { Lock, Check, Upload, Image as ImageIcon, X, Smartphone, Receipt, FileText } from "lucide-react";
+import {
+  Lock,
+  Check,
+  Upload,
+  Image as ImageIcon,
+  X,
+  Smartphone,
+  Receipt,
+  FileText,
+  Sparkles,
+  Compass,
+  CalendarDays,
+  CheckCircle2,
+  Clock,
+  Users as UsersIcon,
+  AlertCircle,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { buildPlaceholderQR, HOAGCashNumber } from "@/lib/payment";
-import AvailabilityCalendar from "@/components/AvailabilityCalendar";
+import AvailabilityCalendar, { CalendarDateStatus } from "@/components/AvailabilityCalendar";
 import {
   formatPHP,
   getBookingTotal,
@@ -16,6 +32,20 @@ import {
   type Amenity,
   type PaymentConfig,
 } from "@/lib/mock-data";
+
+interface RecommendationCard {
+  date: string;
+  dayOfWeek: string;
+  formattedDate: string;
+  session: "day" | "night";
+  sessionLabel: string;
+  sessionTime: string;
+  status: "available" | "limited";
+  statusLabel: string;
+  remainingSlots: number;
+  maxCapacity: number;
+  reservationType: "public" | "private";
+}
 
 function BookingForm() {
   const router = useRouter();
@@ -29,6 +59,12 @@ function BookingForm() {
   const [amenity, setAmenity] = useState<Amenity | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [blocked, setBlocked] = useState<string[]>([]);
+  const [datesStatus, setDatesStatus] = useState<Record<string, CalendarDateStatus>>({});
+  const [recommendations, setRecommendations] = useState<RecommendationCard[]>([]);
+  const [nextAvailable, setNextAvailable] = useState<RecommendationCard | null>(null);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [findingNext, setFindingNext] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState("");
 
   const [reservationType, setReservationType] = useState<"public" | "private">(initialTypeParam);
   const [bookingType, setBookingType] = useState<"day" | "night">("day");
@@ -77,6 +113,7 @@ function BookingForm() {
     }
   }, [loading, user, router]);
 
+  // Load amenity details and payment configs
   useEffect(() => {
     if (!Number.isFinite(id)) return;
     api.amenities().then((list) => {
@@ -84,9 +121,36 @@ function BookingForm() {
       setNotFound(!a);
       if (a) setAmenity(a);
     });
-    api.availability(id).then((r) => setBlocked(r.blocked)).catch(() => {});
     api.paymentConfig("amenity").then(setGcashConfig).catch(() => {});
   }, [id]);
+
+  // Fetch real availability & airline-style recommendations based on active selections
+  useEffect(() => {
+    if (!Number.isFinite(id)) return;
+    setLoadingAvailability(true);
+    api
+      .availability(id, {
+        type: reservationType,
+        session: bookingType,
+        pax,
+      })
+      .then((res) => {
+        setBlocked(res.blocked || []);
+        if (res.datesStatus) {
+          setDatesStatus(res.datesStatus as Record<string, CalendarDateStatus>);
+        }
+        if (res.recommendations) {
+          setRecommendations(res.recommendations as RecommendationCard[]);
+        }
+        if (res.nextAvailable !== undefined) {
+          setNextAvailable((res.nextAvailable as RecommendationCard) || null);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setLoadingAvailability(false);
+      });
+  }, [id, reservationType, bookingType, pax]);
 
   const rate = amenity ? getRate(amenity, bookingType, isResident) : 0;
   const total = amenity
@@ -96,7 +160,52 @@ function BookingForm() {
     ? (reservationType === "private" ? amenity.downpaymentPrivate : amenity.downpayment)
     : 0;
 
-  const dateBlocked = blocked.includes(date);
+  const currentDateStatus = datesStatus[date];
+  const dateBlocked = currentDateStatus
+    ? currentDateStatus.status === "booked"
+    : blocked.includes(date);
+
+  // Handle selecting a recommended date card
+  const handleSelectRecommendation = (rec: RecommendationCard) => {
+    setDate(rec.date);
+    setBookingType(rec.session);
+    setError("");
+    setFeedbackMsg(`Selected recommended slot: ${rec.formattedDate} (${rec.sessionLabel})`);
+    setTimeout(() => setFeedbackMsg(""), 4000);
+  };
+
+  // Find Next Available Date button handler
+  const handleFindNextAvailable = () => {
+    setFindingNext(true);
+    setError("");
+    api
+      .availability(id, {
+        type: reservationType,
+        session: bookingType,
+        pax,
+      })
+      .then((res) => {
+        const next = (res.nextAvailable as RecommendationCard) || res.recommendations?.[0];
+        if (next) {
+          setDate(next.date);
+          setBookingType(next.session);
+          setFeedbackMsg(
+            `Found and selected nearest available date: ${next.formattedDate} (${next.sessionLabel})`
+          );
+          setTimeout(() => setFeedbackMsg(""), 4000);
+        } else {
+          setError(
+            "No eligible open dates found within the next 60 days for this party size. Please try reducing the number of persons or switching session."
+          );
+        }
+      })
+      .catch(() => {
+        setError("Unable to find available dates at this moment. Please try again.");
+      })
+      .finally(() => {
+        setFindingNext(false);
+      });
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,12 +216,31 @@ function BookingForm() {
       return;
     }
     if (!amenity) return;
-    if (dateBlocked) {
-      setError("The selected date is fully booked. Please pick another date.");
-      return;
-    }
+
+    // Strict revalidation before submitting
     setSubmitting(true);
     try {
+      const recheck = await api.availability(amenity.id, {
+        date,
+        type: reservationType,
+        session: bookingType,
+        pax,
+      });
+
+      if (!recheck.available) {
+        setError(
+          "The selected date and session is no longer available. Please select another date."
+        );
+        if (recheck.datesStatus) {
+          setDatesStatus(recheck.datesStatus as Record<string, CalendarDateStatus>);
+        }
+        if (recheck.recommendations) {
+          setRecommendations(recheck.recommendations as RecommendationCard[]);
+        }
+        setSubmitting(false);
+        return;
+      }
+
       let uploadedReceiptPath: string | undefined = undefined;
       if (receiptFile) {
         const uploadRes = await api.uploadPaymentReceipt(receiptFile);
@@ -187,13 +315,21 @@ function BookingForm() {
           {amenity.description} · {formatPHP(downpayment)} downpayment via GCash required
         </p>
 
+        {feedbackMsg && (
+          <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-800 animate-in fade-in">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+            <span>{feedbackMsg}</span>
+          </div>
+        )}
+
         {error && (
-          <div className="mt-4 rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-sm font-semibold text-danger">
+          <div className="mt-4 rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-sm font-semibold text-danger animate-in fade-in">
             {error}
           </div>
         )}
 
         <form onSubmit={submit} className="mt-6 space-y-5">
+          {/* User information card */}
           <div className="card space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-widest text-muted">Your Information</h3>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -208,6 +344,7 @@ function BookingForm() {
             </div>
           </div>
 
+          {/* Booking details card */}
           <div className="card space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-widest text-muted">Booking Details</h3>
 
@@ -215,12 +352,12 @@ function BookingForm() {
               <label className="field-label">Reservation Type</label>
               <div className="grid grid-cols-2 gap-3">
                 <button type="button" onClick={() => setReservationType("public")}
-                  className={`rounded-xl border-2 p-3 text-left transition ${reservationType === "public" ? "border-green-mid bg-green-light/10" : "border-cream-2"}`}>
+                  className={`rounded-xl border-2 p-3 text-left transition ${reservationType === "public" ? "border-green-mid bg-green-light/10" : "border-cream-2 hover:border-green-light/40"}`}>
                   <div className="text-sm font-bold text-green-dark">Public</div>
                   <div className="text-xs text-muted">Per head · resident gets 20% off</div>
                 </button>
                 <button type="button" onClick={() => setReservationType("private")}
-                  className={`rounded-xl border-2 p-3 text-left transition ${reservationType === "private" ? "border-gold bg-gold/10" : "border-cream-2"}`}>
+                  className={`rounded-xl border-2 p-3 text-left transition ${reservationType === "private" ? "border-gold bg-gold/10" : "border-cream-2 hover:border-gold/40"}`}>
                   <div className="text-sm font-bold text-green-dark">Private</div>
                   <div className="text-xs text-muted">Whole venue flat rate</div>
                 </button>
@@ -232,7 +369,7 @@ function BookingForm() {
               <div className="grid grid-cols-2 gap-3">
                 {(["day", "night"] as const).map((s) => (
                   <button key={s} type="button" onClick={() => setBookingType(s)}
-                    className={`rounded-xl border-2 p-3 text-left transition ${bookingType === s ? "border-green-mid bg-green-light/10" : "border-cream-2"}`}>
+                    className={`rounded-xl border-2 p-3 text-left transition ${bookingType === s ? "border-green-mid bg-green-light/10" : "border-cream-2 hover:border-green-light/40"}`}>
                     <div className="text-sm font-bold text-green-dark capitalize">{s === "day" ? "Day Session" : "Night Session"}</div>
                     <div className="text-xs text-muted">{s === "day" ? "6:00 AM – 6:00 PM" : "6:00 PM – 10:00 PM"}</div>
                     <div className="mt-1 text-sm font-extrabold text-gold-muted">
@@ -244,28 +381,135 @@ function BookingForm() {
             </div>
 
             <div>
-              <label className="field-label">Booking Date * — pick an available day</label>
+              <label className="field-label">Number of Persons *</label>
+              <input
+                type="number"
+                className="field"
+                min={1}
+                max={amenity.maxCapacity}
+                value={pax}
+                onChange={(e) => setPax(Math.max(1, Math.min(amenity.maxCapacity, Number(e.target.value) || 1)))}
+              />
+              <p className="mt-1 text-xs text-muted">Max {amenity.maxCapacity} pax for {amenity.name}</p>
+            </div>
+
+            {/* AIRLINE-STYLE RECOMMENDED AVAILABLE DATES */}
+            <div className="pt-2 border-t border-cream-2">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-emerald-600" />
+                    <h4 className="font-serif text-sm font-bold text-green-dark sm:text-base">
+                      Recommended Available Dates
+                    </h4>
+                  </div>
+                  <p className="text-[11px] text-muted">
+                    Instant suggestions matching your {reservationType} preference and {pax} pax.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleFindNextAvailable}
+                  disabled={findingNext}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 hover:border-emerald-400 active:scale-95 transition disabled:opacity-60"
+                >
+                  <Compass className="h-3.5 w-3.5 text-emerald-600" />
+                  {findingNext ? "Searching..." : "Find Next Available Date"}
+                </button>
+              </div>
+
+              {loadingAvailability ? (
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-4">
+                  {[1, 2, 3, 4].map((n) => (
+                    <div
+                      key={n}
+                      className="h-28 animate-pulse rounded-2xl border border-cream-2 bg-cream/40 p-3"
+                    />
+                  ))}
+                </div>
+              ) : recommendations.length === 0 ? (
+                <div className="rounded-2xl border border-cream-2 bg-cream/30 p-4 text-center text-xs text-muted">
+                  No direct openings found in the immediate dates for {pax} pax. Use the calendar below to explore upcoming months.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-4">
+                  {recommendations.map((rec) => {
+                    const isCardSelected = rec.date === date && rec.session === bookingType;
+                    return (
+                      <button
+                        key={`${rec.date}-${rec.session}`}
+                        type="button"
+                        onClick={() => handleSelectRecommendation(rec)}
+                        className={`group flex flex-col justify-between rounded-2xl border p-3.5 text-left transition-all duration-200 ${
+                          isCardSelected
+                            ? "border-emerald-600 bg-emerald-50/90 shadow-sm ring-2 ring-emerald-600/30"
+                            : "border-cream-2 bg-white hover:border-emerald-300 hover:bg-emerald-50/30 hover:shadow-xs"
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-bold uppercase tracking-wider text-muted">
+                              {rec.dayOfWeek}
+                            </span>
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                rec.status === "limited"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-emerald-100 text-emerald-800"
+                              }`}
+                            >
+                              {rec.statusLabel}
+                            </span>
+                          </div>
+                          <div className="mt-1 font-serif text-base font-bold text-green-dark">
+                            {rec.formattedDate}
+                          </div>
+                          <div className="mt-0.5 text-xs font-semibold text-emerald-700">
+                            {rec.sessionLabel}
+                          </div>
+                          <div className="text-[10px] text-muted">{rec.sessionTime}</div>
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between border-t border-cream-2/80 pt-2 text-[11px]">
+                          <span className="text-[10px] text-muted truncate max-w-[85px]">
+                            {reservationType === "private"
+                              ? "Whole Venue"
+                              : `${rec.remainingSlots} slots left`}
+                          </span>
+                          <span className="font-bold text-green-mid group-hover:underline">
+                            {isCardSelected ? "Selected ✓" : "Book →"}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Smart Availability Calendar */}
+            <div className="pt-2 border-t border-cream-2">
+              <label className="field-label mb-2 flex items-center justify-between">
+                <span>Booking Date * — pick an available day</span>
+                <span className="text-[11px] font-normal text-muted">
+                  Selected: <strong className="text-green-mid">{date}</strong>
+                </span>
+              </label>
               <AvailabilityCalendar
                 blocked={blocked}
+                datesStatus={datesStatus}
                 selected={date}
                 onSelect={(iso) => {
                   setDate(iso);
                   setError("");
                 }}
               />
-              <p className="mt-1 text-xs text-muted">
-                Red dates are locked (fully booked or a private reservation). Selected: <strong className="text-green-mid">{date}</strong>
-              </p>
               {dateBlocked && (
-                <p className="mt-1 text-[11px] font-semibold text-danger">This date is fully booked. Pick another.</p>
+                <p className="mt-2 text-xs font-semibold text-danger flex items-center gap-1.5">
+                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                  This date and session is fully booked or locked. Please select another slot from the recommendations above.
+                </p>
               )}
-            </div>
-
-            <div>
-              <label className="field-label">Number of Persons *</label>
-              <input type="number" className="field" min={1} max={amenity.maxCapacity} value={pax}
-                onChange={(e) => setPax(Number(e.target.value) || 1)} />
-              <p className="mt-1 text-xs text-muted">Max {amenity.maxCapacity} pax</p>
             </div>
 
             <div>
@@ -274,6 +518,7 @@ function BookingForm() {
             </div>
           </div>
 
+          {/* Pricing summary */}
           <div className={`flex items-center justify-between rounded-2xl p-5 text-white ${reservationType === "private" ? "bg-gold-muted" : "bg-green-mid"}`}>
             <div>
               <div className="text-sm opacity-90">
@@ -286,6 +531,7 @@ function BookingForm() {
             <div className="font-serif text-3xl font-bold">{formatPHP(total)}</div>
           </div>
 
+          {/* GCash downpayment instructions */}
           <div className="card space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-widest text-muted">
               Downpayment — GCash Only · {reservationType === "private" ? "Private" : "Public"}
@@ -300,117 +546,69 @@ function BookingForm() {
                     className="h-[150px] w-[150px] object-contain mx-auto rounded-lg"
                   />
                 ) : (
-                  <QRCode
-                    value={buildPlaceholderQR(downpayment, gcashConfig?.accountNumber || HOAGCashNumber)}
-                    size={150}
+                  <QRCode value={buildPlaceholderQR(downpayment)} size={150} />
+                )}
+              </div>
+              <p className="mt-2 text-xs font-bold text-blue-900">
+                Scan via GCash App · Send exactly {formatPHP(downpayment)}
+              </p>
+              <p className="text-[11px] text-blue-700">
+                Account: {gcashConfig?.accountName || "Mabuhay Homes HOA"} · {gcashConfig?.accountNumber || HOAGCashNumber}
+              </p>
+            </div>
+
+            <div>
+              <label className="field-label">GCash Reference Number (Optional at booking)</label>
+              <input
+                className="field"
+                value={gcashRef}
+                onChange={(e) => setGcashRef(e.target.value)}
+                placeholder="13-digit reference from receipt e.g. 1002345678901"
+              />
+            </div>
+
+            <div>
+              <label className="field-label">Upload GCash Receipt Screenshot (Optional)</label>
+              <div className="flex items-center gap-3">
+                <label className="btn-secondary cursor-pointer">
+                  <Upload className="h-4 w-4" />
+                  Choose File
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleReceiptChange}
                   />
+                </label>
+                {receiptFile && (
+                  <button
+                    type="button"
+                    onClick={removeReceipt}
+                    className="text-xs text-rose-600 hover:underline"
+                  >
+                    Remove
+                  </button>
                 )}
               </div>
-              <div className="mt-3 font-serif text-2xl font-bold tracking-[3px] text-blue-600">
-                {gcashConfig?.accountNumber || "0917 123 4567"}
-              </div>
-              <div className="text-xs font-semibold text-muted">
-                {gcashConfig?.accountName || "MABUHAY HOMES HOA — Scan to Pay"}
-              </div>
-              <p className="mt-1 inline-block rounded-full bg-blue-100 px-3 py-0.5 text-[10px] font-semibold text-blue-700">
-                Official HOA Amenity Payment Account
-              </p>
-              <p className="mt-3 text-[11px] text-muted">
-                {gcashConfig?.instructions || (
-                  <>
-                    Amount updates automatically with your reservation type, session, and pax.
-                    Send exactly <strong className="text-green-mid">{formatPHP(downpayment)}</strong> now, or upload your receipt and enter your reference number below.
-                  </>
-                )}
-              </p>
-            </div>
 
-            {/* Payment Proof / Receipt Upload Area */}
-            <div className="rounded-2xl border border-cream-2 bg-cream/30 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Receipt className="h-4 w-4 text-green-mid" />
-                <h4 className="text-xs font-bold uppercase tracking-wider text-green-dark">
-                  Proof of Payment (GCash Receipt)
-                </h4>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="field-label">GCash Reference Number (Optional if paying now)</label>
-                  <div className="relative">
-                    <Smartphone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-                    <input
-                      type="text"
-                      className="field pl-9"
-                      value={gcashRef}
-                      onChange={(e) => setGcashRef(e.target.value)}
-                      placeholder="e.g. 1002 9384 7561"
-                    />
-                  </div>
+              {receiptPreview && (
+                <div className="mt-3 relative w-36 h-36 rounded-xl overflow-hidden border border-cream-2 shadow-sm">
+                  <img
+                    src={receiptPreview}
+                    alt="Receipt preview"
+                    className="w-full h-full object-cover"
+                  />
                 </div>
-
-                <div>
-                  <label className="field-label">Upload Receipt Screenshot / Photo</label>
-                  
-                  {!receiptFile ? (
-                    <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-cream-2 bg-white p-5 cursor-pointer hover:border-green-mid hover:bg-green-light/5 transition group">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-cream group-hover:bg-green-light/20 text-muted group-hover:text-green-mid transition">
-                        <Upload className="h-5 w-5" />
-                      </div>
-                      <span className="mt-2 text-xs font-bold text-green-dark">Click to upload receipt image</span>
-                      <span className="text-[11px] text-muted mt-0.5">JPG, PNG, WEBP, or PDF up to 10MB</span>
-                      <input
-                        type="file"
-                        accept="image/*,application/pdf"
-                        onChange={handleReceiptChange}
-                        className="hidden"
-                      />
-                    </label>
-                  ) : (
-                    <div className="rounded-xl border border-cream-2 bg-white p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          {receiptPreview ? (
-                            <img
-                              src={receiptPreview}
-                              alt="Receipt Preview"
-                              className="h-14 w-14 rounded-lg object-cover border border-cream-2 flex-shrink-0"
-                            />
-                          ) : (
-                            <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-cream flex-shrink-0">
-                              <FileText className="h-6 w-6 text-muted" />
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-green-dark truncate">{receiptFile.name}</p>
-                            <p className="text-[10px] text-muted">{Math.round(receiptFile.size / 1024)} KB · Receipt Attached</p>
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 mt-0.5">
-                              <Check className="h-3 w-3" /> Ready to submit
-                            </span>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={removeReceipt}
-                          className="rounded-lg p-1.5 text-muted hover:bg-rose-50 hover:text-rose-600 transition"
-                          title="Remove receipt"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
-
-            {isResident && reservationType === "public" && (
-              <p className="flex items-center gap-1 text-xs font-semibold text-green-mid"><Check className="h-3.5 w-3.5" /> 20% resident discount applied to your rate.</p>
-            )}
           </div>
 
-          <button type="submit" disabled={submitting} className="btn-gold w-full !py-3.5 text-[15px]">
-            {submitting ? "Uploading & Submitting…" : "Review & Confirm Reservation →"}
+          <button
+            type="submit"
+            disabled={submitting || dateBlocked}
+            className="btn-primary w-full py-4 text-center text-base font-bold shadow-md hover:shadow-lg transition disabled:opacity-50"
+          >
+            {submitting ? "Processing Reservation..." : `Proceed with Reservation · ${formatPHP(downpayment)} Downpayment`}
           </button>
         </form>
       </div>
@@ -418,7 +616,7 @@ function BookingForm() {
   );
 }
 
-export default function BookingPage() {
+export default function ReservationPage() {
   return (
     <Suspense fallback={<div className="section"><p className="text-muted">Loading…</p></div>}>
       <BookingForm />

@@ -165,6 +165,13 @@ export const api = {
     send<{ ok: boolean; reservation: Reservation }>(`/api/reservations/${id}/archive`, "DELETE", undefined, howaHeaders()),
   deleteReservation: (id: number) =>
     send<{ ok: boolean }>(`/api/reservations/${id}`, "DELETE", undefined, howaHeaders()),
+  deleteReservations: (ids: number[]) =>
+    send<{ ok: boolean; deletedCount: number; deletedIds: number[]; failedIds: number[] }>(
+      "/api/reservations",
+      "DELETE",
+      { ids },
+      howaHeaders()
+    ),
   dues: () => getJSON<DuesRecord[]>("/api/dues"),
   transactions: (filter?: { isArchived?: boolean; includeArchived?: boolean; refType?: string; status?: string }) => {
     const q = new URLSearchParams();
@@ -215,15 +222,58 @@ export const api = {
     send<{ transaction: Transaction }>(`/api/transactions/${id}`, "PATCH", payload, howaHeaders()),
 
 
-  availability: (amenityId: number, opts?: { date?: string; type?: string; pax?: number }) => {
+  availability: (
+    amenityId: number,
+    opts?: { date?: string; type?: string; pax?: number; session?: string; month?: string }
+  ) => {
     const q = new URLSearchParams();
     q.set("amenityId", String(amenityId));
     if (opts?.date) q.set("date", opts.date);
     if (opts?.type) q.set("type", opts.type);
+    if (opts?.session) q.set("session", opts.session);
     if (opts?.pax) q.set("pax", String(opts.pax));
-    return getJSON<{ blocked: string[]; available: boolean; maxCapacity: number; amenityId: number }>(
-      `/api/reservations/availability?${q.toString()}`
-    );
+    if (opts?.month) q.set("month", opts.month);
+    return getJSON<{
+      amenityId: number;
+      maxCapacity: number;
+      blocked: string[];
+      available: boolean;
+      datesStatus?: Record<
+        string,
+        {
+          status: "available" | "limited" | "booked";
+          remainingSlots: number;
+          day: { available: boolean; remainingSlots: number; status: "available" | "limited" | "booked" };
+          night: { available: boolean; remainingSlots: number; status: "available" | "limited" | "booked" };
+        }
+      >;
+      recommendations?: Array<{
+        date: string;
+        dayOfWeek: string;
+        formattedDate: string;
+        session: "day" | "night";
+        sessionLabel: string;
+        sessionTime: string;
+        status: "available" | "limited";
+        statusLabel: string;
+        remainingSlots: number;
+        maxCapacity: number;
+        reservationType: "public" | "private";
+      }>;
+      nextAvailable?: {
+        date: string;
+        dayOfWeek: string;
+        formattedDate: string;
+        session: "day" | "night";
+        sessionLabel: string;
+        sessionTime: string;
+        status: "available" | "limited";
+        statusLabel: string;
+        remainingSlots: number;
+        maxCapacity: number;
+        reservationType: "public" | "private";
+      } | null;
+    }>(`/api/reservations/availability?${q.toString()}`);
   },
 
   createReservation: (payload: Record<string, unknown>) =>

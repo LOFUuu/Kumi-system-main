@@ -21,6 +21,7 @@ import {
   Eye,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import SyncStatusBadge from "./SyncStatusBadge";
 
 const LINKS: { href: string; label: string; icon: LucideIcon; sub?: boolean; amber?: boolean }[] = [
   { href: "/admin/residents", label: "Residents", icon: Users },
@@ -155,6 +156,13 @@ export default function AdminSidebar() {
             );
           })}
         </nav>
+
+        {/* Sync Status Badge */}
+        {!collapsed && (
+          <div className="mb-2">
+            <SyncStatusBadge />
+          </div>
+        )}
 
         {/* Logout at bottom */}
         <div className="pt-3 border-t border-gray-100 mt-2">

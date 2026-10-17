@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getListings, getMasterIndex, getNextId } from "@/lib/db";
-import { Listing } from "@/models";
+import { getListings, getMasterIndex, createListing } from "@/lib/db";
 import { requestRole } from "@/lib/role";
 import { sendAdminListingNotificationEmail } from "@/lib/mailer";
 import type { VerificationStatus } from "@/lib/mock-data";
@@ -100,11 +99,9 @@ export async function POST(req: NextRequest) {
   const isHowa = role === "admin" || role === "counselor";
   const verificationStatus: VerificationStatus = isHowa ? "verified" : "pending";
 
-  const id = await getNextId(Listing);
   const address = `Lot ${lotNo}, Block ${blockNo}, Mabuhay Homes Phase 5`;
 
   const docs = {
-    _id: id,
     houseName: body.houseName
       ? String(body.houseName).trim()
       : `Block ${blockNo} - Lot ${lotNo}`,
@@ -138,13 +135,13 @@ export async function POST(req: NextRequest) {
     showOnMap: body.showOnMap !== undefined ? Boolean(body.showOnMap) : true,
   };
 
-  await Listing.create(docs as any);
+  const created = await createListing(docs as any);
 
   // Send security email notification to Admin if submission needs validation
   if (verificationStatus === "pending") {
     try {
       await sendAdminListingNotificationEmail({
-        listingId: id,
+        listingId: created.id,
         houseName: docs.houseName,
         propertyAddress: address,
         ownerName,
@@ -157,5 +154,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ listing: { ...docs, id } }, { status: 201 });
+  return NextResponse.json({ listing: created }, { status: 201 });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -90,6 +90,12 @@ export default function AdminReservationsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Reservation | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
+
+  // Multi-select & Bulk Delete state
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const headerCheckboxRef = useRef<HTMLInputElement>(null);
 
   const notify = (type: "ok" | "err", msg: string) => {
     if (type === "ok") {
@@ -215,6 +221,94 @@ export default function AdminReservationsPage() {
   useEffect(() => {
     setPage(1);
   }, [search, amenityFilter, statusFilter, dateFrom, dateTo]);
+
+  // Current page visible reservation IDs
+  const currentPageIds = useMemo(() => paginated.map((r) => r.id), [paginated]);
+
+  // Check if all visible items on current page are selected
+  const allCurrentSelected = useMemo(
+    () => currentPageIds.length > 0 && currentPageIds.every((id) => selectedIds.includes(id)),
+    [currentPageIds, selectedIds]
+  );
+
+  // Check if some (but not all) visible items on current page are selected
+  const someCurrentSelected = useMemo(
+    () => currentPageIds.some((id) => selectedIds.includes(id)) && !allCurrentSelected,
+    [currentPageIds, selectedIds, allCurrentSelected]
+  );
+
+  // Sync indeterminate state of header checkbox
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = someCurrentSelected;
+    }
+  }, [someCurrentSelected]);
+
+  // Toggle individual row checkbox
+  const toggleSelectRow = (id: number) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  // Toggle Select All checkbox in header (current page only)
+  const handleSelectAllToggle = () => {
+    if (allCurrentSelected) {
+      // Deselect all visible items on current page
+      setSelectedIds((prev) => prev.filter((id) => !currentPageIds.includes(id)));
+    } else {
+      // Select all visible items on current page
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...currentPageIds])));
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  // Reset selection when filters change so old selection is never applied to unrelated rows
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [search, amenityFilter, statusFilter, dateFrom, dateTo]);
+
+  // Bulk delete operation
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setBulkDeleting(true);
+    try {
+      const res = await api.deleteReservations(selectedIds);
+      const deleted = res.deletedIds || selectedIds;
+
+      setRows((prev) => prev.filter((r) => !deleted.includes(r.id)));
+
+      if (selected && deleted.includes(selected.id)) {
+        closePanel();
+      }
+
+      const count = deleted.length;
+      setSelectedIds([]);
+      setBulkDeleteModalOpen(false);
+
+      notify(
+        "ok",
+        `Successfully deleted ${count} selected reservation${count > 1 ? "s" : ""}. The slot${count > 1 ? "s are" : " is"} now available.`
+      );
+
+      // Handle empty page gracefully: if current page has no more items, navigate back
+      const remainingCount = filtered.filter((r) => !deleted.includes(r.id)).length;
+      const newTotalPages = Math.max(1, Math.ceil(remainingCount / PAGE_SIZE));
+      if (page > newTotalPages) {
+        setPage(newTotalPages);
+      }
+    } catch (err: unknown) {
+      notify(
+        "err",
+        err instanceof Error ? err.message : "Failed to delete selected reservations."
+      );
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   // Find amenity image for selected
   const selectedAmenity = amenities.find((a) => a.id === selected?.amenityId);
@@ -372,12 +466,56 @@ export default function AdminReservationsPage() {
           </div>
         </div>
 
+        {/* Selection Counter & Delete Button Toolbar */}
+        {selectedIds.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-xs text-rose-900 shadow-sm animate-in fade-in duration-200">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-600 text-xs font-bold text-white shadow-2xs">
+                {selectedIds.length}
+              </span>
+              <span className="font-semibold text-rose-950">
+                {selectedIds.length} reservation{selectedIds.length > 1 ? "s" : ""} selected
+              </span>
+              <span className="text-[11px] text-rose-800/70">
+                (Page {page} of {totalPages})
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-800 hover:bg-rose-100/60 transition"
+              >
+                Deselect All
+              </button>
+              <button
+                type="button"
+                onClick={() => setBulkDeleteModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-rose-700 active:scale-95 transition"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete Selected ({selectedIds.length})
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         <div className="overflow-hidden rounded-2xl border border-cream-2 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-cream text-left text-muted text-[11px] uppercase tracking-wider">
                 <tr>
+                  <th className="p-4 w-10">
+                    <input
+                      ref={headerCheckboxRef}
+                      type="checkbox"
+                      checked={allCurrentSelected}
+                      onChange={handleSelectAllToggle}
+                      aria-label="Select all visible reservations on this page"
+                      className="h-4 w-4 rounded border-cream-2 text-green-mid focus:ring-green-mid cursor-pointer accent-green-mid"
+                    />
+                  </th>
                   <th className="p-4">Guest</th>
                   <th className="p-4">Amenity</th>
                   <th className="p-4">Type</th>
@@ -393,14 +531,14 @@ export default function AdminReservationsPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={10} className="py-16 text-center text-muted">
+                    <td colSpan={11} className="py-16 text-center text-muted">
                       <CalendarDays className="mx-auto mb-2 h-6 w-6 animate-pulse text-green-mid/40" />
                       Loading reservations…
                     </td>
                   </tr>
                 ) : paginated.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="py-12 text-center text-muted text-sm">
+                    <td colSpan={11} className="py-12 text-center text-muted text-sm">
                       No reservations found.
                     </td>
                   </tr>
@@ -410,11 +548,22 @@ export default function AdminReservationsPage() {
                       key={r.id}
                       onClick={() => openPanel(r)}
                       className={`cursor-pointer border-t border-cream-2 transition hover:bg-cream/40 ${
-                        selected?.id === r.id && panelOpen
+                        selectedIds.includes(r.id)
+                          ? "bg-rose-50/50 hover:bg-rose-50/70"
+                          : selected?.id === r.id && panelOpen
                           ? "bg-green-light/10"
                           : ""
                       }`}
                     >
+                      <td className="p-4 w-10" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(r.id)}
+                          onChange={() => toggleSelectRow(r.id)}
+                          aria-label={`Select reservation #${r.id} for ${r.residentName}`}
+                          className="h-4 w-4 rounded border-cream-2 text-green-mid focus:ring-green-mid cursor-pointer accent-green-mid"
+                        />
+                      </td>
                       <td className="p-4">
                         <div className="font-semibold text-green-dark text-xs">
                           {r.residentName}
@@ -1018,6 +1167,65 @@ export default function AdminReservationsPage() {
               >
                 <Trash2 className="h-4 w-4" />
                 {deleting ? "Deleting…" : "Confirm Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Bulk Delete Confirmation Modal */}
+      {bulkDeleteModalOpen && (
+        <div
+          className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+          onClick={() => !bulkDeleting && setBulkDeleteModalOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-cream-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-4">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-serif text-lg font-bold text-rose-900">
+                  Delete Selected Reservations
+                </h3>
+                <p className="text-xs text-muted mt-0.5">
+                  Confirm bulk removal of {selectedIds.length} reservation{selectedIds.length > 1 ? "s" : ""}.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-4 mb-4 text-xs space-y-2 text-rose-900 leading-relaxed">
+              <p className="font-semibold">
+                Are you sure you want to delete the{" "}
+                <span className="font-bold underline text-rose-800">
+                  {selectedIds.length} selected reservation{selectedIds.length > 1 ? "s" : ""}
+                </span>
+                ? This action cannot be undone.
+              </p>
+              <p className="text-[11px] text-rose-700/80">
+                Only the explicitly checked reservation records will be deleted. Any linked payments will be safely marked as voided to preserve audit history.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={bulkDeleting}
+                onClick={() => setBulkDeleteModalOpen(false)}
+                className="rounded-xl border border-cream-2 px-4 py-2 text-xs font-semibold text-muted hover:bg-cream transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkDeleting}
+                onClick={handleBulkDelete}
+                className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700 transition disabled:opacity-50 shadow-xs"
+              >
+                <Trash2 className="h-4 w-4" />
+                {bulkDeleting ? "Deleting..." : `Delete Selected (${selectedIds.length})`}
               </button>
             </div>
           </div>

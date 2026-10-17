@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import dbConnect from "@/lib/mongoose";
-import { Transaction, Reservation } from "@/models";
+import { getPaymentByIntent, updateTransactionById, updateReservation } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +25,7 @@ export async function POST(req: NextRequest) {
   }
 
   const file = formData.get("file") as File | null;
-  // Optional: intentId allows the upload to immediately persist receiptPath in MongoDB
+  // Optional: intentId allows the upload to immediately persist receiptPath
   // so the confirm step never needs to carry the large base64 string in its JSON body.
   const intentId = (formData.get("intentId") as string | null) || "";
 
@@ -56,23 +55,16 @@ export async function POST(req: NextRequest) {
   const base64 = buffer.toString("base64");
   const dataUrl = `data:${file.type};base64,${base64}`;
 
-  // If intentId is provided, persist the receiptPath directly to MongoDB now.
+  // If intentId is provided, persist the receiptPath now.
   // This avoids sending the large base64 string again in the confirm step's JSON body.
   if (intentId) {
     try {
-      await dbConnect();
-      const txn = await Transaction.findOne({ "payment.intentId": intentId } as any).lean();
+      const txn = await getPaymentByIntent(intentId);
       if (txn) {
-        await Transaction.updateOne(
-          { "payment.intentId": intentId } as any,
-          { $set: { receiptPath: dataUrl } } as any
-        );
+        await updateTransactionById(txn.id, { receiptPath: dataUrl });
         // Also update the linked reservation if one exists
-        if ((txn as any).refType === "amenity" && (txn as any).refId) {
-          await Reservation.updateOne(
-            { _id: (txn as any).refId } as any,
-            { $set: { receiptPath: dataUrl } } as any
-          );
+        if (txn.refType === "amenity" && txn.refId) {
+          await updateReservation(txn.refId, { receiptPath: dataUrl });
         }
       }
     } catch {

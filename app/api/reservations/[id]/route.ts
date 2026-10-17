@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Reservation, Transaction } from "@/models";
-import { deleteReservation } from "@/lib/db";
+import {
+  getReservations,
+  updateReservation,
+  getTransactions,
+  updateTransactionById,
+  deleteReservation,
+} from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -22,25 +27,22 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }
 
-  const reservation = await Reservation.findOne({ _id: resId } as any);
+  const allRes = await getReservations(true);
+  const reservation = allRes.find((r) => r.id === resId);
   if (!reservation) {
     return NextResponse.json({ error: "Reservation not found." }, { status: 404 });
   }
 
   if (action === "approve") {
-    const existingApproved = await Reservation.findOne({
-      _id: { $ne: resId },
-      amenityId: reservation.amenityId,
-      date: reservation.date,
-      bookingType: reservation.bookingType,
-      status: "approved",
-      $or: [
-        { isArchived: false },
-        { isArchived: "false" },
-        { isArchived: 0 },
-        { isArchived: { $exists: false } },
-      ],
-    } as any);
+    const existingApproved = allRes.find((r) => {
+      if (r.id === resId) return false;
+      if (r.amenityId !== reservation.amenityId) return false;
+      if (r.date !== reservation.date) return false;
+      if (r.bookingType !== reservation.bookingType) return false;
+      if (r.status !== "approved") return false;
+      if (r.isArchived) return false;
+      return true;
+    });
 
     if (existingApproved) {
       return NextResponse.json(
@@ -51,28 +53,22 @@ export async function PATCH(
   }
 
   const newStatus = action === "approve" ? "approved" : "declined";
+  const approvedAt = new Date().toISOString();
 
-  reservation.status = newStatus;
-  reservation.approvedAt = new Date().toISOString();
-  await reservation.save();
+  const updated = await updateReservation(resId, {
+    status: newStatus,
+    approvedAt,
+  });
 
-  await Transaction.updateOne(
-    { refType: "amenity", refId: resId },
-    { $set: { status: newStatus === "approved" ? "approved" : "voided" } }
-  );
+  const txns = await getTransactions({ includeArchived: true });
+  const linkedTxn = txns.find((t) => t.refType === "amenity" && t.refId === resId);
+  if (linkedTxn) {
+    await updateTransactionById(linkedTxn.id, {
+      status: newStatus === "approved" ? "approved" : "voided",
+    });
+  }
 
-  const updated = (await Reservation.findById(resId).lean()) as any;
-  const {
-    _id,
-    __v: version,
-    createdAt: created,
-    updatedAt: modified,
-    ...rest
-  } = updated;
-  void version;
-  void created;
-  void modified;
-  return NextResponse.json({ reservation: { ...rest, id: _id } });
+  return NextResponse.json({ reservation: updated });
 }
 
 export async function DELETE(

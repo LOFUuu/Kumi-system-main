@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Transaction } from "@/models";
-import { getPaymentByIntent } from "@/lib/db";
+import { getPaymentByIntent, updateTransactionById } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -51,17 +50,17 @@ export async function POST(req: NextRequest) {
 
   const today = new Date().toISOString().slice(0, 10);
   const gcashRef = String(body?.gcash_ref || body?.attributes?.reference_number || "").trim();
+  const currentPayment = existing.payment || ({} as any);
 
-  await Transaction.updateOne(
-    { "payment.intentId": intentId } as any,
-    {
-      $set: {
-        "payment.status": "paid",
-        "payment.paidAt": today,
-        ...(gcashRef ? { "payment.gcashRef": gcashRef, gcashRef } : {}),
-      },
-    } as any
-  );
+  await updateTransactionById(existing.id, {
+    payment: {
+      ...currentPayment,
+      status: "paid",
+      paidAt: today,
+      ...(gcashRef ? { gcashRef } : {}),
+    },
+    ...(gcashRef ? { gcashRef } : {}),
+  });
 
   return NextResponse.json({ received: true, intentId });
 }
