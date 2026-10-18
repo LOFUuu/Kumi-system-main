@@ -111,24 +111,62 @@ async function sendViaBrevo(opts: {
     ...(opts.replyTo ? { replyTo: { email: opts.replyTo } } : {}),
   };
 
-  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: {
-      "api-key": apiKey,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  // Try Brevo HTTP API first
+  let httpErrDetail = "";
+  try {
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": apiKey,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
 
-  if (!res.ok) {
+    if (res.ok) {
+      return;
+    }
+
     const body = await res.text();
-    let detail = body;
+    httpErrDetail = body;
     try {
       const parsed = JSON.parse(body);
-      if (parsed.message) detail = parsed.message;
+      if (parsed.message) httpErrDetail = parsed.message;
     } catch {}
-    throw new Error(`Brevo API error (${res.status}): ${detail}`);
+  } catch (fetchErr: any) {
+    httpErrDetail = fetchErr?.message || String(fetchErr);
+  }
+
+  // If HTTP API was rejected or key is an SMTP key (xsmtpsib-...), try Brevo SMTP Relay
+  try {
+    const brevoTransporter = nodemailer.createTransport({
+      host: "smtp-relay.brevo.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: senderEmail,
+        pass: apiKey,
+      },
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000,
+    });
+
+    await brevoTransporter.sendMail({
+      from: `"${senderName}" <${senderEmail}>`,
+      to: opts.to,
+      subject: opts.subject,
+      ...(opts.text ? { text: opts.text } : {}),
+      ...(opts.html ? { html: opts.html } : {}),
+      ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
+    });
+    return;
+  } catch (smtpErr: any) {
+    const smtpMsg = smtpErr?.message || String(smtpErr);
+    throw new Error(
+      `Brevo API failed (${httpErrDetail}) & Brevo SMTP failed (${smtpMsg})`
+    );
   }
 }
 
