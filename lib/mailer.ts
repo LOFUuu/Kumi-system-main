@@ -89,17 +89,17 @@ async function sendViaBrevo(opts: {
   html?: string;
   replyTo?: string;
 }): Promise<void> {
-  const apiKey = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
+  const apiKey = (process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY || "").trim();
   if (!apiKey) {
     throw new Error("BREVO_API_KEY is not set.");
   }
 
-  const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_USER || "noreply@mabuhayhomes.com";
+  const senderEmail = (process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_USER || "kumicarry@gmail.com").trim();
   const senderName = "Mabuhay Homes Community Portal";
 
   const payload: Record<string, unknown> = {
     sender: { name: senderName, email: senderEmail },
-    to: [{ email: opts.to }],
+    to: [{ email: opts.to.trim() }],
     subject: opts.subject,
     ...(opts.html ? { htmlContent: opts.html } : {}),
     ...(opts.text ? { textContent: opts.text } : {}),
@@ -243,7 +243,23 @@ async function sendMail(opts: {
 
   const transportErrors: string[] = [];
 
-  // 1. Gmail REST API via OAuth2 (Sends to all recipients using verified Google account)
+  // 1. Brevo HTTP API (Priority #1: newly configured active provider, sends to all domains on free tier)
+  const brevoApiKey = (process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY || "").trim();
+  if (brevoApiKey) {
+    try {
+      console.log(`[Mailer] Sending via Brevo HTTP API → ${opts.to}`);
+      await sendViaBrevo(opts);
+      return;
+    } catch (brevoErr: any) {
+      const msg = brevoErr?.message || String(brevoErr);
+      console.warn("[Mailer] Brevo attempt failed, trying fallback:", msg);
+      transportErrors.push(`Brevo: ${msg}`);
+    }
+  } else {
+    transportErrors.push("Brevo: BREVO_API_KEY is not set or not accessible in this environment (Check Vercel Environment Variables: ensure Production, Preview, and Development are all checked)");
+  }
+
+  // 2. Gmail REST API via OAuth2 (Sends to all recipients using verified Google account)
   const hasGmailApi =
     Boolean(process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID) &&
     Boolean(process.env.GMAIL_REFRESH_TOKEN);
@@ -256,19 +272,6 @@ async function sendMail(opts: {
       const msg = gmailErr?.message || String(gmailErr);
       console.warn("[Mailer] Gmail API attempt failed, trying fallback:", msg);
       transportErrors.push(`Gmail API: ${msg}`);
-    }
-  }
-
-  // 2. Brevo HTTP API (Alternative Cloud provider - works for all user domains on free tier)
-  if (process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY) {
-    try {
-      console.log(`[Mailer] Sending via Brevo HTTP API → ${opts.to}`);
-      await sendViaBrevo(opts);
-      return;
-    } catch (brevoErr: any) {
-      const msg = brevoErr?.message || String(brevoErr);
-      console.warn("[Mailer] Brevo attempt failed, trying fallback:", msg);
-      transportErrors.push(`Brevo: ${msg}`);
     }
   }
 
@@ -298,18 +301,8 @@ async function sendMail(opts: {
     }
   }
 
-  const gmailErr = transportErrors.find((e) => e.includes("Google Gmail API token has expired"));
-  if (gmailErr) {
-    throw new Error(gmailErr);
-  }
-
-  // If Resend failed specifically due to its sandbox restriction, surface that clear guidance directly
-  const sandboxErr = transportErrors.find((e) => e.includes("Resend Sandbox Restriction"));
-  if (sandboxErr) {
-    throw new Error(sandboxErr);
-  }
-
   if (transportErrors.length > 0) {
+    // Show ALL transport errors so the user can see what went wrong with each provider
     throw new Error(transportErrors.join(" | "));
   }
 
