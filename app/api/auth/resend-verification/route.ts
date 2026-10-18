@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     console.error("[ResendVerification] Failed to send verification email:", err?.message || err);
     console.log(`[ResendVerification] 🔑 Verify Link for ${email}: ${verifyUrl}`);
     return NextResponse.json(
-      { error: "We couldn't send the verification email. Please check email delivery configuration and try again." },
+      { error: err?.message || "We couldn't send the verification email. Please check email delivery configuration and try again." },
       { status: 502 }
     );
   }

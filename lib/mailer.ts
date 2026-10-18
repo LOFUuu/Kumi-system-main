@@ -63,7 +63,19 @@ async function sendViaResend(opts: {
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Resend API error (${res.status}): ${body}`);
+    let detail = body;
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed.message) detail = parsed.message;
+    } catch {}
+
+    if (res.status === 403 && (detail.includes("testing emails") || detail.includes("verify a domain"))) {
+      throw new Error(
+        `Resend Sandbox Restriction: Resend free tier only allows sending to your own registered email address. To send to all users (like ${opts.to}), verify a domain at resend.com/domains or use BREVO_API_KEY in Vercel (which sends to all emails without needing a domain).`
+      );
+    }
+
+    throw new Error(`Resend API error (${res.status}): ${detail}`);
   }
 }
 
@@ -106,7 +118,12 @@ async function sendViaBrevo(opts: {
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Brevo API error (${res.status}): ${body}`);
+    let detail = body;
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed.message) detail = parsed.message;
+    } catch {}
+    throw new Error(`Brevo API error (${res.status}): ${detail}`);
   }
 }
 
@@ -154,12 +171,22 @@ async function sendViaGmailAPI(opts: SendMailOptions): Promise<void> {
     .replace(/\//g, "_")
     .replace(/=+$/, "");
 
-  await gmail.users.messages.send({
-    userId: "me",
-    requestBody: {
-      raw: encodedMessage,
-    },
-  });
+  try {
+    await gmail.users.messages.send({
+      userId: "me",
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg.includes("invalid_grant") || msg.includes("expired or revoked")) {
+      throw new Error(
+        "Google Gmail API token has expired. (Refresh tokens generated in OAuth Playground expire after 7 days if the Google Cloud OAuth app is in Testing mode. To fix, re-generate GMAIL_REFRESH_TOKEN or set OAuth Publishing Status to 'In production')."
+      );
+    }
+    throw new Error(`Gmail API error: ${msg}`);
+  }
 }
 
 // ─── Nodemailer SMTP fallback (local dev) ─────────────────────────────────────
@@ -214,29 +241,9 @@ async function sendMail(opts: {
     ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
   };
 
-  // 1. Resend HTTP API (Fastest and immune to Vercel port blocking)
-  if (process.env.RESEND_API_KEY) {
-    try {
-      console.log(`[Mailer] Sending via Resend HTTP API → ${opts.to}`);
-      await sendViaResend(opts);
-      return;
-    } catch (resendErr: any) {
-      console.warn("[Mailer] Resend attempt failed, trying fallback:", resendErr?.message || resendErr);
-    }
-  }
+  const transportErrors: string[] = [];
 
-  // 2. Brevo HTTP API (Alternative Cloud provider)
-  if (process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY) {
-    try {
-      console.log(`[Mailer] Sending via Brevo HTTP API → ${opts.to}`);
-      await sendViaBrevo(opts);
-      return;
-    } catch (brevoErr: any) {
-      console.warn("[Mailer] Brevo attempt failed, trying fallback:", brevoErr?.message || brevoErr);
-    }
-  }
-
-  // 3. Gmail REST API via OAuth2
+  // 1. Gmail REST API via OAuth2 (Sends to all recipients using verified Google account)
   const hasGmailApi =
     Boolean(process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID) &&
     Boolean(process.env.GMAIL_REFRESH_TOKEN);
@@ -246,19 +253,68 @@ async function sendMail(opts: {
       await sendViaGmailAPI(nmOpts);
       return;
     } catch (gmailErr: any) {
-      console.warn("[Mailer] Gmail API attempt failed, trying fallback:", gmailErr?.message || gmailErr);
+      const msg = gmailErr?.message || String(gmailErr);
+      console.warn("[Mailer] Gmail API attempt failed, trying fallback:", msg);
+      transportErrors.push(`Gmail API: ${msg}`);
+    }
+  }
+
+  // 2. Brevo HTTP API (Alternative Cloud provider - works for all user domains on free tier)
+  if (process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY) {
+    try {
+      console.log(`[Mailer] Sending via Brevo HTTP API → ${opts.to}`);
+      await sendViaBrevo(opts);
+      return;
+    } catch (brevoErr: any) {
+      const msg = brevoErr?.message || String(brevoErr);
+      console.warn("[Mailer] Brevo attempt failed, trying fallback:", msg);
+      transportErrors.push(`Brevo: ${msg}`);
+    }
+  }
+
+  // 3. Resend HTTP API (Vercel-compatible; free tier sandbox limited to registered account)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      console.log(`[Mailer] Sending via Resend HTTP API → ${opts.to}`);
+      await sendViaResend(opts);
+      return;
+    } catch (resendErr: any) {
+      const msg = resendErr?.message || String(resendErr);
+      console.warn("[Mailer] Resend attempt failed, trying fallback:", msg);
+      transportErrors.push(msg);
     }
   }
 
   // 4. SMTP Transport (Gmail SMTP for local dev / servers with open outbound ports)
   if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-    console.log(`[Mailer] Sending via SMTP → ${opts.to}`);
-    await sendViaNodemailer(nmOpts);
-    return;
+    try {
+      console.log(`[Mailer] Sending via SMTP → ${opts.to}`);
+      await sendViaNodemailer(nmOpts);
+      return;
+    } catch (smtpErr: any) {
+      const msg = smtpErr?.message || String(smtpErr);
+      console.warn("[Mailer] SMTP attempt failed:", msg);
+      transportErrors.push(`SMTP: ${msg}`);
+    }
+  }
+
+  const gmailErr = transportErrors.find((e) => e.includes("Google Gmail API token has expired"));
+  if (gmailErr) {
+    throw new Error(gmailErr);
+  }
+
+  // If Resend failed specifically due to its sandbox restriction, surface that clear guidance directly
+  const sandboxErr = transportErrors.find((e) => e.includes("Resend Sandbox Restriction"));
+  if (sandboxErr) {
+    throw new Error(sandboxErr);
+  }
+
+  if (transportErrors.length > 0) {
+    throw new Error(transportErrors.join(" | "));
   }
 
   throw new Error(
-    "No working email transport configured. Please set RESEND_API_KEY (or BREVO_API_KEY) in Vercel settings (recommended for production) or EMAIL_USER and EMAIL_PASS."
+    "No working email transport configured. Please set BREVO_API_KEY or RESEND_API_KEY in Vercel settings (recommended for production) or EMAIL_USER and EMAIL_PASS."
   );
 }
 

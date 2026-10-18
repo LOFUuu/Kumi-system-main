@@ -48,7 +48,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           {
             error:
-              "The reset email could not be sent. Please check email delivery configuration (e.g. RESEND_API_KEY or BREVO_API_KEY in Vercel settings) and try again.",
+              err?.message ||
+              "The reset email could not be sent. Please check email delivery configuration (e.g. BREVO_API_KEY or RESEND_API_KEY in Vercel settings) and try again.",
           },
           { status: 502 }
         );
