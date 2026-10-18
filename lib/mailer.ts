@@ -89,7 +89,12 @@ async function sendViaBrevo(opts: {
   html?: string;
   replyTo?: string;
 }): Promise<void> {
-  const apiKey = (process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY || "").trim();
+  const apiKey = (
+    process.env.BREVO_API_KEY ||
+    process.env.SENDINBLUE_API_KEY ||
+    process.env.NEXT_PUBLIC_BREVO_API_KEY ||
+    ""
+  ).trim();
   if (!apiKey) {
     throw new Error("BREVO_API_KEY is not set.");
   }
@@ -244,7 +249,12 @@ async function sendMail(opts: {
   const transportErrors: string[] = [];
 
   // 1. Brevo HTTP API (Priority #1: newly configured active provider, sends to all domains on free tier)
-  const brevoApiKey = (process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY || "").trim();
+  const brevoApiKey = (
+    process.env.BREVO_API_KEY ||
+    process.env.SENDINBLUE_API_KEY ||
+    process.env.NEXT_PUBLIC_BREVO_API_KEY ||
+    ""
+  ).trim();
   if (brevoApiKey) {
     try {
       console.log(`[Mailer] Sending via Brevo HTTP API → ${opts.to}`);
