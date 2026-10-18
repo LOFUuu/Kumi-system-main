@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDues, generateMonthlyDues, createDuesRecord } from "@/lib/db";
 import { computeDuesStatus, creditFor, getCycleDueDate, DEFAULT_MONTHLY_DUE } from "@/lib/dues";
+import { requestRole } from "@/lib/role";
+import { getAuthenticatedUser } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const role = requestRole(req);
+  if (role === "non_resident") {
+    return NextResponse.json([]);
+  }
+  const user = await getAuthenticatedUser(req);
+  if (user && user.role === "non_resident") {
+    return NextResponse.json([]);
+  }
+
   const data = await getDues();
   return NextResponse.json(data);
 }

@@ -24,8 +24,9 @@ export async function POST(req: NextRequest) {
     const fullName = String(body.fullName ?? "").trim();
     const email = String(body.email ?? "").trim().toLowerCase();
     const password = String(body.password ?? "");
-    const rawRole = String(body.role ?? "").trim() as Role;
-    const role: Role = PUBLIC_ROLES.includes(rawRole) ? rawRole : "resident";
+    // RULES FOR ROLES: Every newly registered user defaults to role "non_resident"
+    // Promotion to "resident" only happens if their name matches an unclaimed master-list record
+    const role: Role = "non_resident";
 
     if (!fullName) {
       return NextResponse.json({ error: "Full name is required." }, { status: 400 });
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
       user = await createUser({
         fullName,
         email,
-        role: role as "resident" | "non_resident",
+        role: "non_resident",
         passwordHash: hashPassword(password),
         address: body.address ? String(body.address).trim() : undefined,
         phone: body.phone ? String(body.phone).trim() : undefined,
@@ -76,6 +77,24 @@ export async function POST(req: NextRequest) {
         lotNo: body.lotNo ? String(body.lotNo).trim() : undefined,
         emailVerified: true,
       });
+    }
+
+    // Automatic resident detection by NAME against residentmasterlist
+    try {
+      if (user?.id) {
+        const { matchAndPromoteUser } = await import("@/lib/name-matcher");
+        const matchRes = await matchAndPromoteUser(user.id, fullName, "signup");
+        if (matchRes.promoted) {
+          user.role = "resident";
+          if (matchRes.record?.block && !user.blockNo) user.blockNo = matchRes.record.block;
+          if (matchRes.record?.lot && !user.lotNo) user.lotNo = matchRes.record.lot;
+        }
+        if (matchRes.needsReview) {
+          user.needsReview = true;
+        }
+      }
+    } catch (matchErr) {
+      console.warn("[Register] Automatic resident matching skipped on error:", matchErr);
     }
 
     // Attempt to save token and send verification email in background without blocking or failing signup
@@ -96,12 +115,13 @@ export async function POST(req: NextRequest) {
       id: user?.id,
       fullName: user?.fullName || fullName,
       email: user?.email || email,
-      role: user?.role || role,
+      role: user?.role || "non_resident",
       isActive: true,
       blockNo: user?.blockNo,
       lotNo: user?.lotNo,
       phone: user?.phone,
       cedula: user?.cedula,
+      needsReview: user?.needsReview,
     };
 
     const res = NextResponse.json({ ok: true, user: publicUser }, { status: 201 });

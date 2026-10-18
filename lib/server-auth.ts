@@ -101,5 +101,7 @@ export function toPublicUser(u: AuthUser): PublicUser {
     lotNo: u.lotNo,
     phone: u.phone,
     cedula: u.cedula,
+    needsReview: u.needsReview,
+    needsReviewReason: u.needsReviewReason,
   };
 }

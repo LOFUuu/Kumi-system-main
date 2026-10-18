@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -66,13 +66,29 @@ export default function AvailabilityCalendar({
 
   const blockedSet = useMemo(() => new Set(blocked), [blocked]);
 
+  /* Build cells: includes leading blanks from previous month and trailing from next */
   const cells = useMemo(() => {
     const first = new Date(cursor.y, cursor.m, 1);
     const startWeekday = first.getDay();
     const daysInMonth = new Date(cursor.y, cursor.m + 1, 0).getDate();
-    const out: (number | null)[] = [];
-    for (let i = 0; i < startWeekday; i++) out.push(null);
-    for (let d = 1; d <= daysInMonth; d++) out.push(d);
+
+    // Previous month trailing days
+    const prevMonthDays = new Date(cursor.y, cursor.m, 0).getDate();
+    const out: { day: number; current: boolean }[] = [];
+
+    for (let i = startWeekday - 1; i >= 0; i--) {
+      out.push({ day: prevMonthDays - i, current: false });
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      out.push({ day: d, current: true });
+    }
+    // Next month leading days to fill last row
+    const remainder = out.length % 7;
+    if (remainder > 0) {
+      for (let d = 1; d <= 7 - remainder; d++) {
+        out.push({ day: d, current: false });
+      }
+    }
     return out;
   }, [cursor]);
 
@@ -95,112 +111,115 @@ export default function AvailabilityCalendar({
   };
 
   return (
-    <div className="rounded-2xl border border-cream-2 bg-white p-4 shadow-sm">
+    <div>
       {/* Month Header and Navigation */}
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between">
         <button
           type="button"
           onClick={handlePrevMonth}
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-cream-2 text-sm font-bold text-green-dark hover:bg-cream transition"
+          className="px-2 py-1 text-sm font-bold text-[#133E2B] hover:underline"
           aria-label="Previous month"
         >
-          ←
+          «
         </button>
-        <div className="font-serif text-base font-bold text-green-dark">{monthLabel}</div>
+        <div className="text-sm font-bold text-[#333]">{monthLabel}</div>
         <button
           type="button"
           onClick={handleNextMonth}
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-cream-2 text-sm font-bold text-green-dark hover:bg-cream transition"
+          className="px-2 py-1 text-sm font-bold text-[#133E2B] hover:underline"
           aria-label="Next month"
         >
-          →
+          »
         </button>
       </div>
 
       {/* Weekday Labels */}
-      <div className="grid grid-cols-7 gap-1 text-center">
+      <div className="grid grid-cols-7 border-b border-[#ddd]">
         {WEEKDAYS.map((w) => (
-          <div key={w} className="pb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted">
+          <div key={w} className="py-1.5 text-center text-[11px] font-bold text-[#555]">
             {w}
           </div>
         ))}
+      </div>
 
-        {/* Days Grid */}
-        {cells.map((d, i) => {
-          if (d === null) return <div key={`e${i}`} />;
+      {/* Days Grid */}
+      <div className="grid grid-cols-7">
+        {cells.map((cell, i) => {
+          if (!cell.current) {
+            // Previous/next month day — light gray, not interactive
+            return (
+              <div
+                key={`other-${i}`}
+                className="flex h-9 items-center justify-center border-b border-r border-[#eee] text-xs text-[#ccc]"
+              >
+                {cell.day}
+              </div>
+            );
+          }
+
+          const d = cell.day;
           const iso = toISO(cursor.y, cursor.m, d);
           const cellTime = new Date(cursor.y, cursor.m, d).getTime();
           const isPast = cellTime < today;
           const statusInfo = datesStatus?.[iso];
           const isBlocked = statusInfo ? statusInfo.status === "booked" : blockedSet.has(iso);
-          const isLimited = statusInfo?.status === "limited";
           const isSelected = iso === selected;
 
-          let cls = "";
-          let disabled = false;
-          let dotColor = "";
+          let bg = "";
+          let textColor = "";
+          let fontWeight = "";
+          let cursorStyle = "cursor-pointer";
 
           if (isPast) {
-            cls = "bg-gray-50/50 text-gray-300 border-transparent cursor-not-allowed";
-            disabled = true;
+            bg = "bg-white";
+            textColor = "text-[#bbb]";
+            cursorStyle = "cursor-not-allowed";
           } else if (isSelected) {
-            cls = "bg-[#123f2a] text-white font-bold ring-2 ring-emerald-500 shadow-md";
+            bg = "bg-[#133E2B]";
+            textColor = "text-white";
+            fontWeight = "font-bold";
           } else if (isBlocked) {
-            cls = "bg-rose-50/70 text-rose-400 line-through cursor-not-allowed border border-rose-100";
-            disabled = true;
-            dotColor = "bg-rose-400";
-          } else if (isLimited) {
-            cls = "bg-amber-50 text-amber-900 font-semibold border border-amber-300 hover:bg-amber-100 hover:border-amber-400";
-            dotColor = "bg-amber-500";
+            bg = "bg-[#ffe5e5]";
+            textColor = "text-[#c00]";
+            fontWeight = "font-bold";
+            cursorStyle = "cursor-not-allowed";
           } else {
-            cls = "bg-emerald-50/70 text-emerald-900 font-medium border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300";
-            dotColor = "bg-emerald-500";
+            // Available (includes "limited" — still bookable)
+            bg = "bg-[#e8f5e9]";
+            textColor = "text-[#1b5e20]";
+            fontWeight = "font-bold";
           }
 
           return (
             <button
               key={iso}
               type="button"
-              disabled={disabled}
-              onClick={() => !disabled && onSelect(iso)}
+              disabled={isPast || isBlocked}
+              onClick={() => !(isPast || isBlocked) && onSelect(iso)}
               title={
                 isPast
                   ? "Past date"
                   : isBlocked
-                  ? "Fully booked or unavailable"
-                  : isLimited
-                  ? `Limited availability (${statusInfo?.remainingSlots ?? 0} slots left)`
+                  ? "Fully booked"
+                  : statusInfo?.status === "limited"
+                  ? `Limited (${statusInfo?.remainingSlots ?? 0} slots left)`
                   : "Available"
               }
-              className={`group relative mx-auto flex h-10 w-10 flex-col items-center justify-center rounded-xl text-xs transition duration-150 ${cls}`}
+              className={`flex h-9 items-center justify-center border-b border-r border-[#eee] text-xs transition-colors ${bg} ${textColor} ${fontWeight} ${cursorStyle}`}
             >
-              <span>{d}</span>
-              {!isPast && !isSelected && dotColor && (
-                <span className={`h-1 w-1 rounded-full ${dotColor} mt-0.5`} />
-              )}
+              {d}
             </button>
           );
         })}
       </div>
 
-      {/* Legend */}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-cream-2 pt-3 text-[11px] text-muted">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="flex items-center gap-1.5 font-medium">
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-2xs" /> Available
-          </span>
-          <span className="flex items-center gap-1.5 font-medium">
-            <span className="h-2.5 w-2.5 rounded-full bg-amber-500 shadow-2xs" /> Limited Slots
-          </span>
-          <span className="flex items-center gap-1.5 font-medium">
-            <span className="h-2.5 w-2.5 rounded-full bg-rose-400 shadow-2xs" /> Fully Booked / Locked
-          </span>
-          <span className="flex items-center gap-1.5 font-medium">
-            <span className="h-2.5 w-2.5 rounded-full bg-gray-300 shadow-2xs" /> Past
-          </span>
-        </div>
-        <span className="flex items-center gap-1.5 font-medium text-green-dark">
-          <span className="h-2.5 w-2.5 rounded-full bg-[#123f2a] shadow-2xs" /> Selected Date
+      {/* Legend — simple box style like passport.gov.ph */}
+      <div className="mt-3 flex items-center justify-center gap-6 text-xs text-[#555]">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-3.5 w-5 border border-[#4caf50] bg-[#e8f5e9]" /> Available
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-3.5 w-5 border border-[#c00] bg-[#ffe5e5]" /> Fully Booked
         </span>
       </div>
     </div>

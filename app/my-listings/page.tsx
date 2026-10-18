@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   LogIn,
   Lock,
@@ -19,10 +19,14 @@ import {
   XCircle,
   AlertCircle,
   Clock,
+  Eye,
+  Building2,
+  CalendarCheck,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { formatPHP, type HouseListing } from "@/lib/mock-data";
+import PropertyViewingsSection from "@/components/PropertyViewingsSection";
 
 type FilterTab = "all" | "sale" | "rent";
 type TxStatus = "available" | "reserved" | "sold_rented";
@@ -224,12 +228,24 @@ function ArchiveModal({
   );
 }
 
-export default function MyListingsPage() {
+type MainTab = "properties" | "viewings";
+
+function MyListingsContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") === "viewings" ? "viewings" : "properties";
+  const initialListingId = searchParams.get("listingId");
+
   const { user } = useAuth();
+  const [mainTab, setMainTab] = useState<MainTab>(initialTab);
+  const [viewingListingFilter, setViewingListingFilter] = useState<string | null>(initialListingId);
   const [tab, setTab] = useState<FilterTab>("all");
   const [listings, setListings] = useState<HouseListing[]>([]);
   const [archiveTarget, setArchiveTarget] = useState<HouseListing | null>(null);
+  const [ownerSummary, setOwnerSummary] = useState<{ pendingCount: number; viewingsCount: number }>({
+    pendingCount: 0,
+    viewingsCount: 0,
+  });
 
   const load = () => {
     api
@@ -246,6 +262,16 @@ export default function MyListingsPage() {
         setListings(mine);
       })
       .catch(() => setListings([]));
+
+    api
+      .ownerViewingsSummary()
+      .then((s) => {
+        setOwnerSummary({
+          pendingCount: s.pendingCount,
+          viewingsCount: s.viewings.length,
+        });
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -305,7 +331,7 @@ export default function MyListingsPage() {
             My Listings
           </h1>
           <p className="text-sm text-muted">
-            Manage your submitted property listings.
+            Manage your submitted property listings and viewing requests.
           </p>
         </div>
         <Link href="/add-listing" className="btn-green !text-white flex items-center gap-1.5 shadow-sm">
@@ -313,8 +339,71 @@ export default function MyListingsPage() {
         </Link>
       </div>
 
-      {/* Tabs */}
-      <div className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-cream-2 bg-cream p-1">
+      {/* Main Mode Toggle: Properties vs Viewing Requests */}
+      <div className="mb-6 flex flex-wrap gap-2 border-b border-cream-2 pb-4">
+        <button
+          type="button"
+          onClick={() => {
+            setMainTab("properties");
+            setViewingListingFilter(null);
+          }}
+          className={`flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold transition cursor-pointer ${
+            mainTab === "properties"
+              ? "bg-green-dark text-white shadow-xs"
+              : "bg-cream/70 text-green-dark border border-cream-2 hover:bg-cream"
+          }`}
+        >
+          <Building2 className="h-3.5 w-3.5" />
+          My Properties
+          <span
+            className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+              mainTab === "properties" ? "bg-white/20 text-white" : "bg-cream-2 text-green-dark"
+            }`}
+          >
+            {listings.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMainTab("viewings")}
+          className={`flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold transition cursor-pointer ${
+            mainTab === "viewings"
+              ? "bg-green-dark text-white shadow-xs"
+              : "bg-cream/70 text-green-dark border border-cream-2 hover:bg-cream"
+          }`}
+        >
+          <CalendarCheck className="h-3.5 w-3.5" />
+          Viewing Requests
+          {ownerSummary.pendingCount > 0 ? (
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                mainTab === "viewings" ? "bg-white text-green-dark" : "bg-amber-500 text-white"
+              }`}
+            >
+              {ownerSummary.pendingCount} pending
+            </span>
+          ) : ownerSummary.viewingsCount > 0 ? (
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                mainTab === "viewings" ? "bg-white/20 text-white" : "bg-cream-2 text-muted"
+              }`}
+            >
+              {ownerSummary.viewingsCount}
+            </span>
+          ) : null}
+        </button>
+      </div>
+
+      {mainTab === "viewings" ? (
+        <PropertyViewingsSection
+          filterListingId={viewingListingFilter}
+          onClearFilter={() => setViewingListingFilter(null)}
+        />
+      ) : (
+        <>
+          {/* Tabs */}
+          <div className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-cream-2 bg-cream p-1">
         {(
           [
             { key: "all", label: "All Properties", count: listings.length },
@@ -455,6 +544,16 @@ export default function MyListingsPage() {
                       </div>
 
                       <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewingListingFilter(String(l.id));
+                            setMainTab("viewings");
+                          }}
+                          className="flex items-center gap-1 font-semibold text-green-dark hover:text-green-mid hover:underline text-xs cursor-pointer"
+                        >
+                          <Eye className="h-3.5 w-3.5 text-green-mid" /> Viewings
+                        </button>
                         <Link
                           href={`/house/${l.id}`}
                           className="font-semibold text-green-mid hover:underline"
@@ -464,7 +563,7 @@ export default function MyListingsPage() {
                         <button
                           type="button"
                           onClick={() => setArchiveTarget(l)}
-                          className="flex items-center gap-1 font-semibold text-amber-700 hover:text-amber-900 transition"
+                          className="flex items-center gap-1 font-semibold text-amber-700 hover:text-amber-900 transition cursor-pointer"
                         >
                           <Archive className="h-3 w-3" /> Archive
                         </button>
@@ -477,6 +576,23 @@ export default function MyListingsPage() {
           })}
         </div>
       )}
+        </>
+      )}
     </div>
+  );
+}
+
+export default function MyListingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="section text-center py-20 text-muted">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-green-mid" />
+          <p className="mt-2 text-xs">Loading listings…</p>
+        </div>
+      }
+    >
+      <MyListingsContent />
+    </Suspense>
   );
 }

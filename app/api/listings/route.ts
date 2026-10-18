@@ -48,9 +48,16 @@ export async function POST(req: NextRequest) {
   const ownerContactNumber = String(body.ownerContactNumber || "").trim();
   const ownerMessengerLink = String(body.ownerMessengerLink || "").trim();
 
-  if (!blockNo || !lotNo || !Number.isFinite(price) || price <= 0) {
+  if (
+    !blockNo ||
+    !lotNo ||
+    blockNo.toLowerCase() === "null" ||
+    lotNo.toLowerCase() === "null" ||
+    !Number.isFinite(price) ||
+    price <= 0
+  ) {
     return NextResponse.json(
-      { error: "Block, lot, and a valid price are required." },
+      { error: "A valid Block, Lot, and price are required." },
       { status: 400 }
     );
   }
@@ -72,18 +79,6 @@ export async function POST(req: NextRequest) {
       {
         error:
           "At least one proof of ownership document is required (land title, tax declaration, lease contract, or utility bill).",
-      },
-      { status: 400 }
-    );
-  }
-
-  const master = await getMasterIndex();
-  const unitExists = master.some((u) => u.blockNo === blockNo && u.lotNo === lotNo);
-  if (!unitExists) {
-    return NextResponse.json(
-      {
-        error:
-          "That block/lot is not in the resident master index. Register the resident/unit first.",
       },
       { status: 400 }
     );

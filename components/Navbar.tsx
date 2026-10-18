@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
 import { ChevronDown, LogOut, Shield, Menu, X } from "lucide-react";
 import SmartSearchInput from "./SmartSearchInput";
 import SyncStatusBadge from "./SyncStatusBadge";
@@ -39,10 +40,37 @@ export default function Navbar() {
     setShowProfileMenu(false);
   }, [pathname]);
 
+  // Fetch homeowner viewings summary to show "Viewings" tab + pending badge
+  const [ownerSummary, setOwnerSummary] = useState<{ hasListings: boolean; pendingCount: number } | null>(null);
+
+  useEffect(() => {
+    if (!user || user.role === "non_resident" || user.role === "admin") {
+      setOwnerSummary(null);
+      return;
+    }
+    let isMounted = true;
+    api
+      .ownerViewingsSummary()
+      .then((res) => {
+        if (isMounted) {
+          setOwnerSummary({
+            hasListings: res.hasListings,
+            pendingCount: res.pendingCount,
+          });
+        }
+      })
+      .catch(() => {
+        if (isMounted) setOwnerSummary(null);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [user, pathname]);
+
   // Admin pages or logged-in admin user — hide the public navbar
   if (pathname.startsWith("/admin") || user?.role === "admin") return null;
 
-  const nav: { label: string; href: string }[] = [
+  const nav: { label: string; href: string; badge?: number }[] = [
     { label: "Home", href: "/" },
     { label: "House Listing", href: "/house-listing" },
     { label: "Amenities", href: "/reservation" },
@@ -53,7 +81,7 @@ export default function Navbar() {
     nav.push({ label: "Announcements", href: "/announcements" });
   }
   if (user && user.role !== "non_resident") nav.push({ label: "My Listings", href: "/my-listings" });
-  if (user && user.role !== "non_resident") nav.push({ label: "History", href: "/history" });
+  if (user) nav.push({ label: "History", href: "/history" });
 
   // Up to 5 items shown on standard desktop (lg/xl); remainder in "More" dropdown
   // On 2xl (wide screens), all items are shown directly
@@ -96,7 +124,12 @@ export default function Navbar() {
                     : "text-gray-600 hover:text-[#123f2a] hover:bg-[#e8f3ec]/60"
                 }`}
               >
-                {item.label}
+                <span>{item.label}</span>
+                {typeof item.badge === "number" && item.badge > 0 && (
+                  <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
+                    {item.badge}
+                  </span>
+                )}
                 {active && (
                   <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-[#45a057]" />
                 )}
@@ -117,7 +150,12 @@ export default function Navbar() {
                     : "text-gray-600 hover:text-[#123f2a] hover:bg-[#e8f3ec]/60"
                 }`}
               >
-                {item.label}
+                <span>{item.label}</span>
+                {typeof item.badge === "number" && item.badge > 0 && (
+                  <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
+                    {item.badge}
+                  </span>
+                )}
                 {active && (
                   <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-[#45a057]" />
                 )}
@@ -138,7 +176,12 @@ export default function Navbar() {
                 aria-haspopup="true"
                 aria-expanded={showMoreMenu}
               >
-                More
+                <span>More</span>
+                {secondaryNav.some((s) => typeof s.badge === "number" && s.badge > 0) && (
+                  <span className="inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
+                    {secondaryNav.reduce((acc, curr) => acc + (curr.badge || 0), 0)}
+                  </span>
+                )}
                 <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${showMoreMenu ? "rotate-180" : ""}`} />
                 {isSecondaryActive && (
                   <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-[#45a057]" />
@@ -154,13 +197,18 @@ export default function Navbar() {
                         key={item.href}
                         href={item.href}
                         onClick={() => setShowMoreMenu(false)}
-                        className={`flex items-center rounded-xl px-3.5 py-2.5 text-[13px] font-semibold transition-colors ${
+                        className={`flex items-center justify-between rounded-xl px-3.5 py-2.5 text-[13px] font-semibold transition-colors ${
                           active
                             ? "bg-[#e8f3ec] text-[#123f2a]"
                             : "text-gray-600 hover:bg-gray-50 hover:text-[#123f2a]"
                         }`}
                       >
-                        {item.label}
+                        <span>{item.label}</span>
+                        {typeof item.badge === "number" && item.badge > 0 && (
+                          <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
+                            {item.badge}
+                          </span>
+                        )}
                       </Link>
                     );
                   })}
@@ -237,23 +285,21 @@ export default function Navbar() {
                         </Link>
                       )}
                       {user.role !== "non_resident" && (
-                        <>
-                          <Link
-                            href="/my-dues"
-                            onClick={() => setShowProfileMenu(false)}
-                            className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-[#123f2a] hover:bg-[#e8f3ec] transition-colors"
-                          >
-                            My Dues
-                          </Link>
-                          <Link
-                            href="/history"
-                            onClick={() => setShowProfileMenu(false)}
-                            className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-[#123f2a] hover:bg-[#e8f3ec] transition-colors"
-                          >
-                            Activity History
-                          </Link>
-                        </>
+                        <Link
+                          href="/my-dues"
+                          onClick={() => setShowProfileMenu(false)}
+                          className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-[#123f2a] hover:bg-[#e8f3ec] transition-colors"
+                        >
+                          My Dues
+                        </Link>
                       )}
+                      <Link
+                        href="/history"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-[#123f2a] hover:bg-[#e8f3ec] transition-colors"
+                      >
+                        Activity History
+                      </Link>
                     </div>
 
                     <div className="pt-1 border-t border-gray-100">
@@ -341,7 +387,14 @@ export default function Navbar() {
                       : "text-gray-700 hover:bg-gray-50"
                   }`}
                 >
-                  <span>{item.label}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span>{item.label}</span>
+                    {typeof item.badge === "number" && item.badge > 0 && (
+                      <span className="inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
+                        {item.badge}
+                      </span>
+                    )}
+                  </span>
                   {active && <span className="h-1.5 w-1.5 rounded-full bg-[#45a057]" />}
                 </Link>
               );

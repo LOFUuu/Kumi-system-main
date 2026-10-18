@@ -25,6 +25,9 @@ export interface User {
   isArchived?: boolean;
   archiveReason?: string;
   archivedAt?: string;
+  // Master list review flag
+  needsReview?: boolean;
+  needsReviewReason?: string;
 }
 
 export const MOCK_USERS: User[] = [

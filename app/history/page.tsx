@@ -59,6 +59,8 @@ function HistoryContent() {
   const [searchQuery, setSearchQuery] = useState(urlQ);
   const [statusFilter, setStatusFilter] = useState("all");
 
+  const isNonResident = user?.role === "non_resident";
+
   useEffect(() => {
     if (urlQ) setSearchQuery(urlQ);
   }, [urlQ]);
@@ -74,19 +76,16 @@ function HistoryContent() {
     if (!authLoading && !user) {
       router.replace("/login?next=/history&reason=history");
     }
-    // Non-residents don't have access to transaction history
-    if (!authLoading && user && user.role === "non_resident") {
-      router.replace("/");
-    }
   }, [authLoading, user, router]);
 
   useEffect(() => {
     if (!user) return;
     setLoading(true);
+    const isNonRes = user.role === "non_resident";
     Promise.all([
       api.transactions().catch(() => []),
       api.reservations().catch(() => []),
-      api.dues().catch(() => []),
+      isNonRes ? Promise.resolve([]) : api.dues().catch(() => []),
     ]).then(([txnData, resData, duesData]) => {
       setTxns(txnData);
       setReservations(resData);
@@ -98,29 +97,38 @@ function HistoryContent() {
   // STRICT USER FILTERING: Only show items belonging to THIS logged-in user
   const myReservations = useMemo(() => {
     if (!user) return [];
+    const userEmail = (user.email || "").toLowerCase().trim();
+    const userName = (user.fullName || "").toLowerCase().trim();
     return reservations.filter(
       (r) =>
-        (r.userEmail && r.userEmail.toLowerCase() === user.email.toLowerCase()) ||
-        (r.residentName && r.residentName.toLowerCase() === user.fullName.toLowerCase())
+        (r.userEmail && r.userEmail.toLowerCase().trim() === userEmail) ||
+        (r.residentName && r.residentName.toLowerCase().trim() === userName)
     );
   }, [reservations, user]);
 
   const myTxns = useMemo(() => {
     if (!user) return [];
-    return txns.filter(
-      (t) =>
-        (t.userEmail && t.userEmail.toLowerCase() === user.email.toLowerCase()) ||
-        (t.residentName && t.residentName.toLowerCase() === user.fullName.toLowerCase())
-    );
-  }, [txns, user]);
+    const userEmail = (user.email || "").toLowerCase().trim();
+    const userName = (user.fullName || "").toLowerCase().trim();
+    return txns.filter((t) => {
+      const matchesUser =
+        (t.userEmail && t.userEmail.toLowerCase().trim() === userEmail) ||
+        (t.residentName && t.residentName.toLowerCase().trim() === userName);
+      if (!matchesUser) return false;
+      // Non-residents only see eligible payments (no dues records)
+      if (isNonResident && t.refType === "dues") return false;
+      return true;
+    });
+  }, [txns, user, isNonResident]);
 
   const myDues = useMemo(() => {
-    if (!user) return [];
+    if (!user || isNonResident) return [];
+    const userName = (user.fullName || "").toLowerCase().trim();
     return dues.filter(
       (d) =>
-        (d.residentName && d.residentName.toLowerCase() === user.fullName.toLowerCase())
+        d.residentName && d.residentName.toLowerCase().trim() === userName
     );
-  }, [dues, user]);
+  }, [dues, user, isNonResident]);
 
   // Metrics
   const totalPaid = myTxns.reduce((s, t) => s + t.amount, 0);
@@ -128,6 +136,8 @@ function HistoryContent() {
   const approvedReservations = myReservations.filter((r) => r.status === "approved").length;
   const receiptsCount = myTxns.filter((t) => Boolean(t.receiptPath)).length +
     myReservations.filter((r) => Boolean(r.receiptPath)).length;
+  const totalActivitiesCount =
+    myReservations.length + myTxns.length + (isNonResident ? 0 : myDues.length);
 
   // Filtered lists
   const filteredReservations = useMemo(() => {
@@ -285,7 +295,7 @@ function HistoryContent() {
 
       <div className="mx-auto max-w-6xl px-6 py-8 space-y-8">
         {/* KPI SUMMARY CARDS */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className={`grid gap-4 ${isNonResident ? "grid-cols-1 sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
           <div className="flex items-center gap-4 rounded-2xl border border-cream-2 bg-white p-5 shadow-sm">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
               <Receipt className="h-6 w-6" />
@@ -308,16 +318,18 @@ function HistoryContent() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 rounded-2xl border border-cream-2 bg-white p-5 shadow-sm">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
-              <CreditCard className="h-6 w-6" />
+          {!isNonResident && (
+            <div className="flex items-center gap-4 rounded-2xl border border-cream-2 bg-white p-5 shadow-sm">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
+                <CreditCard className="h-6 w-6" />
+              </div>
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-muted">Dues Records</div>
+                <div className="font-serif text-2xl font-bold text-green-dark">{myDues.length}</div>
+                <div className="text-[11px] text-muted">Monthly billing cycles</div>
+              </div>
             </div>
-            <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-muted">Dues Records</div>
-              <div className="font-serif text-2xl font-bold text-green-dark">{myDues.length}</div>
-              <div className="text-[11px] text-muted">Monthly billing cycles</div>
-            </div>
-          </div>
+          )}
 
           <div className="flex items-center gap-4 rounded-2xl border border-cream-2 bg-white p-5 shadow-sm">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-50 text-green-700">
@@ -343,7 +355,7 @@ function HistoryContent() {
                   : "bg-white border border-cream-2 text-muted hover:bg-cream"
               }`}
             >
-              All Activities ({myReservations.length + myTxns.length})
+              All Activities ({totalActivitiesCount})
             </button>
             <button
               onClick={() => setActiveTab("reservations")}
@@ -365,16 +377,18 @@ function HistoryContent() {
             >
               Payments ({myTxns.length})
             </button>
-            <button
-              onClick={() => setActiveTab("dues")}
-              className={`rounded-xl px-4 py-2 text-xs font-bold transition whitespace-nowrap ${
-                activeTab === "dues"
-                  ? "bg-green-dark text-white shadow-sm"
-                  : "bg-white border border-cream-2 text-muted hover:bg-cream"
-              }`}
-            >
-              Monthly Dues ({myDues.length})
-            </button>
+            {!isNonResident && (
+              <button
+                onClick={() => setActiveTab("dues")}
+                className={`rounded-xl px-4 py-2 text-xs font-bold transition whitespace-nowrap ${
+                  activeTab === "dues"
+                    ? "bg-green-dark text-white shadow-sm"
+                    : "bg-white border border-cream-2 text-muted hover:bg-cream"
+                }`}
+              >
+                Monthly Dues ({myDues.length})
+              </button>
+            )}
           </div>
 
           {/* Search & Filter */}
@@ -412,17 +426,40 @@ function HistoryContent() {
         </div>
 
         {/* CONTENT SECTIONS BASED ON ACTIVE TAB */}
-
-        {/* 1. RESERVATIONS LIST */}
-        {(activeTab === "all" || activeTab === "reservations") && (
-          <div className="rounded-2xl border border-cream-2 bg-white overflow-hidden shadow-sm">
-            <div className="flex items-center justify-between bg-cream/40 px-6 py-4 border-b border-cream-2">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-green-mid" />
-                <h2 className="font-serif text-base font-bold text-green-dark">
-                  Amenity Reservation History
-                </h2>
-              </div>
+        {totalActivitiesCount === 0 && !searchQuery.trim() && statusFilter === "all" ? (
+          <div className="rounded-2xl border border-dashed border-cream-2 bg-white p-12 text-center shadow-xs">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-cream text-muted">
+              <History className="h-7 w-7 text-green-mid" />
+            </div>
+            <h3 className="mt-4 font-serif text-lg font-bold text-green-dark">
+              No activity history available
+            </h3>
+            <p className="mt-1 text-xs text-muted max-w-sm mx-auto">
+              {isNonResident
+                ? "You have not made any amenity reservations or payments yet. Once you make a booking, it will appear here."
+                : "You have not made any amenity bookings, payments, or dues records yet."}
+            </p>
+            <div className="mt-5">
+              <Link
+                href="/reservation"
+                className="btn-green inline-flex items-center gap-1.5 !py-2.5 !px-5 text-xs font-bold shadow-xs"
+              >
+                <Plus className="h-4 w-4" /> Book an Amenity
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* 1. RESERVATIONS LIST */}
+            {(activeTab === "all" || activeTab === "reservations") && (
+              <div className="rounded-2xl border border-cream-2 bg-white overflow-hidden shadow-sm">
+                <div className="flex items-center justify-between bg-cream/40 px-6 py-4 border-b border-cream-2">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-green-mid" />
+                    <h2 className="font-serif text-base font-bold text-green-dark">
+                      Amenity Reservation History
+                    </h2>
+                  </div>
               <span className="text-xs font-semibold text-muted">
                 {filteredReservations.length} record{filteredReservations.length === 1 ? "" : "s"}
               </span>
@@ -600,8 +637,8 @@ function HistoryContent() {
           </div>
         )}
 
-        {/* 3. DUES LIST */}
-        {(activeTab === "all" || activeTab === "dues") && (
+        {/* 3. DUES LIST (Resident only) */}
+        {!isNonResident && (activeTab === "all" || activeTab === "dues") && (
           <div className="rounded-2xl border border-cream-2 bg-white overflow-hidden shadow-sm">
             <div className="flex items-center justify-between bg-cream/40 px-6 py-4 border-b border-cream-2">
               <div className="flex items-center gap-2">
@@ -675,6 +712,8 @@ function HistoryContent() {
             )}
           </div>
         )}
+      </>
+    )}
       </div>
     </div>
   );

@@ -98,6 +98,25 @@ export async function POST(req: NextRequest) {
       await setEmailVerified(email, true);
     }
 
+    // RULES FOR ROLES: Automatic resident detection by NAME against residentmasterlist
+    // Only runs for non_resident accounts. Admin and super admin accounts are never touched.
+    if (user && user.role === "non_resident" && !isAdminEmail) {
+      try {
+        const { matchAndPromoteUser } = await import("@/lib/name-matcher");
+        const matchRes = await matchAndPromoteUser(user.id, user.fullName, "google");
+        if (matchRes.promoted) {
+          user.role = "resident";
+          if (matchRes.record?.block && !user.blockNo) user.blockNo = matchRes.record.block;
+          if (matchRes.record?.lot && !user.lotNo) user.lotNo = matchRes.record.lot;
+        }
+        if (matchRes.needsReview) {
+          user.needsReview = true;
+        }
+      } catch (matchErr) {
+        console.warn("[GoogleAuth] Automatic resident matching skipped on error:", matchErr);
+      }
+    }
+
     // Strip sensitive credentials before returning user in response
     const publicUser = {
       id: user.id,
@@ -109,6 +128,7 @@ export async function POST(req: NextRequest) {
       lotNo: user.lotNo,
       phone: user.phone,
       cedula: user.cedula,
+      needsReview: user.needsReview,
     };
 
     const res = NextResponse.json({ user: publicUser });

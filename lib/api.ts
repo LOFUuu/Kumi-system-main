@@ -157,6 +157,23 @@ export const api = {
     send<{ ok: boolean }>(`/api/users/${id}/archive`, "DELETE", undefined, howaHeaders()),
   updateProfile: (payload: Record<string, unknown>) =>
     send<{ user: User }>("/api/users/me", "PATCH", payload, howaHeaders()),
+  importResidentMasterList: (payload: { records: any[] }) =>
+    send<{
+      ok: boolean;
+      summary: {
+        total: number;
+        imported: number;
+        skipped: number;
+        duplicates: number;
+        retroMatched: number;
+        flaggedForReview: number;
+      };
+      message: string;
+    }>("/api/admin/resident-masterlist/import", "POST", payload, howaHeaders()),
+  getResidentReviewData: (userId: number | string) =>
+    getJSON<{ user: any; candidates: any[] }>(`/api/admin/resident-masterlist/review?userId=${userId}`, howaHeaders()),
+  reviewResident: (payload: { userId: number | string; action: "approve" | "dismiss"; masterListRecordId?: string }) =>
+    send<{ ok: boolean; message: string; user?: User }>("/api/admin/resident-masterlist/review", "POST", payload, howaHeaders()),
   reservations: () => getJSON<Reservation[]>("/api/reservations"),
   archivedReservations: () => getJSON<Reservation[]>("/api/reservations/archived", howaHeaders()),
   archiveReservation: (id: number, reason?: string) =>
@@ -353,4 +370,29 @@ export const api = {
   /** Admin/Resident: update a viewing status */
   updateViewing: (id: number, payload: Record<string, unknown>) =>
     send<{ viewing: PropertyViewing }>(`/api/viewings/${id}`, "PATCH", payload, howaHeaders("admin")),
+
+  /** Homeowner: fetch viewing requests for listings owned by current user */
+  ownerViewings: (status?: string) =>
+    getJSON<PropertyViewing[]>(
+      `/api/viewings/owner${status ? `?status=${status}` : ""}`,
+      howaHeaders("resident")
+    ),
+
+  /** Homeowner: summary metadata (hasListings, pendingCount, viewings) */
+  ownerViewingsSummary: () =>
+    getJSON<{
+      viewings: PropertyViewing[];
+      pendingCount: number;
+      hasListings: boolean;
+      listingCount: number;
+    }>("/api/viewings/owner?summary=true", howaHeaders("resident")),
+
+  /** Homeowner: update viewing for a listing owned by current user */
+  updateOwnerViewing: (id: number, payload: Record<string, unknown>) =>
+    send<{ viewing: PropertyViewing }>(
+      `/api/viewings/owner/${id}`,
+      "PATCH",
+      payload,
+      howaHeaders("resident")
+    ),
 };

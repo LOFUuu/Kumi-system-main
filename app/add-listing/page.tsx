@@ -67,7 +67,6 @@ export default function AddListingPage() {
   const mainPhotoRef = useRef<HTMLInputElement>(null);
   const additionalPhotosRef = useRef<HTMLInputElement>(null);
 
-  const [units, setUnits] = useState<{ blockNo: string; lotNo: string }[]>([]);
   const [listingType, setListingType] = useState<"sale" | "rent">("rent");
   const [propertyType, setPropertyType] = useState("Single Family House");
   const [blockNo, setBlockNo] = useState("");
@@ -98,19 +97,17 @@ export default function AddListingPage() {
   const isHowa = user?.role === "admin" || user?.role === "counselor";
 
   useEffect(() => {
-    api
-      .masterIndex()
-      .then((u) => {
-        setUnits(u);
-        if (u[0]) {
-          setBlockNo(u[0].blockNo);
-          setLotNo(u[0].lotNo);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  const availableLots = units.filter((u) => u.blockNo === blockNo);
+    if (
+      user?.blockNo &&
+      user.blockNo !== "null" &&
+      user.blockNo !== "undefined"
+    ) {
+      setBlockNo(user.blockNo);
+    }
+    if (user?.lotNo && user.lotNo !== "null" && user.lotNo !== "undefined") {
+      setLotNo(user.lotNo);
+    }
+  }, [user]);
 
   // Main photo
   const handleMainPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -160,8 +157,13 @@ export default function AddListingPage() {
     e.preventDefault();
     setError("");
 
-    if (!blockNo || !lotNo) {
-      setError("Please select a valid Block and Lot number.");
+    if (
+      !blockNo.trim() ||
+      !lotNo.trim() ||
+      blockNo.trim().toLowerCase() === "null" ||
+      lotNo.trim().toLowerCase() === "null"
+    ) {
+      setError("Please enter a valid Block and Lot number.");
       return;
     }
 
@@ -205,8 +207,8 @@ export default function AddListingPage() {
       }
 
       await api.listingCreate({
-        blockNo,
-        lotNo,
+        blockNo: blockNo.trim(),
+        lotNo: lotNo.trim(),
         price,
         bedrooms,
         bathrooms,
@@ -343,41 +345,27 @@ export default function AddListingPage() {
                 <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[#5c6e60]">
                   Block No. <span className="text-red-500">*</span>
                 </label>
-                <select
+                <input
+                  type="text"
+                  placeholder="e.g. 5 or B-12"
                   className="w-full rounded-xl border border-[#dde5de] bg-[#f5f8f5] px-3.5 py-2.5 text-sm text-[#143424] outline-none transition focus:border-[#2d6a4f] focus:bg-white focus:ring-2 focus:ring-[#2d6a4f]/10"
                   value={blockNo}
-                  onChange={(e) => {
-                    setBlockNo(e.target.value);
-                    setLotNo(
-                      units.find((u) => u.blockNo === e.target.value)?.lotNo ||
-                        ""
-                    );
-                  }}
-                >
-                  {Array.from(new Set(units.map((u) => u.blockNo))).map(
-                    (b) => (
-                      <option key={b} value={b}>
-                        Block {b}
-                      </option>
-                    )
-                  )}
-                </select>
+                  onChange={(e) => setBlockNo(e.target.value)}
+                  required
+                />
               </div>
               <div>
                 <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[#5c6e60]">
                   Lot No. <span className="text-red-500">*</span>
                 </label>
-                <select
+                <input
+                  type="text"
+                  placeholder="e.g. 12 or 34"
                   className="w-full rounded-xl border border-[#dde5de] bg-[#f5f8f5] px-3.5 py-2.5 text-sm text-[#143424] outline-none transition focus:border-[#2d6a4f] focus:bg-white focus:ring-2 focus:ring-[#2d6a4f]/10"
                   value={lotNo}
                   onChange={(e) => setLotNo(e.target.value)}
-                >
-                  {availableLots.map((u) => (
-                    <option key={u.lotNo} value={u.lotNo}>
-                      Lot {u.lotNo}
-                    </option>
-                  ))}
-                </select>
+                  required
+                />
               </div>
             </div>
           </StepCard>

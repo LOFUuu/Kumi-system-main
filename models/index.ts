@@ -112,6 +112,9 @@ const userSchema = new Schema<UserType>(
     isArchived: { type: Boolean, default: false },
     archiveReason: { type: String, default: null },
     archivedAt: { type: String, default: null },
+    // ── Review status for resident master-list matching ─────────────────────
+    needsReview: { type: Boolean, default: false },
+    needsReviewReason: { type: String, default: null },
   } as any,
   { timestamps: true }
 );
@@ -234,7 +237,7 @@ const propertyViewingSchema = new Schema<PropertyViewingType>(
 // Clear cached models in dev if schema path is missing
 if (models.Listing && !(models.Listing.schema as any).path("transactionStatus")) delete (models as any).Listing;
 if (models.Amenity && !(models.Amenity.schema as any).path("isArchived")) delete (models as any).Amenity;
-if (models.User && !(models.User.schema as any).path("isArchived")) delete (models as any).User;
+if (models.User && !(models.User.schema as any).path("needsReview")) delete (models as any).User;
 if (models.Transaction && !(models.Transaction.schema as any).path("isArchived")) delete (models as any).Transaction;
 if (models.Reservation && !(models.Reservation.schema as any).path("isArchived")) delete (models as any).Reservation;
 
@@ -247,3 +250,6 @@ export const DuesRecord = (models.DuesRecord as mongoose.Model<DuesType>) || mod
 export const Transaction = (models.Transaction as mongoose.Model<TransactionType>) || model<TransactionType>("Transaction", transactionSchema);
 export const PropertyViewing = (models.PropertyViewing as mongoose.Model<PropertyViewingType>) || model<PropertyViewingType>("PropertyViewing", propertyViewingSchema);
 export const PaymentConfig = (models.PaymentConfig as mongoose.Model<PaymentConfigType>) || model<PaymentConfigType>("PaymentConfig", paymentConfigSchema);
+
+export { ResidentMasterList, RoleAuditLog } from "./resident-masterlist";
+export type { ResidentMasterListRecord, RoleAuditLogRecord } from "./resident-masterlist";

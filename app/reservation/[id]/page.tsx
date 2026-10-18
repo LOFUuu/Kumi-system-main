@@ -13,8 +13,6 @@ import {
   Smartphone,
   Receipt,
   FileText,
-  Sparkles,
-  Compass,
   CalendarDays,
   CheckCircle2,
   Clock,
@@ -393,123 +391,158 @@ function BookingForm() {
               <p className="mt-1 text-xs text-muted">Max {amenity.maxCapacity} pax for {amenity.name}</p>
             </div>
 
-            {/* AIRLINE-STYLE RECOMMENDED AVAILABLE DATES */}
-            <div className="pt-2 border-t border-cream-2">
-              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            {/* DATE & TIME PICKER — Government-style two-column layout */}
+            <div className="pt-3 border-t border-[#ddd]">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* LEFT COLUMN: Date */}
                 <div>
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="h-4 w-4 text-emerald-600" />
-                    <h4 className="font-serif text-sm font-bold text-green-dark sm:text-base">
-                      Recommended Available Dates
-                    </h4>
-                  </div>
-                  <p className="text-[11px] text-muted">
-                    Instant suggestions matching your {reservationType} preference and {pax} pax.
+                  <label className="block text-sm font-bold text-[#333] mb-1">Date</label>
+                  <p className="text-xs text-[#1b5e20] mb-3">
+                    Earliest available date:{" "}
+                    <strong>
+                      {(() => {
+                        // Find earliest available date from recommendations or nextAvailable
+                        const earliest = nextAvailable || recommendations[0];
+                        if (earliest) return earliest.formattedDate;
+                        // Fallback to today
+                        const d = new Date();
+                        return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+                      })()}
+                    </strong>
                   </p>
+                  <AvailabilityCalendar
+                    blocked={blocked}
+                    datesStatus={datesStatus}
+                    selected={date}
+                    onSelect={(iso) => {
+                      setDate(iso);
+                      setError("");
+                    }}
+                  />
                 </div>
-                <button
-                  type="button"
-                  onClick={handleFindNextAvailable}
-                  disabled={findingNext}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 hover:border-emerald-400 active:scale-95 transition disabled:opacity-60"
-                >
-                  <Compass className="h-3.5 w-3.5 text-emerald-600" />
-                  {findingNext ? "Searching..." : "Find Next Available Date"}
-                </button>
-              </div>
 
-              {loadingAvailability ? (
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-4">
-                  {[1, 2, 3, 4].map((n) => (
-                    <div
-                      key={n}
-                      className="h-28 animate-pulse rounded-2xl border border-cream-2 bg-cream/40 p-3"
-                    />
-                  ))}
-                </div>
-              ) : recommendations.length === 0 ? (
-                <div className="rounded-2xl border border-cream-2 bg-cream/30 p-4 text-center text-xs text-muted">
-                  No direct openings found in the immediate dates for {pax} pax. Use the calendar below to explore upcoming months.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-4">
-                  {recommendations.map((rec) => {
-                    const isCardSelected = rec.date === date && rec.session === bookingType;
-                    return (
-                      <button
-                        key={`${rec.date}-${rec.session}`}
-                        type="button"
-                        onClick={() => handleSelectRecommendation(rec)}
-                        className={`group flex flex-col justify-between rounded-2xl border p-3.5 text-left transition-all duration-200 ${
-                          isCardSelected
-                            ? "border-emerald-600 bg-emerald-50/90 shadow-sm ring-2 ring-emerald-600/30"
-                            : "border-cream-2 bg-white hover:border-emerald-300 hover:bg-emerald-50/30 hover:shadow-xs"
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-bold uppercase tracking-wider text-muted">
-                              {rec.dayOfWeek}
-                            </span>
+                {/* RIGHT COLUMN: Time */}
+                <div>
+                  <label className="block text-sm font-bold text-[#333] mb-3">Time</label>
+                  {!date ? (
+                    <p className="text-sm text-[#999] italic">Please select a date.</p>
+                  ) : dateBlocked ? (
+                    <div className="rounded border border-[#fcc] bg-[#fff5f5] p-4 text-sm text-[#c00]">
+                      This date is fully booked. Please select another date.
+                    </div>
+                  ) : (
+                    <div className="space-y-0 border border-[#ddd] divide-y divide-[#eee]">
+                      {/* Day Session Slot */}
+                      {(() => {
+                        const dayStatus = datesStatus[date];
+                        const dayBooked = dayStatus?.status === "booked";
+                        const daySlots = dayStatus?.remainingSlots ?? (amenity?.maxCapacity || 50);
+                        const isDaySelected = bookingType === "day";
+
+                        return (
+                          <label
+                            className={`flex items-center justify-between px-4 py-3 transition-colors ${
+                              dayBooked
+                                ? "bg-[#fafafa] cursor-not-allowed opacity-60"
+                                : isDaySelected
+                                ? "bg-[#f0faf4]"
+                                : "bg-white hover:bg-[#f9f9f9] cursor-pointer"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="radio"
+                                name="timeSlot"
+                                value="day"
+                                checked={isDaySelected}
+                                disabled={dayBooked}
+                                onChange={() => {
+                                  setBookingType("day");
+                                  setError("");
+                                }}
+                                className="h-4 w-4 accent-[#133E2B]"
+                              />
+                              <span className={`text-sm ${dayBooked ? "text-[#999]" : "text-[#333]"}`}>
+                                6:00 AM – 6:00 PM (Day Session)
+                              </span>
+                            </div>
                             <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                rec.status === "limited"
-                                  ? "bg-amber-100 text-amber-800"
-                                  : "bg-emerald-100 text-emerald-800"
+                              className={`text-xs font-bold ${
+                                dayBooked ? "text-[#c00]" : "text-[#1b5e20]"
                               }`}
                             >
-                              {rec.statusLabel}
+                              {dayBooked ? "Fully Booked" : `Available Slots: ${daySlots}`}
                             </span>
-                          </div>
-                          <div className="mt-1 font-serif text-base font-bold text-green-dark">
-                            {rec.formattedDate}
-                          </div>
-                          <div className="mt-0.5 text-xs font-semibold text-emerald-700">
-                            {rec.sessionLabel}
-                          </div>
-                          <div className="text-[10px] text-muted">{rec.sessionTime}</div>
-                        </div>
+                          </label>
+                        );
+                      })()}
 
-                        <div className="mt-3 flex items-center justify-between border-t border-cream-2/80 pt-2 text-[11px]">
-                          <span className="text-[10px] text-muted truncate max-w-[85px]">
-                            {reservationType === "private"
-                              ? "Whole Venue"
-                              : `${rec.remainingSlots} slots left`}
-                          </span>
-                          <span className="font-bold text-green-mid group-hover:underline">
-                            {isCardSelected ? "Selected ✓" : "Book →"}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
+                      {/* Night Session Slot */}
+                      {(() => {
+                        const nightStatus = datesStatus[date];
+                        const nightBooked = nightStatus?.status === "booked";
+                        const nightSlots = nightStatus?.remainingSlots ?? (amenity?.maxCapacity || 50);
+                        const isNightSelected = bookingType === "night";
+
+                        return (
+                          <label
+                            className={`flex items-center justify-between px-4 py-3 transition-colors ${
+                              nightBooked
+                                ? "bg-[#fafafa] cursor-not-allowed opacity-60"
+                                : isNightSelected
+                                ? "bg-[#f0faf4]"
+                                : "bg-white hover:bg-[#f9f9f9] cursor-pointer"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="radio"
+                                name="timeSlot"
+                                value="night"
+                                checked={isNightSelected}
+                                disabled={nightBooked}
+                                onChange={() => {
+                                  setBookingType("night");
+                                  setError("");
+                                }}
+                                className="h-4 w-4 accent-[#133E2B]"
+                              />
+                              <span className={`text-sm ${nightBooked ? "text-[#999]" : "text-[#333]"}`}>
+                                6:00 PM – 10:00 PM (Night Session)
+                              </span>
+                            </div>
+                            <span
+                              className={`text-xs font-bold ${
+                                nightBooked ? "text-[#c00]" : "text-[#1b5e20]"
+                              }`}
+                            >
+                              {nightBooked ? "Fully Booked" : `Available Slots: ${nightSlots}`}
+                            </span>
+                          </label>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Pricing info under time slots */}
+                  {date && !dateBlocked && (
+                    <div className="mt-3 rounded border border-[#ddd] bg-[#f9f9f9] px-4 py-2.5 text-xs text-[#555]">
+                      <div className="flex justify-between">
+                        <span>Rate:</span>
+                        <span className="font-bold text-[#333]">
+                          {reservationType === "private"
+                            ? formatPHP(amenity?.ratePrivate || 0) + " flat"
+                            : formatPHP(rate) + "/head"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        <span>Reservation type:</span>
+                        <span className="font-bold text-[#333] capitalize">{reservationType}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-
-            {/* Smart Availability Calendar */}
-            <div className="pt-2 border-t border-cream-2">
-              <label className="field-label mb-2 flex items-center justify-between">
-                <span>Booking Date * — pick an available day</span>
-                <span className="text-[11px] font-normal text-muted">
-                  Selected: <strong className="text-green-mid">{date}</strong>
-                </span>
-              </label>
-              <AvailabilityCalendar
-                blocked={blocked}
-                datesStatus={datesStatus}
-                selected={date}
-                onSelect={(iso) => {
-                  setDate(iso);
-                  setError("");
-                }}
-              />
-              {dateBlocked && (
-                <p className="mt-2 text-xs font-semibold text-danger flex items-center gap-1.5">
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
-                  This date and session is fully booked or locked. Please select another slot from the recommendations above.
-                </p>
-              )}
+              </div>
             </div>
 
             <div>

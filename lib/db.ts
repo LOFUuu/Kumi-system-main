@@ -550,6 +550,8 @@ export async function getUsers(): Promise<UserType[]> {
         ...serialize<UserType>(d),
         emailVerified: d.emailVerified,
         isArchived: d.isArchived === true || d.isArchived === "true" || d.isArchived === 1,
+        needsReview: Boolean(d.needsReview),
+        needsReviewReason: d.needsReviewReason ?? null,
         createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
       }));
     } catch (e) {}
@@ -823,6 +825,8 @@ export async function createUser(data: {
   cedula?: string;
   passwordHash?: string;
   emailVerified?: boolean;
+  needsReview?: boolean;
+  needsReviewReason?: string;
 }): Promise<UserType> {
   const normalizedEmail = data.email.toLowerCase().trim();
   const online = await isOnlineMode();
@@ -843,6 +847,8 @@ export async function createUser(data: {
         cedula: data.cedula || undefined,
         passwordHash: data.passwordHash || undefined,
         emailVerified: data.emailVerified,
+        needsReview: data.needsReview || false,
+        needsReviewReason: data.needsReviewReason || undefined,
       } as any);
       const res = serialize<UserType>(doc);
       maria.createUserMariaDB({ ...data, email: normalizedEmail, id }).catch(() => {});
@@ -926,6 +932,8 @@ export async function updateUserById(
       if (data.householdHead !== undefined) update.householdHead = data.householdHead || null;
       if (data.cedula !== undefined) update.cedula = data.cedula || null;
       if (data.emailVerified !== undefined) update.emailVerified = Boolean(data.emailVerified);
+      if (data.needsReview !== undefined) update.needsReview = Boolean(data.needsReview);
+      if (data.needsReviewReason !== undefined) update.needsReviewReason = data.needsReviewReason || null;
 
       const filter = userFilter(id);
       const doc = await User.findOneAndUpdate(
@@ -959,18 +967,22 @@ export async function getMasterIndex(): Promise<{ blockNo: string; lotNo: string
     try {
       await dbConnect();
       const docs = await User.find({
-        blockNo: { $exists: true, $ne: "" },
-        lotNo: { $exists: true, $ne: "" },
+        blockNo: { $exists: true, $ne: null, $nin: ["", "null", "undefined"] },
+        lotNo: { $exists: true, $ne: null, $nin: ["", "null", "undefined"] },
       } as any)
         .select({ blockNo: 1, lotNo: 1, _id: 0 })
         .lean();
       const seen = new Set<string>();
       const units: { blockNo: string; lotNo: string }[] = [];
       for (const d of docs as any[]) {
-        const key = `${String(d.blockNo)}|${String(d.lotNo)}`;
+        if (!d.blockNo || !d.lotNo) continue;
+        const b = String(d.blockNo).trim();
+        const l = String(d.lotNo).trim();
+        if (!b || !l || b.toLowerCase() === "null" || l.toLowerCase() === "null") continue;
+        const key = `${b}|${l}`;
         if (!seen.has(key)) {
           seen.add(key);
-          units.push({ blockNo: String(d.blockNo), lotNo: String(d.lotNo) });
+          units.push({ blockNo: b, lotNo: l });
         }
       }
       return units;

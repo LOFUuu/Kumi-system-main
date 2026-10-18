@@ -21,6 +21,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Plus,
   Trash2,
   Upload,
@@ -30,9 +31,11 @@ import {
   Archive,
   ArchiveRestore,
   AlertTriangle,
+  FileSpreadsheet,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { type User, type Role } from "@/lib/mock-data";
+import ResidentMasterListImportModal from "@/components/ResidentMasterListImportModal";
 
 function formatRegisteredDate(createdAt?: string, id?: number): string {
   if (createdAt) {
@@ -81,6 +84,15 @@ export default function AdminResidentsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [blockFilter, setBlockFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Name Sorting Dropdown: "all" (default order), "asc" (A–Z), "desc" (Z–A)
+  const [nameSort, setNameSort] = useState<"all" | "asc" | "desc">("asc");
+  const [nameSortOpen, setNameSortOpen] = useState(false);
+  const nameSortRef = useRef<HTMLDivElement>(null);
+
+  // Master List Import & Review States
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
 
   // Modals
   const [adding, setAdding] = useState(false);
@@ -151,11 +163,14 @@ export default function AdminResidentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setOpenMenuId(null);
+      }
+      if (nameSortRef.current && !nameSortRef.current.contains(e.target as Node)) {
+        setNameSortOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -181,9 +196,9 @@ export default function AdminResidentsPage() {
     return Array.from(set).sort();
   }, [users]);
 
-  // Filtered users list — archived users are excluded at DB level
+  // Filtered users list — supports search, filters, and Name sorting (All, A-Z, Z-A)
   const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
+    const list = users.filter((u) => {
       // Search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -208,7 +223,20 @@ export default function AdminResidentsPage() {
 
       return true;
     });
-  }, [users, searchQuery, roleFilter, statusFilter, blockFilter]);
+
+    // Name sorting: "asc" (A–Z), "desc" (Z–A), or "all" (default order)
+    if (nameSort === "asc") {
+      return [...list].sort((a, b) =>
+        a.fullName.localeCompare(b.fullName, undefined, { sensitivity: "base" })
+      );
+    }
+    if (nameSort === "desc") {
+      return [...list].sort((a, b) =>
+        b.fullName.localeCompare(a.fullName, undefined, { sensitivity: "base" })
+      );
+    }
+    return list;
+  }, [users, searchQuery, roleFilter, statusFilter, blockFilter, nameSort]);
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / ITEMS_PER_PAGE));
@@ -216,6 +244,27 @@ export default function AdminResidentsPage() {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredUsers.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredUsers, currentPage]);
+
+  const handleReviewAction = async (userId: number | string, action: "approve" | "dismiss") => {
+    setReviewing(true);
+    setOpenMenuId(null);
+    try {
+      const res = await api.reviewResident({ userId, action });
+      showSuccess(res.message);
+      refresh();
+      if (selectedUser?.id === userId) {
+        if (action === "approve") {
+          setSelectedUser((prev) => (prev ? { ...prev, role: "resident", needsReview: false } : null));
+        } else {
+          setSelectedUser((prev) => (prev ? { ...prev, needsReview: false } : null));
+        }
+      }
+    } catch (err: any) {
+      showError(err?.message || "Failed to process review action");
+    } finally {
+      setReviewing(false);
+    }
+  };
 
   const showSuccess = (msg: string) => {
     setSuccessMsg(msg);
@@ -484,6 +533,15 @@ export default function AdminResidentsPage() {
             </select>
           </div>
 
+          {/* Import Excel Database Button */}
+          <button
+            onClick={() => setImportModalOpen(true)}
+            className="flex items-center gap-2 rounded-full bg-[#133E2B] hover:bg-[#0E2F20] text-white px-4 py-2 text-xs font-bold shadow-sm transition-colors cursor-pointer"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            <span>Import Excel Database</span>
+          </button>
+
           {/* Add Resident Button */}
           <button
             onClick={openAddModal}
@@ -565,6 +623,79 @@ export default function AdminResidentsPage() {
             selectedUser ? "lg:w-[calc(100%-380px)]" : "w-full"
           }`}
         >
+          {/* Compact Name A–Z Filter Bar */}
+          <div className="px-5 pt-4 pb-3 flex items-center">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-gray-700">Name:</span>
+              <div className="relative" ref={nameSortRef}>
+                <button
+                  type="button"
+                  onClick={() => setNameSortOpen((prev) => !prev)}
+                  className="flex h-8 items-center justify-between gap-3 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-800 shadow-2xs hover:border-gray-400 hover:bg-gray-50 transition cursor-pointer min-w-[90px]"
+                  aria-haspopup="true"
+                  aria-expanded={nameSortOpen}
+                >
+                  <span>{nameSort === "all" ? "All" : nameSort === "asc" ? "A – Z" : "Z – A"}</span>
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 text-gray-500 transition-transform duration-200 ${
+                      nameSortOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+
+                {nameSortOpen && (
+                  <div className="absolute left-0 mt-1.5 w-44 rounded-xl border border-gray-100 bg-white p-1.5 shadow-xl ring-1 ring-black/5 z-30">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNameSort("all");
+                        setCurrentPage(1);
+                        setNameSortOpen(false);
+                      }}
+                      className={`w-full text-left rounded-lg px-3 py-2 text-xs transition-colors cursor-pointer ${
+                        nameSort === "all"
+                          ? "bg-[#e8f3ec] text-[#123f2a] font-semibold"
+                          : "text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNameSort("asc");
+                        setCurrentPage(1);
+                        setNameSortOpen(false);
+                      }}
+                      className={`w-full text-left rounded-lg px-3 py-2 text-xs transition-colors cursor-pointer ${
+                        nameSort === "asc"
+                          ? "bg-[#e8f3ec] text-[#123f2a] font-semibold"
+                          : "text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      A – Z (Ascending)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNameSort("desc");
+                        setCurrentPage(1);
+                        setNameSortOpen(false);
+                      }}
+                      className={`w-full text-left rounded-lg px-3 py-2 text-xs transition-colors cursor-pointer ${
+                        nameSort === "desc"
+                          ? "bg-[#e8f3ec] text-[#123f2a] font-semibold"
+                          : "text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      Z – A (Descending)
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-cream-2 bg-cream/50 text-[11px] font-bold uppercase tracking-wider text-muted">
@@ -598,7 +729,18 @@ export default function AdminResidentsPage() {
                     >
                       {/* Name */}
                       <td className="px-4 py-3.5 font-bold text-green-dark whitespace-nowrap">
-                        {u.fullName}
+                        <div className="flex items-center gap-2">
+                          <span>{u.fullName}</span>
+                          {u.needsReview && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-800 shadow-2xs"
+                              title={u.needsReviewReason || "Multiple master list matches or conflict"}
+                            >
+                              <AlertTriangle className="h-2.5 w-2.5 text-amber-600" />
+                              Needs Review
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Email */}
@@ -690,6 +832,20 @@ export default function AdminResidentsPage() {
                                 className={`absolute right-0 ${openUpward ? "bottom-full mb-1" : "top-full mt-1"} z-[500] w-48 rounded-xl border border-cream-2 bg-white py-1 shadow-xl animate-fade-in`}
                                 onClick={(e) => e.stopPropagation()}
                               >
+                                {u.needsReview && (
+                                  <>
+                                    <button
+                                      onClick={() => handleReviewAction(u.id, "approve")}
+                                      disabled={reviewing}
+                                      className="flex w-full items-center gap-2 px-3 py-2 text-xs font-bold text-emerald-700 bg-emerald-50/80 hover:bg-emerald-100 transition-colors"
+                                    >
+                                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                      Approve as Resident
+                                    </button>
+                                    <div className="my-1 border-t border-cream-2" />
+                                  </>
+                                )}
+
                                 {/* View Details */}
                                 <button
                                   onClick={() => {
@@ -1032,6 +1188,36 @@ export default function AdminResidentsPage() {
                 </div>
               </div>
             </div>
+
+            {/* Needs Review Alert & Action */}
+            {selectedUser.needsReview && (
+              <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 shadow-sm animate-fade-in">
+                <div className="flex items-center gap-2 font-bold text-amber-900">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                  <span>Master List Review Needed</span>
+                </div>
+                <p className="mt-1 text-[11px] text-amber-800">
+                  {selectedUser.needsReviewReason ||
+                    "Multiple master list matches or already claimed record."}
+                </p>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    onClick={() => handleReviewAction(selectedUser.id, "approve")}
+                    disabled={reviewing}
+                    className="flex-1 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-1.5 px-3 text-center transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    Approve as Resident
+                  </button>
+                  <button
+                    onClick={() => handleReviewAction(selectedUser.id, "dismiss")}
+                    disabled={reviewing}
+                    className="rounded-lg border border-amber-300 bg-white hover:bg-amber-100 text-amber-900 font-semibold py-1.5 px-3 text-center transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Bottom Action Buttons */}
             <div className="mt-6 flex items-center gap-2">
@@ -1570,6 +1756,16 @@ export default function AdminResidentsPage() {
           </div>
         </div>
       )}
+
+      {/* Resident Master List Import Modal */}
+      <ResidentMasterListImportModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onSuccess={() => {
+          refresh();
+          showSuccess("Resident master list imported and matched successfully!");
+        }}
+      />
     </div>
   );
 }
