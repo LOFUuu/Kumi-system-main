@@ -363,11 +363,11 @@ async function sendMail(opts: {
 
 function fromAddress(label = "Mabuhay Homes Community Portal"): string {
   const addr =
-    process.env.RESEND_FROM_EMAIL ||
     process.env.BREVO_SENDER_EMAIL ||
+    process.env.RESEND_FROM_EMAIL ||
     process.env.GMAIL_USER ||
     process.env.EMAIL_USER ||
-    "noreply@mabuhayhomes.com";
+    "kumicarry@gmail.com";
   return `"${label}" <${addr}>`;
 }
 
