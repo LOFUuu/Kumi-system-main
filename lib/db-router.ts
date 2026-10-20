@@ -3,7 +3,7 @@ import { isMariaDBConnected } from "./mariadb";
 
 let lastCheckTime = 0;
 let cachedIsOnline = true;
-const CACHE_TTL_MS = 5000; // recheck every 5 seconds
+const CACHE_TTL_MS = 30_000; // recheck every 30 seconds — reduces parallel Atlas hammering
 
 /**
  * Determines whether the system should read/write using MongoDB Atlas (online)

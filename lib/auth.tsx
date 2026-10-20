@@ -62,7 +62,9 @@ function readStoredUser(): User | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => readStoredUser());
+  // Start with null so the initial client render matches the server (no localStorage on server).
+  // Hydrate from localStorage in the first useEffect to avoid hydration mismatch.
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   const persist = (u: User | null) => {
@@ -73,13 +75,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+
+    // First, hydrate from localStorage for instant UI feedback
+    const cached = readStoredUser();
+    if (cached) setUser(cached);
+
     fetch("/api/auth/me", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!active) return;
         if (data && data.user) {
           persist(data.user as User);
-        } else if (readStoredUser()) {
+        } else {
           // If server says unauthenticated (no session cookie or invalid session),
           // sync client state to unauthenticated as well.
           persist(null);
@@ -100,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const roleHome = (role: Role) =>
     role === "admin" ? "/admin" :
     role === "counselor" ? "/admin/residents" :
-    "/";
+    "/dashboard";
 
   const login = async (email: string, password: string, opts?: { next?: string }) => {
     let user: User;

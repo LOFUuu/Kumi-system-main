@@ -10,6 +10,7 @@ import {
   Transaction,
   PropertyViewing,
   PaymentConfig,
+  Notification,
 } from "../models";
 import { isOnlineMode } from "./db-router";
 import * as maria from "./mariadb-service";
@@ -24,6 +25,7 @@ import type {
   Transaction as TransactionType,
   PropertyViewing as PropertyViewingType,
   PaymentConfig as PaymentConfigType,
+  InAppNotification as NotificationType,
 } from "./mock-data";
 import {
   DEFAULT_MONTHLY_DUE,
@@ -78,12 +80,31 @@ function serializeAuth(doc: any): AuthUser {
   return { ...rest, id: _id } as AuthUser;
 }
 
+// Short-lived in-memory cache for listings queries (eliminates repeated Atlas network latency)
+interface CacheEntry<T> {
+  data: T;
+  expires: number;
+}
+const listingsCache = new Map<string, CacheEntry<HouseListing[]>>();
+const LISTINGS_CACHE_TTL = 15_000; // 15 seconds
+
+export function clearListingsCache(): void {
+  listingsCache.clear();
+}
+
 export async function getListings(filter?: {
   status?: HouseListing["status"];
   verificationStatus?: HouseListing["verificationStatus"];
   includeArchived?: boolean;
   isArchived?: boolean;
+  includeProofDocuments?: boolean;
 }): Promise<HouseListing[]> {
+  const cacheKey = JSON.stringify(filter || {});
+  const cached = listingsCache.get(cacheKey);
+  if (cached && Date.now() < cached.expires) {
+    return cached.data;
+  }
+
   const online = await isOnlineMode();
   if (online) {
     try {
@@ -104,17 +125,29 @@ export async function getListings(filter?: {
           query.verificationStatus = filter.verificationStatus;
         }
       }
-      const docs = await Listing.find(query).sort({ createdAt: -1, _id: -1 }).lean();
-      return docs.map((d: any) => ({
+
+      let queryBuilder = Listing.find(query).sort({ createdAt: -1, _id: -1 });
+      // Exclude heavy base64 proof documents from listing feeds unless explicitly requested
+      if (!filter?.includeProofDocuments) {
+        queryBuilder = queryBuilder.select("-proofDocuments");
+      }
+
+      const docs = await queryBuilder.lean();
+      const result = docs.map((d: any) => ({
         ...serialize<HouseListing>(d),
         createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
       }));
+
+      listingsCache.set(cacheKey, { data: result, expires: Date.now() + LISTINGS_CACHE_TTL });
+      return result;
     } catch (e) {
       // fallback to offline
     }
   }
   try {
-    return await maria.getListingsMariaDB(filter);
+    const offlineResult = await maria.getListingsMariaDB(filter);
+    listingsCache.set(cacheKey, { data: offlineResult, expires: Date.now() + LISTINGS_CACHE_TTL });
+    return offlineResult;
   } catch {
     return [];
   }
@@ -128,6 +161,7 @@ export async function getArchivedListings(): Promise<HouseListing[]> {
       const docs = await Listing.find({
         $or: [{ isArchived: true }, { isArchived: "true" }, { isArchived: 1 }],
       } as any)
+        .select("-proofDocuments")
         .sort({ updatedAt: -1, _id: -1 })
         .lean();
       return docs.map((d: any) => ({
@@ -172,6 +206,7 @@ export async function archiveListing(
         archiveReason: reason || (archivedBy === "owner" ? "Archived by Owner" : "Archived by Admin"),
         archivedBy,
       }).catch(() => {});
+      clearListingsCache();
       return res.matchedCount > 0 || res.modifiedCount > 0;
     } catch (e) {}
   }
@@ -181,6 +216,7 @@ export async function archiveListing(
       archiveReason: reason || (archivedBy === "owner" ? "Archived by Owner" : "Archived by Admin"),
       archivedBy,
     });
+    clearListingsCache();
     return Boolean(updated);
   } catch {
     return false;
@@ -207,11 +243,13 @@ export async function unarchiveListing(id: number | string): Promise<boolean> {
         }
       );
       maria.updateListingMariaDB(id, { isArchived: false, archiveReason: null }).catch(() => {});
+      clearListingsCache();
       return res.matchedCount > 0 || res.modifiedCount > 0;
     } catch (e) {}
   }
   try {
     const updated = await maria.updateListingMariaDB(id, { isArchived: false, archiveReason: null });
+    clearListingsCache();
     return Boolean(updated);
   } catch {
     return false;
@@ -253,6 +291,7 @@ export async function createListing(data: any): Promise<HouseListing> {
       const plain = (created as any)?.toObject ? (created as any).toObject() : created;
       const res = serialize<HouseListing>(plain);
       maria.createListingMariaDB({ ...res, id: res.id || id }).catch(() => {});
+      clearListingsCache();
       return res;
     } catch (e) {}
   }
@@ -271,6 +310,7 @@ export async function updateListing(id: number | string, data: any): Promise<Hou
       const numId = Number(id);
       const doc = await Listing.findOneAndUpdate({ _id: numId } as any, { $set: data }, { new: true }).lean();
       maria.updateListingMariaDB(id, data).catch(() => {});
+      clearListingsCache();
       if (doc) return serialize<HouseListing>(doc);
     } catch (e) {}
   }
@@ -289,6 +329,7 @@ export async function deleteListing(id: number | string): Promise<boolean> {
       const numId = Number(id);
       await Listing.deleteOne({ _id: numId } as any);
       mariaQuery(`DELETE FROM listings WHERE id = ?`, [numId]).catch(() => {});
+      clearListingsCache();
       return true;
     } catch (e) {}
   }
@@ -304,6 +345,7 @@ export async function getListingsByOwner(uploadedBy: number): Promise<HouseListi
     try {
       await dbConnect();
       const docs = await Listing.find({ uploadedBy, $or: [{ isArchived: false }, { isArchived: { $exists: false } }] } as any)
+        .select("-proofDocuments")
         .sort({ createdAt: -1, _id: -1 })
         .lean();
       return docs.map((d: any) => ({
@@ -320,10 +362,22 @@ export async function getListingsByOwner(uploadedBy: number): Promise<HouseListi
 }
 
 
+let cachedAmenities: { data: AmenityType[]; expires: number } | null = null;
+const AMENITIES_CACHE_TTL = 30_000; // 30 seconds
+
+export function clearAmenitiesCache(): void {
+  cachedAmenities = null;
+}
+
 export async function getAmenities(): Promise<AmenityType[]> {
+  if (cachedAmenities && Date.now() < cachedAmenities.expires) {
+    return cachedAmenities.data;
+  }
   await dbConnect();
   const docs = await Amenity.find({ $or: [{ isArchived: false }, { isArchived: { $exists: false } }] }).lean();
-  return docs.map((d) => serialize<AmenityType>(d));
+  const result = docs.map((d) => serialize<AmenityType>(d));
+  cachedAmenities = { data: result, expires: Date.now() + AMENITIES_CACHE_TTL };
+  return result;
 }
 
 export async function getArchivedAmenities(): Promise<AmenityType[]> {
@@ -353,9 +407,10 @@ export async function createAmenity(data: Partial<AmenityType>): Promise<Amenity
     downpaymentPrivate: Number(data.downpaymentPrivate) || 500,
     isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
     image: data.image || "https://picsum.photos/seed/amenity/800/600",
-    lat: Number(data.lat) || 14.303,
-    lng: Number(data.lng) || 120.988,
+    lat: Number(data.lat) || 14.3430,
+    lng: Number(data.lng) || 120.9807,
   } as any)) as any;
+  clearAmenitiesCache();
   const plain = doc?.toObject ? doc.toObject() : doc;
   return serialize<AmenityType>(plain);
 }
@@ -384,24 +439,28 @@ export async function updateAmenity(
     { $set: update },
     { new: true }
   ).lean();
+  clearAmenitiesCache();
   return doc ? serialize<AmenityType>(doc) : null;
 }
 
 export async function deleteAmenity(id: number | string): Promise<boolean> {
   await dbConnect();
   const res = await Amenity.deleteOne({ _id: Number(id) } as any);
+  clearAmenitiesCache();
   return res.deletedCount > 0;
 }
 
 export async function archiveAmenity(id: number | string): Promise<boolean> {
   await dbConnect();
   const res = await Amenity.updateOne({ _id: Number(id) } as any, { $set: { isArchived: true } });
+  clearAmenitiesCache();
   return res.modifiedCount > 0;
 }
 
 export async function unarchiveAmenity(id: number | string): Promise<boolean> {
   await dbConnect();
   const res = await Amenity.updateOne({ _id: Number(id) } as any, { $set: { isArchived: false } });
+  clearAmenitiesCache();
   return res.modifiedCount > 0;
 }
 
@@ -490,6 +549,7 @@ export async function getNextId(collection: any): Promise<number> {
       duesrecord: "dues",
       transaction: "transactions",
       propertyviewing: "property_viewings",
+      notification: "notifications",
     };
     const table = tableMap[name] || "listings";
     const rows = await mariaQuery<any[]>(`SELECT MAX(id) as maxId FROM \`${table}\``);
@@ -506,7 +566,7 @@ export async function getAnnouncements(activeOnly = false): Promise<Announcement
       await dbConnect();
       const filter: Record<string, string> = {};
       if (activeOnly) filter.status = "active";
-      const docs = await Announcement.find(filter as any).lean();
+      const docs = await Announcement.find(filter as any).sort({ _id: -1 }).lean();
       return docs.map((d) => serialize<AnnouncementType>(d));
     } catch (e) {}
   }
@@ -515,6 +575,238 @@ export async function getAnnouncements(activeOnly = false): Promise<Announcement
   } catch {
     return [];
   }
+}
+
+export async function createAnnouncement(data: {
+  title: string;
+  content: string;
+  status?: "active" | "archived";
+  poster?: string;
+  category?: string;
+  postDate?: string;
+}): Promise<AnnouncementType> {
+  const online = await isOnlineMode();
+  const postDate = data.postDate || new Date().toISOString().split("T")[0];
+  const payload = {
+    title: String(data.title || "").trim(),
+    content: String(data.content || "").trim(),
+    status: data.status || "active",
+    poster: data.poster || "HOA Admin",
+    category: data.category || "Community",
+    postDate,
+  };
+
+  let createdAnnouncement: AnnouncementType;
+
+  if (online) {
+    try {
+      await dbConnect();
+      const id = await getNextId(Announcement);
+      const doc = await (Announcement as any).create({ ...payload, _id: id });
+      const plain = (doc as any)?.toObject ? (doc as any).toObject() : doc;
+      createdAnnouncement = serialize<AnnouncementType>(plain);
+      maria.createAnnouncementMariaDB({ ...payload, id }).catch(() => {});
+    } catch (e: any) {
+      createdAnnouncement = await maria.createAnnouncementMariaDB(payload);
+    }
+  } else {
+    createdAnnouncement = await maria.createAnnouncementMariaDB(payload);
+  }
+
+  // Create In-App Notifications for eligible users (non-admin users)
+  if (createdAnnouncement && createdAnnouncement.status === "active") {
+    createAnnouncementNotifications(createdAnnouncement).catch((err) => {
+      console.error("[Notification] Failed to generate announcement notifications:", err);
+    });
+  }
+
+  return createdAnnouncement;
+}
+
+export async function updateAnnouncement(
+  id: number | string,
+  data: Partial<AnnouncementType>
+): Promise<AnnouncementType | null> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(id);
+      const filter = Number.isFinite(numId) ? { $or: [{ _id: numId }, { id: numId }] } : { _id: id };
+      const doc = await Announcement.findOneAndUpdate(filter as any, { $set: data }, { new: true }).lean();
+      maria.updateAnnouncementMariaDB(id, data).catch(() => {});
+      if (doc) return serialize<AnnouncementType>(doc);
+    } catch (e) {}
+  }
+  return maria.updateAnnouncementMariaDB(id, data);
+}
+
+export async function deleteAnnouncement(id: number | string): Promise<boolean> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(id);
+      const filter = Number.isFinite(numId) ? { $or: [{ _id: numId }, { id: numId }] } : { _id: id };
+      const res = await Announcement.deleteOne(filter as any);
+      // Clean up notifications for this announcement
+      await (Notification as any).deleteMany({ type: "announcement", referenceId: numId }).catch(() => {});
+      maria.deleteAnnouncementMariaDB(id).catch(() => {});
+      return res.deletedCount > 0;
+    } catch (e) {}
+  }
+  return maria.deleteAnnouncementMariaDB(id);
+}
+
+export async function createNotification(data: {
+  userId: number | string;
+  userEmail?: string;
+  title: string;
+  message: string;
+  type?: "announcement" | "viewing" | "reservation" | "dues" | "general";
+  referenceId?: number | string;
+  link?: string;
+}): Promise<NotificationType> {
+  const online = await isOnlineMode();
+  const payload = {
+    userId: data.userId,
+    userEmail: data.userEmail ? data.userEmail.toLowerCase().trim() : undefined,
+    title: data.title.trim(),
+    message: data.message.trim(),
+    type: data.type || "general",
+    referenceId: data.referenceId,
+    link: data.link || "",
+    isRead: false,
+  };
+
+  if (online) {
+    try {
+      await dbConnect();
+      const id = await getNextId(Notification as any);
+      const doc = await (Notification as any).create({ ...payload, _id: id });
+      const plain = (doc as any)?.toObject ? (doc as any).toObject() : doc;
+      return serialize<NotificationType>(plain);
+    } catch (e) {}
+  }
+  return { id: Date.now(), ...payload, isRead: false, createdAt: new Date().toISOString() };
+}
+
+export async function createAnnouncementNotifications(announcement: AnnouncementType): Promise<void> {
+  try {
+    await dbConnect();
+    // Get all eligible non-admin users: resident, non_resident, counselor
+    const users = await (User as any).find({
+      role: { $in: ["resident", "non_resident", "counselor"] },
+      $or: [{ isArchived: false }, { isArchived: { $exists: false } }],
+    }).lean();
+
+    for (const u of users) {
+      const uId = (u as any)._id ?? (u as any).id;
+      // Prevent duplicate notification for same announcement event
+      const existing = await (Notification as any).findOne({
+        userId: uId,
+        type: "announcement",
+        referenceId: announcement.id,
+      }).lean();
+
+      if (!existing) {
+        const id = await getNextId(Notification as any);
+        await (Notification as any).create({
+          _id: id,
+          userId: uId,
+          userEmail: u.email,
+          title: `Announcement: ${announcement.title}`,
+          message: announcement.content.length > 120 ? announcement.content.slice(0, 117) + "…" : announcement.content,
+          type: "announcement",
+          referenceId: announcement.id,
+          link: "/announcements",
+          isRead: false,
+        });
+      }
+    }
+  } catch (err) {
+    console.error("[Notification] createAnnouncementNotifications error:", err);
+  }
+}
+
+export async function getUserNotifications(userIdentifier: { id?: number | string; email?: string }): Promise<NotificationType[]> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const orClauses: any[] = [];
+      if (userIdentifier.id !== undefined && userIdentifier.id !== null) {
+        const numId = Number(userIdentifier.id);
+        if (Number.isFinite(numId)) {
+          orClauses.push({ userId: numId });
+        }
+        orClauses.push({ userId: String(userIdentifier.id) });
+      }
+      if (userIdentifier.email) {
+        orClauses.push({ userEmail: userIdentifier.email.toLowerCase().trim() });
+      }
+
+      if (orClauses.length === 0) return [];
+
+      const docs = await (Notification as any).find({ $or: orClauses })
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(50)
+        .lean();
+
+      return docs.map((d: any) => ({
+        ...serialize<NotificationType>(d),
+        createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+      }));
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+}
+
+export async function markNotificationRead(notificationId: number | string, userId?: number | string): Promise<boolean> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const numId = Number(notificationId);
+      const filter: any = Number.isFinite(numId)
+        ? { $or: [{ _id: numId }, { id: numId }] }
+        : { _id: notificationId };
+      if (userId) {
+        filter.userId = { $in: [userId, String(userId), Number(userId)].filter(Boolean) };
+      }
+      const res = await (Notification as any).updateOne(filter, { $set: { isRead: true } });
+      return res.modifiedCount > 0 || res.matchedCount > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export async function markAllNotificationsRead(userIdentifier: { id?: number | string; email?: string }): Promise<boolean> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const orClauses: any[] = [];
+      if (userIdentifier.id !== undefined && userIdentifier.id !== null) {
+        const numId = Number(userIdentifier.id);
+        if (Number.isFinite(numId)) orClauses.push({ userId: numId });
+        orClauses.push({ userId: String(userIdentifier.id) });
+      }
+      if (userIdentifier.email) {
+        orClauses.push({ userEmail: userIdentifier.email.toLowerCase().trim() });
+      }
+      if (orClauses.length === 0) return false;
+      const res = await (Notification as any).updateMany({ $or: orClauses, isRead: false }, { $set: { isRead: true } });
+      return Boolean(res.acknowledged);
+    } catch (e) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function userFilter(id: number | string) {
@@ -1844,8 +2136,12 @@ export async function getPropertyViewings(filter?: { residentEmail?: string; lis
       const query: Record<string, any> = {};
       if (filter?.residentEmail) query.residentEmail = filter.residentEmail;
       if (filter?.listingId) query.listingId = filter.listingId;
-      const docs = await PropertyViewing.find(query).sort({ _id: -1 }).lean();
-      return docs.map((d: any) => ({ ...serialize<PropertyViewingType>(d), id: d._id }));
+      const docs = await PropertyViewing.find(query).sort({ createdAt: -1, _id: -1 }).lean();
+      return docs.map((d: any) => ({
+        ...serialize<PropertyViewingType>(d),
+        id: d._id,
+        createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+      }));
     } catch (e) {}
   }
   return maria.getPropertyViewingsMariaDB(filter);
@@ -1856,13 +2152,31 @@ export async function createPropertyViewing(data: any): Promise<PropertyViewingT
   if (online) {
     try {
       await dbConnect();
+      // Atomic conflict check for duplicate active reservation on the same property, date, and time
+      const activeConflict = await PropertyViewing.findOne({
+        listingId: Number(data.listingId),
+        preferredDate: String(data.preferredDate),
+        preferredTime: String(data.preferredTime),
+        status: { $in: ["viewing_requested", "viewing_scheduled", "viewing_completed"] },
+      }).lean();
+
+      if (activeConflict) {
+        throw new Error("This date and time are currently unavailable. Please select another available schedule.");
+      }
+
       const id = data._id || data.id || (await getNextId(PropertyViewing));
       const doc = await PropertyViewing.create({ ...data, _id: id });
       const plain = (doc as any)?.toObject ? (doc as any).toObject() : doc;
-      const res = serialize<PropertyViewingType>(plain);
+      const res = {
+        ...serialize<PropertyViewingType>(plain),
+        id,
+        createdAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString(),
+      };
       maria.createPropertyViewingMariaDB({ ...data, id }).catch(() => {});
       return res;
-    } catch (e) {}
+    } catch (e: any) {
+      if (e?.message?.includes("unavailable")) throw e;
+    }
   }
   return maria.createPropertyViewingMariaDB(data);
 }

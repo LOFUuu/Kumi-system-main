@@ -5,19 +5,30 @@ import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
-import { ChevronDown, LogOut, Shield, Menu, X } from "lucide-react";
+import { ChevronDown, LogOut, Shield, Menu, X, Bell, Megaphone } from "lucide-react";
 import SmartSearchInput from "./SmartSearchInput";
 import SyncStatusBadge from "./SyncStatusBadge";
+import type { InAppNotification } from "@/lib/mock-data";
 
 export default function Navbar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const [mounted, setMounted] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showNotificationsMenu, setShowNotificationsMenu] = useState(false);
+  const [notifications, setNotifications] = useState<InAppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
   const [mobileOpen, setMobileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+
+  // Prevent hydration mismatch: don't render auth-dependent content until client mounts
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -27,6 +38,9 @@ export default function Navbar() {
       }
       if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
         setShowMoreMenu(false);
+      }
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
+        setShowNotificationsMenu(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -67,21 +81,71 @@ export default function Navbar() {
     };
   }, [user, pathname]);
 
-  // Admin pages or logged-in admin user — hide the public navbar
-  if (pathname.startsWith("/admin") || user?.role === "admin") return null;
+  // Fetch in-app notifications
+  const fetchNotifications = () => {
+    if (!user || user.role === "admin") {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
+    api
+      .notifications()
+      .then((res) => {
+        setNotifications(res.notifications || []);
+        setUnreadCount(res.unreadCount || 0);
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [user, pathname]);
+
+  const unreadAnnouncementsCount = notifications.filter((n) => !n.isRead && n.type === "announcement").length;
+
+  const handleNotificationClick = async (notif: InAppNotification) => {
+    if (!notif.isRead) {
+      try {
+        await api.markNotificationRead(notif.id);
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+        );
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      } catch (e) {}
+    }
+    setShowNotificationsMenu(false);
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await api.markAllNotificationsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+    } catch (e) {}
+  };
+
+  // Only use auth state after mounting to avoid server/client HTML mismatch
+  const activeUser = mounted ? user : null;
+
+  // Admin pages or logged-in admin user — hide the public navbar (only after mount)
+  if (mounted && (pathname.startsWith("/admin") || activeUser?.role === "admin")) return null;
 
   const nav: { label: string; href: string; badge?: number }[] = [
     { label: "Home", href: "/" },
     { label: "House Listing", href: "/house-listing" },
     { label: "Amenities", href: "/reservation" },
   ];
-  if (user && user.role !== "non_resident") nav.push({ label: "My Dues", href: "/my-dues" });
-  if (user) {
+  if (activeUser && activeUser.role !== "non_resident") nav.push({ label: "My Dues", href: "/my-dues" });
+  if (activeUser) {
     nav.push({ label: "Map", href: "/map" });
-    nav.push({ label: "Announcements", href: "/announcements" });
+    nav.push({
+      label: "Announcements",
+      href: "/announcements",
+      badge: unreadAnnouncementsCount > 0 ? unreadAnnouncementsCount : undefined,
+    });
   }
-  if (user && user.role !== "non_resident") nav.push({ label: "My Listings", href: "/my-listings" });
-  if (user) nav.push({ label: "History", href: "/history" });
+  if (activeUser && activeUser.role !== "non_resident") nav.push({ label: "My Listings", href: "/my-listings" });
+  if (activeUser) nav.push({ label: "History", href: "/history" });
 
   // Up to 5 items shown on standard desktop (lg/xl); remainder in "More" dropdown
   // On 2xl (wide screens), all items are shown directly
@@ -108,6 +172,7 @@ export default function Navbar() {
             </span>
           </Link>
         </div>
+
 
         {/* ── DESKTOP NAV LINKS ─────────────────────────── */}
         <nav className="hidden lg:flex items-center justify-center gap-1 shrink min-w-0">
@@ -231,8 +296,114 @@ export default function Navbar() {
           </div>
 
           {/* User Profile Pill & Logout Section */}
-          {user ? (
+          {activeUser ? (
             <div className="flex items-center gap-1.5 sm:gap-2">
+              {/* Notification Bell Dropdown */}
+              <div className="relative" ref={notificationsRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowNotificationsMenu((prev) => !prev)}
+                  className="relative flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-gray-50/80 text-gray-600 hover:bg-[#e8f3ec] hover:text-[#123f2a] hover:border-[#45a057]/40 transition-all shadow-2xs"
+                  title="Notifications"
+                  aria-label="Notifications"
+                >
+                  <Bell className="h-4 w-4" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-xs">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {showNotificationsMenu && (
+                  <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 z-50 overflow-hidden">
+                    <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 bg-gray-50/50">
+                      <div className="flex items-center gap-2">
+                        <span className="font-serif text-sm font-bold text-[#123f2a]">Notifications</span>
+                        {unreadCount > 0 && (
+                          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                            {unreadCount} new
+                          </span>
+                        )}
+                      </div>
+                      {unreadCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleMarkAllRead}
+                          className="text-[11px] font-semibold text-[#1b5338] hover:underline"
+                        >
+                          Mark all as read
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
+                      {notifications.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-gray-400">
+                          No notifications yet.
+                        </div>
+                      ) : (
+                        notifications.map((n) => (
+                          <Link
+                            key={n.id}
+                            href={n.link || "/announcements"}
+                            onClick={() => handleNotificationClick(n)}
+                            className={`flex items-start gap-3 p-3.5 transition-colors hover:bg-gray-50 ${
+                              !n.isRead ? "bg-emerald-50/40" : ""
+                            }`}
+                          >
+                            <div
+                              className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                                !n.isRead
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-gray-100 text-gray-500"
+                              }`}
+                            >
+                              <Megaphone className="h-3.5 w-3.5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <p
+                                  className={`text-xs truncate ${
+                                    !n.isRead ? "font-bold text-[#123f2a]" : "font-medium text-gray-700"
+                                  }`}
+                                >
+                                  {n.title}
+                                </p>
+                                {!n.isRead && (
+                                  <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                                )}
+                              </div>
+                              <p className="mt-0.5 text-[11px] text-gray-500 line-clamp-2 leading-relaxed">
+                                {n.message}
+                              </p>
+                              {n.createdAt && (
+                                <p className="mt-1 text-[10px] text-gray-400">
+                                  {new Date(n.createdAt).toLocaleDateString("en-US", {
+                                    month: "short",
+                                    day: "numeric",
+                                  })}
+                                </p>
+                              )}
+                            </div>
+                          </Link>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="border-t border-gray-100 p-2 text-center bg-gray-50/50">
+                      <Link
+                        href="/announcements"
+                        onClick={() => setShowNotificationsMenu(false)}
+                        className="text-xs font-semibold text-[#123f2a] hover:underline"
+                      >
+                        View all announcements →
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="relative" ref={profileRef}>
                 <button
                   onClick={() => setShowProfileMenu((prev) => !prev)}
@@ -241,13 +412,13 @@ export default function Navbar() {
                   aria-expanded={showProfileMenu}
                 >
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#123f2a] text-white font-bold text-xs shrink-0">
-                    {user.fullName ? user.fullName.charAt(0).toUpperCase() : "U"}
+                    {activeUser.fullName ? activeUser.fullName.charAt(0).toUpperCase() : "U"}
                   </span>
                   <span
                     className="max-w-[85px] sm:max-w-[120px] xl:max-w-[150px] truncate text-[11px] sm:text-xs uppercase font-bold tracking-tight"
-                    title={user.fullName}
+                    title={activeUser.fullName}
                   >
-                    {user.fullName}
+                    {activeUser.fullName}
                   </span>
                   <ChevronDown className={`h-3 w-3 text-gray-500 shrink-0 transition-transform duration-200 ${showProfileMenu ? "rotate-180" : ""}`} />
                 </button>
@@ -256,25 +427,25 @@ export default function Navbar() {
                 {showProfileMenu && (
                   <div className="absolute right-0 mt-2 w-60 rounded-2xl border border-gray-100 bg-white p-2 shadow-xl ring-1 ring-black/5 z-50">
                     <div className="px-3 py-2.5 border-b border-gray-100">
-                      <p className="text-xs font-bold text-[#123f2a] truncate" title={user.fullName}>
-                        {user.fullName}
+                      <p className="text-xs font-bold text-[#123f2a] truncate" title={activeUser.fullName}>
+                        {activeUser.fullName}
                       </p>
-                      <p className="text-[11px] text-gray-500 truncate">{user.email}</p>
+                      <p className="text-[11px] text-gray-500 truncate">{activeUser.email}</p>
                       <div className="mt-1.5">
-                        {user.role === "non_resident" ? (
+                        {activeUser.role === "non_resident" ? (
                           <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
                             Non-Resident
                           </span>
                         ) : (
                           <span className="inline-block rounded-full bg-[#e8f3ec] px-2 py-0.5 text-[10px] font-bold text-[#123f2a] capitalize">
-                            {user.role.replace("_", " ")}
+                            {activeUser.role.replace("_", " ")}
                           </span>
                         )}
                       </div>
                     </div>
 
                     <div className="py-1">
-                      {user.role === "counselor" && (
+                      {activeUser.role === "counselor" && (
                         <Link
                           href="/admin"
                           onClick={() => setShowProfileMenu(false)}
@@ -284,7 +455,7 @@ export default function Navbar() {
                           Admin Panel
                         </Link>
                       )}
-                      {user.role !== "non_resident" && (
+                      {activeUser.role !== "non_resident" && (
                         <Link
                           href="/my-dues"
                           onClick={() => setShowProfileMenu(false)}
@@ -403,19 +574,19 @@ export default function Navbar() {
 
           {/* Account Controls in Mobile Drawer */}
           <div className="pt-3 mt-3 border-t border-gray-100 space-y-2">
-            {user ? (
+            {activeUser ? (
               <>
                 <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-gray-50">
                   <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#123f2a] text-white font-bold text-sm shrink-0">
-                    {user.fullName ? user.fullName.charAt(0).toUpperCase() : "U"}
+                    {activeUser.fullName ? activeUser.fullName.charAt(0).toUpperCase() : "U"}
                   </span>
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-[#123f2a] truncate">{user.fullName}</p>
-                    <p className="text-[11px] text-gray-500 truncate">{user.email}</p>
+                    <p className="text-sm font-bold text-[#123f2a] truncate">{activeUser.fullName}</p>
+                    <p className="text-[11px] text-gray-500 truncate">{activeUser.email}</p>
                   </div>
                 </div>
 
-                {user.role === "counselor" && (
+                {activeUser.role === "counselor" && (
                   <Link
                     href="/admin"
                     onClick={() => setMobileOpen(false)}

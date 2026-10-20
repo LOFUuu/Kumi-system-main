@@ -4,16 +4,31 @@ import { isHowaRole, requestRole } from "@/lib/role";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/viewings — admin: all viewings; resident: not used here (see /my)
+// GET /api/viewings — admin: all viewings; resident availability query: ?availability=true&listingId=X
 export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const listingId = searchParams.get("listingId");
+  const availabilityOnly = searchParams.get("availability") === "true";
+
+  if (availabilityOnly && listingId) {
+    const docs = await getPropertyViewings({ listingId: Number(listingId) });
+    const unavailableSlots = docs
+      .filter((d) => ["viewing_requested", "viewing_scheduled", "viewing_completed"].includes(d.status))
+      .map((d) => ({
+        date: d.preferredDate,
+        time: d.preferredTime,
+        status: d.status,
+      }));
+    return NextResponse.json(unavailableSlots);
+  }
+
   const role = requestRole(req);
   if (!isHowaRole(role)) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
-  const { searchParams } = new URL(req.url);
   const statusFilter = searchParams.get("status");
-  let docs = await getPropertyViewings();
+  let docs = await getPropertyViewings(listingId ? { listingId: Number(listingId) } : undefined);
   if (statusFilter) {
     docs = docs.filter((d) => d.status === statusFilter);
   }
@@ -61,7 +76,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Check if this resident already has an active (non-declined) viewing for this listing
+  // 1. Check if this resident already has an active (non-declined) viewing for this listing
   const existingList = await getPropertyViewings({ residentEmail, listingId });
   const existing = existingList.find((v) =>
     ["viewing_requested", "viewing_scheduled"].includes(v.status)
@@ -74,18 +89,42 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const viewing = await createPropertyViewing({
-    listingId,
-    listingName: listing.houseName,
-    residentName: residentName || "Resident",
-    residentEmail,
-    preferredDate,
-    preferredTime,
-    message: String(body.message || "").trim(),
-    status: "viewing_requested",
-    adminNotes: "",
-    scheduledAt: null,
-  });
+  // 2. Check if the slot already has a Pending or Approved reservation by another user
+  const allViewingsForListing = await getPropertyViewings({ listingId });
+  const slotConflict = allViewingsForListing.find(
+    (v) =>
+      ["viewing_requested", "viewing_scheduled", "viewing_completed"].includes(v.status) &&
+      v.preferredDate === preferredDate &&
+      v.preferredTime === preferredTime
+  );
 
-  return NextResponse.json({ viewing }, { status: 201 });
+  if (slotConflict) {
+    return NextResponse.json(
+      { error: "This date and time are currently unavailable. Please select another available schedule." },
+      { status: 409 }
+    );
+  }
+
+  try {
+    const viewing = await createPropertyViewing({
+      listingId,
+      listingName: listing.houseName,
+      residentName: residentName || "Resident",
+      residentEmail,
+      preferredDate,
+      preferredTime,
+      message: String(body.message || "").trim(),
+      status: "viewing_requested",
+      adminNotes: "",
+      scheduledAt: null,
+    });
+
+    return NextResponse.json({ viewing }, { status: 201 });
+  } catch (err: any) {
+    const msg = err?.message || "Failed to submit viewing request.";
+    return NextResponse.json(
+      { error: msg.includes("unavailable") ? "This date and time are currently unavailable. Please select another available schedule." : msg },
+      { status: 409 }
+    );
+  }
 }

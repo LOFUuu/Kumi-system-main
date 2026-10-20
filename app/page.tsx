@@ -53,10 +53,13 @@ export default function HomePage() {
   const [anns, setAnns] = useState<Announcement[]>([]);
   const [users, setUsers] = useState<User[]>([]);
 
+  // Redirect admins/counselors away from the public home page
   useEffect(() => {
-    if (!loading && user?.role === "admin") {
-      router.replace("/admin");
-      return;
+    if (!loading && user) {
+      if (user.role === "admin" || user.role === "counselor") {
+        router.replace("/admin");
+      }
+      // Regular users (resident / non_resident) stay on the public home page
     }
   }, [user, loading, router]);
 

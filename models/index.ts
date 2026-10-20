@@ -9,6 +9,7 @@ import type {
   Transaction as TransactionType,
   PropertyViewing as PropertyViewingType,
   PaymentConfig as PaymentConfigType,
+  InAppNotification as NotificationType,
 } from "../lib/mock-data";
 
 const listingSchema = new Schema<HouseListing>(
@@ -48,10 +49,13 @@ const listingSchema = new Schema<HouseListing>(
     isArchived: { type: Boolean, default: false },
     archiveReason: { type: String, default: null },
     archivedBy: { type: String, default: null },
-    archivedAt: { type: String, default: null },
   } as any,
   { timestamps: true }
 );
+
+listingSchema.index({ verificationStatus: 1, isArchived: 1, createdAt: -1 });
+listingSchema.index({ isArchived: 1, createdAt: -1 });
+listingSchema.index({ status: 1 });
 
 
 const amenitySchema = new Schema<AmenityType>(
@@ -73,6 +77,8 @@ const amenitySchema = new Schema<AmenityType>(
   } as any,
   { timestamps: true }
 );
+
+amenitySchema.index({ isArchived: 1, isActive: 1 });
 
 const announcementSchema = new Schema<AnnouncementType>(
   {
@@ -118,6 +124,8 @@ const userSchema = new Schema<UserType>(
   } as any,
   { timestamps: true }
 );
+
+userSchema.index({ email: 1 });
 
 const reservationSchema = new Schema<ReservationType>(
   {
@@ -234,12 +242,28 @@ const propertyViewingSchema = new Schema<PropertyViewingType>(
   { timestamps: true }
 );
 
+const notificationSchema = new Schema<NotificationType>(
+  {
+    _id: { type: Number },
+    userId: { type: Schema.Types.Mixed, required: true, index: true },
+    userEmail: { type: String, index: true },
+    title: { type: String, required: true },
+    message: { type: String, required: true },
+    type: { type: String, enum: ["announcement", "viewing", "reservation", "dues", "general"], default: "general" },
+    referenceId: { type: Schema.Types.Mixed },
+    link: { type: String, default: "" },
+    isRead: { type: Boolean, default: false, index: true },
+  } as any,
+  { timestamps: true }
+);
+
 // Clear cached models in dev if schema path is missing
 if (models.Listing && !(models.Listing.schema as any).path("transactionStatus")) delete (models as any).Listing;
 if (models.Amenity && !(models.Amenity.schema as any).path("isArchived")) delete (models as any).Amenity;
 if (models.User && !(models.User.schema as any).path("needsReview")) delete (models as any).User;
 if (models.Transaction && !(models.Transaction.schema as any).path("isArchived")) delete (models as any).Transaction;
 if (models.Reservation && !(models.Reservation.schema as any).path("isArchived")) delete (models as any).Reservation;
+if (models.Notification && !(models.Notification.schema as any).path("type")) delete (models as any).Notification;
 
 export const Listing = (models.Listing as mongoose.Model<HouseListing>) || model<HouseListing>("Listing", listingSchema);
 export const Amenity = (models.Amenity as mongoose.Model<AmenityType>) || model<AmenityType>("Amenity", amenitySchema);
@@ -250,6 +274,7 @@ export const DuesRecord = (models.DuesRecord as mongoose.Model<DuesType>) || mod
 export const Transaction = (models.Transaction as mongoose.Model<TransactionType>) || model<TransactionType>("Transaction", transactionSchema);
 export const PropertyViewing = (models.PropertyViewing as mongoose.Model<PropertyViewingType>) || model<PropertyViewingType>("PropertyViewing", propertyViewingSchema);
 export const PaymentConfig = (models.PaymentConfig as mongoose.Model<PaymentConfigType>) || model<PaymentConfigType>("PaymentConfig", paymentConfigSchema);
+export const Notification = (models.Notification as mongoose.Model<NotificationType>) || model<NotificationType>("Notification", notificationSchema);
 
 export { ResidentMasterList, RoleAuditLog } from "./resident-masterlist";
 export type { ResidentMasterListRecord, RoleAuditLogRecord } from "./resident-masterlist";

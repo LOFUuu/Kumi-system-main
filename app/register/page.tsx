@@ -49,7 +49,7 @@ export default function RegisterPage() {
           ? "/admin"
           : user.role === "counselor"
           ? "/admin/residents"
-          : "/";
+          : "/dashboard";
       router.replace(target);
     }
   }, [user, loading, router]);

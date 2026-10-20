@@ -43,7 +43,14 @@ export async function POST(req: NextRequest) {
   const bookingType = body.bookingType === "night" ? "night" : "day";
   const reservationType = body.reservationType === "private" ? "private" : "public";
   const date = String(body.date || "");
-  const pax = Math.max(1, Number(body.paxCount) || 1);
+  const paxRaw = Number(body.paxCount);
+  if (!Number.isInteger(paxRaw) || paxRaw < 1) {
+    return NextResponse.json({ error: "Number of pax must be a positive whole number (at least 1)." }, { status: 400 });
+  }
+  if (paxRaw > amenity.maxCapacity) {
+    return NextResponse.json({ error: `Number of pax cannot exceed the maximum capacity of ${amenity.maxCapacity} for ${amenity.name}.` }, { status: 400 });
+  }
+  const pax = paxRaw;
   const notes = String(body.notes || "").trim();
   const gcashRef = String(body.gcashRef || "").trim();
   const receiptPath = body.receiptPath ? String(body.receiptPath).trim() : undefined;

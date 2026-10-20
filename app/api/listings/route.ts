@@ -120,8 +120,8 @@ export async function POST(req: NextRequest) {
       : typeof body.images === "string" && Boolean(body.images.trim())
       ? [body.images.trim()]
       : [],
-    lat: 14.3049,
-    lng: 120.98636,
+    lat: 14.3441,
+    lng: 120.9791,
     // Verification fields
     verificationStatus,
     proofDocuments,

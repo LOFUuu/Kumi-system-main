@@ -306,7 +306,7 @@ function UpdateModal({
 
 // ── Property Viewings Section ───────────────────────────────────────────────────
 
-type SortField = "date" | "property" | "resident" | "status";
+type SortField = "created" | "date" | "property" | "resident" | "status";
 type SortDir = "asc" | "desc";
 type FilterStatus = "all" | ViewingStatus;
 
@@ -321,7 +321,7 @@ export default function PropertyViewingsSection({
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
-  const [sortField, setSortField] = useState<SortField>("date");
+  const [sortField, setSortField] = useState<SortField>("created");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [updateTarget, setUpdateTarget] = useState<PropertyViewing | null>(null);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -352,7 +352,7 @@ export default function PropertyViewingsSection({
     if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
       setSortField(field);
-      setSortDir("asc");
+      setSortDir(field === "created" ? "desc" : "asc");
     }
   };
 
@@ -382,11 +382,25 @@ export default function PropertyViewingsSection({
     })
     .sort((a, b) => {
       let r = 0;
-      if (sortField === "date") r = (a.preferredDate || "").localeCompare(b.preferredDate || "");
-      else if (sortField === "property") r = a.listingName.localeCompare(b.listingName);
-      else if (sortField === "resident") r = a.residentName.localeCompare(b.residentName);
-      else if (sortField === "status") r = a.status.localeCompare(b.status);
-      return sortDir === "asc" ? r : -r;
+      if (sortField === "created") {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : a.id;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : b.id;
+        r = timeA - timeB;
+      } else if (sortField === "date") {
+        r = (a.preferredDate || "").localeCompare(b.preferredDate || "");
+      } else if (sortField === "property") {
+        r = a.listingName.localeCompare(b.listingName);
+      } else if (sortField === "resident") {
+        r = a.residentName.localeCompare(b.residentName);
+      } else if (sortField === "status") {
+        r = a.status.localeCompare(b.status);
+      }
+      const primary = sortDir === "asc" ? r : -r;
+      if (primary !== 0) return primary;
+      // Stable secondary tie-breaker: newest submission first (created_at DESC)
+      const fallbackA = a.createdAt ? new Date(a.createdAt).getTime() : a.id;
+      const fallbackB = b.createdAt ? new Date(b.createdAt).getTime() : b.id;
+      return fallbackB - fallbackA;
     });
 
   const statusTabs: { key: FilterStatus; label: string; count: number }[] = [

@@ -22,8 +22,8 @@ async function dbConnect(): Promise<typeof mongoose> {
   if (!global._mongooseConn) {
     global._mongooseConn = mongoose.connect(uri, {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 2500,
-      connectTimeoutMS: 2500,
+      serverSelectionTimeoutMS: 1000,  // fail fast → fall back to MariaDB quickly
+      connectTimeoutMS: 1000,
     });
   }
 

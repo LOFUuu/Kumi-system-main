@@ -98,8 +98,8 @@ export const MOCK_LISTINGS: HouseListing[] = [
     ownerId: 3,
     ownerName: "Maria Santos",
     images: [img("casa-verde-1"), img("casa-verde-2"), img("casa-verde-3")],
-    lat: 14.3049,
-    lng: 120.98636,
+    lat: 14.3441,
+    lng: 120.9791,
     verificationStatus: "verified",
     proofDocuments: [],
     uploadedBy: 3,
@@ -120,8 +120,8 @@ export const MOCK_LISTINGS: HouseListing[] = [
     ownerId: 4,
     ownerName: "Jose Reyes",
     images: [img("maple-1"), img("maple-2")],
-    lat: 14.30554,
-    lng: 120.9894,
+    lat: 14.3445,
+    lng: 120.9818,
     verificationStatus: "verified",
     proofDocuments: [],
     uploadedBy: 4,
@@ -142,8 +142,8 @@ export const MOCK_LISTINGS: HouseListing[] = [
     ownerId: 5,
     ownerName: "Linda Cruz",
     images: [img("sunlight-1"), img("sunlight-2"), img("sunlight-3")],
-    lat: 14.3025,
-    lng: 120.9906,
+    lat: 14.3422,
+    lng: 120.9825,
     verificationStatus: "verified",
     proofDocuments: [],
     uploadedBy: 5,
@@ -164,8 +164,8 @@ export const MOCK_LISTINGS: HouseListing[] = [
     ownerId: 3,
     ownerName: "Maria Santos",
     images: [img("narra-1"), img("narra-2")],
-    lat: 14.3017,
-    lng: 120.98764,
+    lat: 14.3418,
+    lng: 120.9798,
     verificationStatus: "verified",
     proofDocuments: [],
     uploadedBy: 3,
@@ -179,6 +179,20 @@ export interface Announcement {
   postDate: string;
   status: "active" | "archived";
   poster: string;
+  category?: string;
+}
+
+export interface InAppNotification {
+  id: number;
+  userId: number | string;
+  userEmail?: string;
+  title: string;
+  message: string;
+  type: "announcement" | "viewing" | "reservation" | "dues" | "general";
+  referenceId?: number | string;
+  link?: string;
+  isRead: boolean;
+  createdAt?: string;
 }
 
 export const MOCK_ANNOUNCEMENTS: Announcement[] = [
@@ -244,8 +258,8 @@ export const MOCK_AMENITIES: Amenity[] = [
     downpaymentPrivate: 500,
     isActive: true,
     image: "/images/amenities/pool.jpg",
-    lat: 14.3037,
-    lng: 120.9886,
+    lat: 14.3432,
+    lng: 120.9809,
   },
   {
     id: 2,
@@ -259,8 +273,8 @@ export const MOCK_AMENITIES: Amenity[] = [
     downpaymentPrivate: 300,
     isActive: true,
     image: "/images/amenities/court.jpg",
-    lat: 14.3029,
-    lng: 120.987,
+    lat: 14.3427,
+    lng: 120.9802,
   },
 ];
 

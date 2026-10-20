@@ -69,7 +69,9 @@ function BookingForm() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [pax, setPax] = useState(1);
+  const [paxInput, setPaxInput] = useState("1");
+  const parsedPax = parseInt(paxInput, 10);
+  const pax = !isNaN(parsedPax) && parsedPax > 0 ? parsedPax : 1;
   const [notes, setNotes] = useState("");
   const [gcashRef, setGcashRef] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -215,6 +217,26 @@ function BookingForm() {
     }
     if (!amenity) return;
 
+    // Validate Number of Pax
+    const trimmedPax = paxInput.trim();
+    if (!trimmedPax) {
+      setError("Please enter the number of persons (pax).");
+      return;
+    }
+    if (!/^\d+$/.test(trimmedPax)) {
+      setError("Number of persons must be a valid whole number.");
+      return;
+    }
+    const numPax = parseInt(trimmedPax, 10);
+    if (numPax < 1) {
+      setError("Number of persons must be at least 1.");
+      return;
+    }
+    if (numPax > amenity.maxCapacity) {
+      setError(`Number of persons cannot exceed the maximum capacity of ${amenity.maxCapacity} for ${amenity.name}.`);
+      return;
+    }
+
     // Strict revalidation before submitting
     setSubmitting(true);
     try {
@@ -222,7 +244,7 @@ function BookingForm() {
         date,
         type: reservationType,
         session: bookingType,
-        pax,
+        pax: numPax,
       });
 
       if (!recheck.available) {
@@ -252,7 +274,7 @@ function BookingForm() {
         bookingType,
         reservationType,
         date,
-        paxCount: pax,
+        paxCount: numPax,
         notes,
         role: user?.role || "non_resident",
         userEmail: user?.email,
@@ -385,8 +407,11 @@ function BookingForm() {
                 className="field"
                 min={1}
                 max={amenity.maxCapacity}
-                value={pax}
-                onChange={(e) => setPax(Math.max(1, Math.min(amenity.maxCapacity, Number(e.target.value) || 1)))}
+                value={paxInput}
+                onChange={(e) => {
+                  setPaxInput(e.target.value);
+                  setError("");
+                }}
               />
               <p className="mt-1 text-xs text-muted">Max {amenity.maxCapacity} pax for {amenity.name}</p>
             </div>

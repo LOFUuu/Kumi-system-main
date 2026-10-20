@@ -30,7 +30,7 @@ export default function SyncStatusBadge({ compact = false }: { compact?: boolean
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 20000); // Poll status every 20s
+    const interval = setInterval(fetchStatus, 60000); // Poll status every 60s
     return () => clearInterval(interval);
   }, []);
 

@@ -32,14 +32,43 @@ export async function PATCH(
   const isHowa = isHowaRole(role);
 
   // Admin-only status transitions
-  const validAdminStatuses = ["viewing_scheduled", "viewing_completed", "viewing_declined"];
+  const validAdminStatuses = ["viewing_requested", "viewing_scheduled", "viewing_completed", "viewing_declined"];
   if (body.status && validAdminStatuses.includes(body.status)) {
     const denied = howaGuard(req);
     if (denied) return NextResponse.json({ error: denied }, { status: 403 });
 
     const patch: Record<string, any> = { status: body.status };
     if (body.adminNotes !== undefined) patch.adminNotes = String(body.adminNotes).trim();
-    if (body.scheduledAt !== undefined) patch.scheduledAt = body.scheduledAt;
+
+    // Preserve existing schedule unless explicitly provided
+    if (body.scheduledAt !== undefined && body.scheduledAt !== "") {
+      patch.scheduledAt = body.scheduledAt;
+    } else if (body.status === "viewing_scheduled" && !viewing.scheduledAt) {
+      // If confirming schedule without custom datetime, default to preferred date and time
+      patch.scheduledAt = viewing.preferredDate && viewing.preferredTime
+        ? `${viewing.preferredDate}T${viewing.preferredTime}`
+        : new Date().toISOString();
+    }
+
+    // If rescheduling to a specific slot, validate availability
+    if (patch.scheduledAt && typeof patch.scheduledAt === "string" && patch.scheduledAt.includes("T")) {
+      const targetDate = patch.scheduledAt.split("T")[0];
+      const targetTime = patch.scheduledAt.split("T")[1].slice(0, 5);
+      const allForListing = await getPropertyViewings({ listingId: viewing.listingId });
+      const conflict = allForListing.find(
+        (v) =>
+          v.id !== numericId &&
+          ["viewing_requested", "viewing_scheduled", "viewing_completed"].includes(v.status) &&
+          v.preferredDate === targetDate &&
+          v.preferredTime === targetTime
+      );
+      if (conflict) {
+        return NextResponse.json(
+          { error: "This date and time are currently unavailable. Please select another available schedule." },
+          { status: 409 }
+        );
+      }
+    }
 
     const updated = await updatePropertyViewing(numericId, patch);
     return NextResponse.json({ viewing: updated });

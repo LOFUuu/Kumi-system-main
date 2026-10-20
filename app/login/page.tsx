@@ -34,7 +34,7 @@ function LoginForm() {
         ? "/admin/residents"
         : next && !next.startsWith("/login") && !next.startsWith("/register")
         ? next
-        : "/";
+        : "/dashboard";
       router.replace(target);
     }
   }, [user, loading, router, next]);

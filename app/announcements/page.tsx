@@ -168,6 +168,7 @@ function isImportantNotice(a: Announcement): boolean {
 export default function AnnouncementsPage() {
   const { user } = useAuth();
   const [items, setItems] = useState<Announcement[]>([]);
+  const [unreadAnnIds, setUnreadAnnIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Search & Filter State
@@ -185,10 +186,33 @@ export default function AnnouncementsPage() {
         .then((res) => setItems(res || []))
         .catch(() => setItems([]))
         .finally(() => setLoading(false));
+
+      api
+        .notifications()
+        .then((res) => {
+          const unread = (res.notifications || [])
+            .filter((n) => !n.isRead && n.type === "announcement" && n.referenceId)
+            .map((n) => Number(n.referenceId));
+          setUnreadAnnIds(unread);
+        })
+        .catch(() => {});
     } else {
       setLoading(false);
     }
   }, [user]);
+
+  const handleOpenModal = (ann: Announcement) => {
+    setActiveModal(ann);
+    if (unreadAnnIds.includes(ann.id)) {
+      api.notifications().then((res) => {
+        const notif = (res.notifications || []).find((n) => Number(n.referenceId) === ann.id && !n.isRead);
+        if (notif) {
+          api.markNotificationRead(notif.id).catch(() => {});
+        }
+      }).catch(() => {});
+      setUnreadAnnIds((prev) => prev.filter((id) => id !== ann.id));
+    }
+  };
 
   // Compute category counts
   const categoryCounts = useMemo(() => {
@@ -386,12 +410,17 @@ export default function AnnouncementsPage() {
                 const category = getAnnouncementCategory(a);
                 const isPriority = isImportantNotice(a);
                 const formattedDate = formatDate(a.postDate);
+                const isUnread = unreadAnnIds.includes(a.id);
 
                 return (
                   <article
                     key={a.id}
-                    onClick={() => setActiveModal(a)}
-                    className="group relative flex flex-col justify-between overflow-hidden rounded-3xl border border-cream-2 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:border-gold/50 hover:shadow-xl hover:shadow-green-900/5 cursor-pointer"
+                    onClick={() => handleOpenModal(a)}
+                    className={`group relative flex flex-col justify-between overflow-hidden rounded-3xl border bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-green-900/5 cursor-pointer ${
+                      isUnread
+                        ? "border-emerald-500 ring-2 ring-emerald-500/20 shadow-md"
+                        : "border-cream-2 hover:border-gold/50"
+                    }`}
                   >
                     {/* Top Gold Border Accent for Important Notices */}
                     {isPriority && (
@@ -411,6 +440,11 @@ export default function AnnouncementsPage() {
                         </span>
 
                         <div className="flex items-center gap-2">
+                          {isUnread && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 text-rose-700 border border-rose-300 px-2.5 py-0.5 text-[11px] font-bold">
+                              ● New / Unread
+                            </span>
+                          )}
                           <span
                             className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold capitalize ${getStatusBadgeStyle(
                               a.status

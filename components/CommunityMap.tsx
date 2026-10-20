@@ -47,6 +47,15 @@ function createBadgeIcon(
   });
 }
 
+// Ensure coordinates point to Phase 5 (Salawag, Dasmariñas: 14.3430, 120.9807)
+export function getPhase5Coords(lat: number, lng: number): [number, number] {
+  if (lat > 14.29 && lat < 14.32) {
+    // Offset from old Phase 1 center (14.3033, 120.9886) to Phase 5 center (14.3430, 120.9807)
+    return [14.3430 + (lat - 14.3033), 120.9807 + (lng - 120.9886)];
+  }
+  return [lat, lng];
+}
+
 function MapController({
   active,
   listings,
@@ -61,12 +70,18 @@ function MapController({
     if (!active) return;
     if (active.type === "listing") {
       const item = listings.find((x) => x.id === active.id);
-      if (item) map.flyTo([item.lat, item.lng], 17, { duration: 0.8 });
+      if (item) {
+        const [cLat, cLng] = getPhase5Coords(item.lat, item.lng);
+        map.flyTo([cLat, cLng], 17, { duration: 0.8 });
+      }
     } else if (active.type === "amenity") {
       const item = amenities.find((x) => x.id === active.id);
-      if (item) map.flyTo([item.lat, item.lng], 17, { duration: 0.8 });
+      if (item) {
+        const [cLat, cLng] = getPhase5Coords(item.lat, item.lng);
+        map.flyTo([cLat, cLng], 17, { duration: 0.8 });
+      }
     } else if (active.type === "landmark") {
-      if (active.id === "gate") map.flyTo([14.3015, 120.9855], 17, { duration: 0.8 });
+      if (active.id === "gate") map.flyTo([14.34473, 120.97973], 17, { duration: 0.8 });
     }
   }, [active, map, listings, amenities]);
   return null;
@@ -82,7 +97,7 @@ function CustomMapControls() {
         <div className="leaflet-control flex flex-col gap-2">
           <button
             type="button"
-            onClick={() => map.flyTo([14.304, 120.988], 16, { duration: 0.6 })}
+            onClick={() => map.flyTo([14.3430, 120.9807], 16, { duration: 0.6 })}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#1a3826] shadow-md border border-[#e8e4da] transition hover:bg-[#edf3ee]"
             title="Reset Map Orientation (North)"
           >
@@ -139,7 +154,7 @@ export default function CommunityMap({
   listings: HouseListing[];
   amenities: Amenity[];
 }) {
-  const center: [number, number] = [14.304, 120.988];
+  const center: [number, number] = [14.3430, 120.9807];
 
   // Helper to categorize amenities into custom 2D badge styles
   const getAmenityCategory = (name: string): "pool" | "court" | "clubhouse" | "park" => {
@@ -167,7 +182,7 @@ export default function CommunityMap({
 
       {/* ── Entrance Gate Landmark ────────────────────────────────────────── */}
       <Marker
-        position={[14.3015, 120.9855]}
+        position={[14.34473, 120.97973]}
         icon={createBadgeIcon(
           "gate",
           "Entrance Gate",
@@ -188,11 +203,12 @@ export default function CommunityMap({
         const isActive = active?.type === "listing" && active.id === l.id;
         const cover = l.images && l.images[0] ? l.images[0] : "https://picsum.photos/seed/home/600/400";
         const shortName = l.houseName.length > 18 ? l.houseName.slice(0, 18) + "…" : l.houseName;
+        const coords = getPhase5Coords(l.lat, l.lng);
 
         return (
           <Marker
             key={`l-${l.id}`}
-            position={[l.lat, l.lng]}
+            position={coords}
             icon={createBadgeIcon("house", shortName, isActive)}
             eventHandlers={{ click: () => onSelect({ type: "listing", id: l.id }) }}
           >
@@ -251,7 +267,7 @@ export default function CommunityMap({
         return (
           <Marker
             key={`a-${a.id}`}
-            position={[a.lat, a.lng]}
+            position={getPhase5Coords(a.lat, a.lng)}
             icon={createBadgeIcon(category, a.name, isActive)}
             eventHandlers={{ click: () => onSelect({ type: "amenity", id: a.id }) }}
           >

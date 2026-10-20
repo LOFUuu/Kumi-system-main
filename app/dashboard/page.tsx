@@ -51,6 +51,7 @@ function formatDate(d?: string) {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { user, loading } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [txns, setTxns] = useState<Transaction[]>([]);
@@ -131,7 +132,12 @@ export default function DashboardPage() {
     );
   }
 
-  const router = useRouter();
+  // Redirect unauthenticated users to login
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login?next=/dashboard");
+    }
+  }, [loading, user, router]);
 
   useEffect(() => {
     if (!loading && user && isAdmin) {
@@ -139,10 +145,10 @@ export default function DashboardPage() {
     }
   }, [loading, user, isAdmin, router]);
 
-  if (isAdmin) {
+  if (!user || isAdmin) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <p className="text-sm text-muted">Redirecting to Admin Panel…</p>
+        <p className="text-sm text-muted">Redirecting…</p>
       </div>
     );
   }

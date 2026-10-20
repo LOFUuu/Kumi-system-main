@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { MapPin, Phone, Mail, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -24,13 +24,21 @@ function SocialIcon({ href = "#", label, children }: { href?: string; label: str
 
 export default function Footer() {
   const { user, loading } = useAuth();
+  const [mounted, setMounted] = useState(false);
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [isSuccess, setIsSuccess] = useState(false);
+  const [year, setYear] = useState<number | null>(null);
 
-  // Hide footer while auth state is resolving or for admin users
-  if (loading || user?.role === "admin") return null;
+  useEffect(() => {
+    setMounted(true);
+    setYear(new Date().getFullYear());
+  }, []);
+
+  // Only gate on admin after mount — avoids server/client mismatch
+  const activeUser = mounted ? user : null;
+  if (mounted && (loading || activeUser?.role === "admin")) return null;
 
   const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,14 +149,14 @@ export default function Footer() {
                 <span className="h-1 w-1 rounded-full bg-[#54b868]" /> Book Amenity
               </Link>
             </li>
-            {user && user.role !== "non_resident" && (
+            {activeUser && activeUser.role !== "non_resident" && (
               <li>
                 <Link href="/my-dues" className="flex items-center gap-2 text-white/70 transition-colors hover:text-[#86efac]">
                   <span className="h-1 w-1 rounded-full bg-[#54b868]" /> My Dues
                 </Link>
               </li>
             )}
-            {user && (
+            {activeUser && (
               <>
                 <li>
                   <Link href="/map" className="flex items-center gap-2 text-white/70 transition-colors hover:text-[#86efac]">
@@ -213,7 +221,7 @@ export default function Footer() {
       {/* Bottom bar */}
       <div className="border-t border-white/10 bg-[#0a2317]">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-5 text-xs text-white/50 md:flex-row">
-          <p>&copy; {new Date().getFullYear()} Mabuhay Homes. All rights reserved.</p>
+          <p>&copy; {year ?? ""} Mabuhay Homes. All rights reserved.</p>
           <div className="flex items-center gap-2 font-display tracking-[2px] text-white/80">
             <div className="h-2 w-2 rounded-full bg-[#54b868]" />
             MABUHAY HOMES

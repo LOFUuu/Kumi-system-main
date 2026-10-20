@@ -10,7 +10,13 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
   const { user, loading } = useAuth();
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login");
+    if (!loading) {
+      if (!user) {
+        router.replace("/login");
+      } else if (user.role !== "admin" && user.role !== "counselor") {
+        router.replace("/dashboard");
+      }
+    }
   }, [loading, user, router]);
 
   if (loading || !user) {

@@ -538,6 +538,64 @@ export async function getAnnouncementsMariaDB(activeOnly = false): Promise<Annou
   }));
 }
 
+export async function createAnnouncementMariaDB(data: any): Promise<AnnouncementType> {
+  const title = String(data.title || "");
+  const content = String(data.content || "");
+  const postDate = String(data.postDate || new Date().toISOString().split("T")[0]);
+  const status = String(data.status || "active");
+  const poster = String(data.poster || "Admin");
+
+  let id = Number(data.id);
+  if (!id) {
+    const rows = await mariaQuery<any[]>(`SELECT MAX(id) as maxId FROM announcements`);
+    id = (rows[0]?.maxId || 0) + 1;
+  }
+
+  await mariaQuery(
+    `INSERT INTO announcements (id, title, content, postDate, status, poster) VALUES (?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE title = VALUES(title), content = VALUES(content), status = VALUES(status)`,
+    [id, title, content, postDate, status, poster]
+  );
+
+  const item: AnnouncementType = { id, title, content, postDate, status: status as any, poster };
+  await enqueueSync("announcements", id, "INSERT", item).catch(() => {});
+  return item;
+}
+
+export async function updateAnnouncementMariaDB(id: number | string, data: any): Promise<AnnouncementType | null> {
+  const fields: string[] = [];
+  const params: any[] = [];
+  if (data.title !== undefined) { fields.push("title = ?"); params.push(String(data.title)); }
+  if (data.content !== undefined) { fields.push("content = ?"); params.push(String(data.content)); }
+  if (data.status !== undefined) { fields.push("status = ?"); params.push(String(data.status)); }
+  if (data.poster !== undefined) { fields.push("poster = ?"); params.push(String(data.poster)); }
+
+  if (fields.length > 0) {
+    params.push(Number(id));
+    await mariaQuery(`UPDATE announcements SET ${fields.join(", ")} WHERE id = ?`, params);
+  }
+
+  const rows = await mariaQuery<any[]>(`SELECT * FROM announcements WHERE id = ?`, [Number(id)]);
+  if (!rows || rows.length === 0) return null;
+  const r = rows[0];
+  const updated: AnnouncementType = {
+    id: r.id,
+    title: r.title,
+    content: r.content || "",
+    postDate: r.postDate || "",
+    status: r.status,
+    poster: r.poster || "HOA",
+  };
+  await enqueueSync("announcements", Number(id), "UPDATE", updated).catch(() => {});
+  return updated;
+}
+
+export async function deleteAnnouncementMariaDB(id: number | string): Promise<boolean> {
+  await mariaQuery(`DELETE FROM announcements WHERE id = ?`, [Number(id)]);
+  await enqueueSync("announcements", Number(id), "DELETE", { id: Number(id) }).catch(() => {});
+  return true;
+}
+
 // ==========================================
 // RESERVATIONS
 // ==========================================
@@ -943,7 +1001,7 @@ export async function getPropertyViewingsMariaDB(filter?: { residentEmail?: stri
     sql += ` AND listingId = ?`;
     params.push(filter.listingId);
   }
-  sql += ` ORDER BY id DESC`;
+  sql += ` ORDER BY createdAt DESC, id DESC`;
   const rows = await mariaQuery<any[]>(sql, params);
   return rows.map((r) => ({
     id: r.id,
@@ -962,6 +1020,17 @@ export async function getPropertyViewingsMariaDB(filter?: { residentEmail?: stri
 }
 
 export async function createPropertyViewingMariaDB(data: any): Promise<PropertyViewingType> {
+  // Check for active reservation on the same property, date, and time
+  const conflict = await mariaQuery<any[]>(
+    `SELECT id FROM property_viewings 
+     WHERE listingId = ? AND preferredDate = ? AND preferredTime = ? 
+     AND status IN ('viewing_requested', 'viewing_scheduled', 'viewing_completed') LIMIT 1`,
+    [data.listingId, data.preferredDate, data.preferredTime]
+  );
+  if (conflict && conflict.length > 0) {
+    throw new Error("This date and time are currently unavailable. Please select another available schedule.");
+  }
+
   let id = data.id || data._id;
   if (!id) {
     const maxRow = await mariaQuery<any[]>(`SELECT MAX(id) as maxId FROM property_viewings`);

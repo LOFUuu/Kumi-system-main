@@ -1,5 +1,6 @@
 import dbConnect from "./mongoose";
 import { mariaQuery, isMariaDBConnected } from "./mariadb";
+import { isOnlineMode } from "./db-router";
 import {
   User,
   Listing,
@@ -24,17 +25,10 @@ export interface SyncStatus {
  * Checks connection state of both databases and counts pending items in queue.
  */
 export async function getSyncStatus(): Promise<SyncStatus> {
-  const isLocalDbConnected = await isMariaDBConnected();
-
-  let isOnline = false;
-  if (process.env.FORCE_OFFLINE !== "true") {
-    try {
-      await dbConnect();
-      isOnline = true;
-    } catch {
-      isOnline = false;
-    }
-  }
+  const [isLocalDbConnected, isOnline] = await Promise.all([
+    isMariaDBConnected(),
+    isOnlineMode(),
+  ]);
 
   let pendingCount = 0;
   let lastSyncedAt: string | undefined = undefined;

@@ -92,9 +92,10 @@ function UpdateModal({
   onClose: () => void;
   onUpdated: (v: PropertyViewing) => void;
 }) {
+  const defaultScheduled = viewing.scheduledAt || (viewing.preferredDate && viewing.preferredTime ? `${viewing.preferredDate}T${viewing.preferredTime}` : "");
   const [action, setAction] = useState<"schedule" | "complete" | "decline" | "">("");
   const [adminNotes, setAdminNotes] = useState(viewing.adminNotes || "");
-  const [scheduledAt, setScheduledAt] = useState(viewing.scheduledAt || "");
+  const [scheduledAt, setScheduledAt] = useState(defaultScheduled);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [visible, setVisible] = useState(false);
@@ -123,7 +124,11 @@ function UpdateModal({
         status: statusMap[action],
         adminNotes,
       };
-      if (action === "schedule" && scheduledAt) payload.scheduledAt = scheduledAt;
+      if (action === "schedule") {
+        payload.scheduledAt = scheduledAt || defaultScheduled;
+      } else if (viewing.scheduledAt) {
+        payload.scheduledAt = viewing.scheduledAt;
+      }
 
       const { viewing: updated } = await api.updateViewing(viewing.id, payload);
       onUpdated(updated);
@@ -276,7 +281,7 @@ function UpdateModal({
 
 // ── Main Page ───────────────────────────────────────────────────────────────────
 
-type SortField = "date" | "property" | "resident" | "status";
+type SortField = "created" | "date" | "property" | "resident" | "status";
 type SortDir = "asc" | "desc";
 type FilterStatus = "all" | ViewingStatus;
 
@@ -285,7 +290,7 @@ export default function AdminViewingsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
-  const [sortField, setSortField] = useState<SortField>("date");
+  const [sortField, setSortField] = useState<SortField>("created");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [updateTarget, setUpdateTarget] = useState<PropertyViewing | null>(null);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -311,7 +316,7 @@ export default function AdminViewingsPage() {
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortField(field); setSortDir("asc"); }
+    else { setSortField(field); setSortDir(field === "created" ? "desc" : "asc"); }
   };
 
   // Counts per status
@@ -339,11 +344,25 @@ export default function AdminViewingsPage() {
     })
     .sort((a, b) => {
       let r = 0;
-      if (sortField === "date") r = (a.preferredDate || "").localeCompare(b.preferredDate || "");
-      else if (sortField === "property") r = a.listingName.localeCompare(b.listingName);
-      else if (sortField === "resident") r = a.residentName.localeCompare(b.residentName);
-      else if (sortField === "status") r = a.status.localeCompare(b.status);
-      return sortDir === "asc" ? r : -r;
+      if (sortField === "created") {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : a.id;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : b.id;
+        r = timeA - timeB;
+      } else if (sortField === "date") {
+        r = (a.preferredDate || "").localeCompare(b.preferredDate || "");
+      } else if (sortField === "property") {
+        r = a.listingName.localeCompare(b.listingName);
+      } else if (sortField === "resident") {
+        r = a.residentName.localeCompare(b.residentName);
+      } else if (sortField === "status") {
+        r = a.status.localeCompare(b.status);
+      }
+      const primary = sortDir === "asc" ? r : -r;
+      if (primary !== 0) return primary;
+      // Stable secondary tie-breaker: newest submission first (created_at DESC)
+      const fallbackA = a.createdAt ? new Date(a.createdAt).getTime() : a.id;
+      const fallbackB = b.createdAt ? new Date(b.createdAt).getTime() : b.id;
+      return fallbackB - fallbackA;
     });
 
   const statusTabs: { key: FilterStatus; label: string; count: number }[] = [

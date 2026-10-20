@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 
 export const dynamic = "force-dynamic";
 
@@ -46,12 +48,24 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Convert to base64 data URL — works on Vercel (no disk write needed).
-  // The data URL is stored as-is in the amenity image field in MongoDB.
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const base64 = buffer.toString("base64");
-  const dataUrl = `data:${file.type};base64,${base64}`;
-
-  // Return both 'url' (for amenities page) and 'path' (for consistency)
-  return NextResponse.json({ url: dataUrl, path: dataUrl }, { status: 200 });
+  // Save to disk in public/uploads/amenity-photos/ to avoid multi-megabyte base64 in MongoDB
+  try {
+    const ext = file.name.split(".").pop() || "jpg";
+    const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${ext}`;
+    const uploadDir = path.join(process.cwd(), "public", "uploads", "amenity-photos");
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    const filePath = path.join(uploadDir, filename);
+    const buffer = Buffer.from(await file.arrayBuffer());
+    fs.writeFileSync(filePath, buffer);
+    const staticUrl = `/uploads/amenity-photos/${filename}`;
+    return NextResponse.json({ url: staticUrl, path: staticUrl }, { status: 200 });
+  } catch {
+    // Fallback to base64 data URL if filesystem is read-only
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const base64 = buffer.toString("base64");
+    const dataUrl = `data:${file.type};base64,${base64}`;
+    return NextResponse.json({ url: dataUrl, path: dataUrl }, { status: 200 });
+  }
 }

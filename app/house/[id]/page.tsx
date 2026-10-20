@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -166,6 +166,7 @@ export default function HouseDetailPage() {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [unavailableSlots, setUnavailableSlots] = useState<{ date: string; time: string; status: string }[]>([]);
 
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -177,6 +178,17 @@ export default function HouseDetailPage() {
       .catch(() => setListing(null))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const loadAvailability = useCallback(() => {
+    if (!Number.isFinite(id)) return;
+    api.viewingAvailability(id)
+      .then((slots) => setUnavailableSlots(slots || []))
+      .catch(() => setUnavailableSlots([]));
+  }, [id]);
+
+  useEffect(() => {
+    loadAvailability();
+  }, [loadAvailability]);
 
   // Load resident's existing viewing for this property
   useEffect(() => {
@@ -199,6 +211,7 @@ export default function HouseDetailPage() {
     setShowScheduleModal(true);
     setStep("form");
     setSubmitError("");
+    loadAvailability();
     setTimeout(() => setScheduleVisible(true), 10);
   };
 
@@ -235,6 +248,17 @@ export default function HouseDetailPage() {
     if (!user) return;
     setSubmitting(true);
     setSubmitError("");
+
+    // Concurrency / Client-side availability check
+    const isSlotBlocked = unavailableSlots.some(
+      (s) => s.date === preferredDate && s.time === preferredTime
+    );
+    if (isSlotBlocked) {
+      setSubmitError("This date and time are currently unavailable. Please select another available schedule.");
+      setSubmitting(false);
+      return;
+    }
+
     try {
       const { viewing } = await api.createViewing({
         listingId: id,
@@ -245,9 +269,11 @@ export default function HouseDetailPage() {
         message,
       });
       setMyViewing(viewing);
+      loadAvailability();
       setStep("success");
     } catch (err: unknown) {
       setSubmitError(err instanceof Error ? err.message : "Failed to submit viewing request.");
+      loadAvailability();
     } finally {
       setSubmitting(false);
     }
@@ -731,14 +757,31 @@ export default function HouseDetailPage() {
                           onChange={(e) => setPreferredTime(e.target.value)}
                         >
                           <option value="">Select time</option>
-                          <option value="08:00">8:00 AM</option>
-                          <option value="09:00">9:00 AM</option>
-                          <option value="10:00">10:00 AM</option>
-                          <option value="11:00">11:00 AM</option>
-                          <option value="13:00">1:00 PM</option>
-                          <option value="14:00">2:00 PM</option>
-                          <option value="15:00">3:00 PM</option>
-                          <option value="16:00">4:00 PM</option>
+                          {[
+                            { value: "08:00", label: "8:00 AM" },
+                            { value: "09:00", label: "9:00 AM" },
+                            { value: "10:00", label: "10:00 AM" },
+                            { value: "11:00", label: "11:00 AM" },
+                            { value: "13:00", label: "1:00 PM" },
+                            { value: "14:00", label: "2:00 PM" },
+                            { value: "15:00", label: "3:00 PM" },
+                            { value: "16:00", label: "4:00 PM" },
+                          ].map((slot) => {
+                            const isOccupied = preferredDate
+                              ? unavailableSlots.some(
+                                  (s) => s.date === preferredDate && s.time === slot.value
+                                )
+                              : false;
+                            return (
+                              <option
+                                key={slot.value}
+                                value={slot.value}
+                                disabled={isOccupied}
+                              >
+                                {slot.label} {isOccupied ? "— Unavailable (Pending / Reserved)" : ""}
+                              </option>
+                            );
+                          })}
                         </select>
                       </div>
                     </div>

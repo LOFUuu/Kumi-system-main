@@ -12,6 +12,7 @@ import type {
   GcashPayment,
   PropertyViewing,
   PaymentConfig,
+  InAppNotification,
 } from "./mock-data";
 
 /** Error thrown by API helpers — carries an optional machine-readable `code`. */
@@ -143,6 +144,19 @@ export const api = {
 
   announcements: (active = false) =>
     getJSON<Announcement[]>(`/api/announcements${active ? "?active=true" : ""}`),
+  announcementCreate: (payload: { title: string; content: string; status?: string; poster?: string; category?: string }) =>
+    send<{ announcement: Announcement }>("/api/announcements", "POST", payload, howaHeaders("admin")),
+  announcementUpdate: (id: number, payload: Partial<Announcement>) =>
+    send<{ announcement: Announcement }>(`/api/announcements/${id}`, "PATCH", payload, howaHeaders("admin")),
+  announcementDelete: (id: number) =>
+    send<{ ok: boolean }>(`/api/announcements/${id}`, "DELETE", undefined, howaHeaders("admin")),
+
+  notifications: () =>
+    getJSON<{ notifications: InAppNotification[]; unreadCount: number }>("/api/notifications", howaHeaders()),
+  markNotificationRead: (id: number | string) =>
+    send<{ success: boolean }>(`/api/notifications/${id}/read`, "POST", undefined, howaHeaders()),
+  markAllNotificationsRead: () =>
+    send<{ success: boolean }>("/api/notifications", "POST", undefined, howaHeaders()),
   users: () => getJSON<User[]>("/api/users"),
   userCreate: (payload: Record<string, unknown>) =>
     send<{ user: User }>("/api/users", "POST", payload, howaHeaders()),
@@ -361,6 +375,12 @@ export const api = {
     getJSON<PropertyViewing[]>(
       `/api/viewings/my${listingId ? `?listingId=${listingId}` : ""}`,
       howaHeaders("resident")
+    ),
+
+  /** Fetch booked / unavailable viewing slots for a listing */
+  viewingAvailability: (listingId: number) =>
+    getJSON<{ date: string; time: string; status: string }[]>(
+      `/api/viewings?availability=true&listingId=${listingId}`
     ),
 
   /** Resident: submit a new viewing request */
