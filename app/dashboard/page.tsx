@@ -72,29 +72,43 @@ export default function DashboardPage() {
 
   const isAdmin = user?.role === "admin" || user?.role === "counselor";
 
+  // Redirect unauthenticated users to login or admins to /admin
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login?next=/dashboard");
+    } else if (!loading && user && isAdmin) {
+      router.replace("/admin");
+    }
+  }, [loading, user, isAdmin, router]);
+
   // Filter items specifically for the current logged-in user
   const myReservations = useMemo(() => {
     if (!user) return [];
+    const userEmail = (user.email || "").toLowerCase();
+    const userFullName = (user.fullName || "").toLowerCase();
     return reservations.filter(
       (r) =>
-        (r.userEmail && r.userEmail === user.email) ||
-        (r.residentName && r.residentName.toLowerCase() === user.fullName.toLowerCase())
+        (r.userEmail && r.userEmail.toLowerCase() === userEmail) ||
+        (r.residentName && userFullName && r.residentName.toLowerCase() === userFullName)
     );
   }, [reservations, user]);
 
   const myTxns = useMemo(() => {
     if (!user) return [];
+    const userEmail = (user.email || "").toLowerCase();
+    const userFullName = (user.fullName || "").toLowerCase();
     return txns.filter(
       (t) =>
-        (t.userEmail && t.userEmail === user.email) ||
-        (t.residentName && t.residentName.toLowerCase() === user.fullName.toLowerCase())
+        (t.userEmail && t.userEmail.toLowerCase() === userEmail) ||
+        (t.residentName && userFullName && t.residentName.toLowerCase() === userFullName)
     );
   }, [txns, user]);
 
   const myDues = useMemo(() => {
-    if (!user) return [];
+    if (!user || !user.fullName) return [];
+    const userFullName = user.fullName.toLowerCase();
     return dues.filter(
-      (d) => d.residentName.toLowerCase() === user.fullName.toLowerCase()
+      (d) => d.residentName && d.residentName.toLowerCase() === userFullName
     );
   }, [dues, user]);
 
@@ -114,41 +128,28 @@ export default function DashboardPage() {
   const adminApprovedPay = txns.filter((t) => t.status === "approved").length;
   const adminRevenue = txns
     .filter((t) => t.status === "approved")
-    .reduce((s, t) => s + t.amount, 0);
+    .reduce((s, t) => s + (t.amount || 0), 0);
   const adminPendingRes = reservations.filter((r) => r.status === "pending").length;
 
   // Resident personal stats
   const myPendingBookings = myReservations.filter((r) => r.status === "pending").length;
   const myApprovedBookings = myReservations.filter((r) => r.status === "approved").length;
-  const myTotalOutstanding = myDues.reduce((s, d) => s + outstandingFor(d), 0);
+  const myTotalOutstanding = myDues.reduce((s, d) => s + (outstandingFor(d) || 0), 0);
   const myTotalPaidDues = myDues.reduce((s, d) => s + (d.amountPaid || 0), 0);
-  const myTotalPayments = myTxns.reduce((s, t) => s + t.amount, 0);
+  const myTotalPayments = myTxns.reduce((s, t) => s + (t.amount || 0), 0);
 
   if (loading) {
     return (
-      <div className="section">
-        <p className="text-muted">Loading your dashboard…</p>
+      <div className="flex min-h-[60vh] items-center justify-center bg-cream/30">
+        <p className="text-sm font-semibold text-muted">Loading your dashboard…</p>
       </div>
     );
   }
 
-  // Redirect unauthenticated users to login
-  useEffect(() => {
-    if (!loading && !user) {
-      router.replace("/login?next=/dashboard");
-    }
-  }, [loading, user, router]);
-
-  useEffect(() => {
-    if (!loading && user && isAdmin) {
-      router.replace("/admin");
-    }
-  }, [loading, user, isAdmin, router]);
-
   if (!user || isAdmin) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <p className="text-sm text-muted">Redirecting…</p>
+      <div className="flex min-h-[60vh] items-center justify-center bg-cream/30">
+        <p className="text-sm font-semibold text-muted">Redirecting…</p>
       </div>
     );
   }
