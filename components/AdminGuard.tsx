@@ -14,7 +14,7 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
       if (!user) {
         router.replace("/login");
       } else if (user.role !== "admin" && user.role !== "counselor") {
-        router.replace("/dashboard");
+        router.replace("/");
       }
     }
   }, [loading, user, router]);

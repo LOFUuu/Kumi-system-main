@@ -32,9 +32,9 @@ function LoginForm() {
         ? "/admin"
         : user.role === "counselor"
         ? "/admin/residents"
-        : next && !next.startsWith("/login") && !next.startsWith("/register")
+        : next && !next.startsWith("/login") && !next.startsWith("/register") && !next.startsWith("/dashboard")
         ? next
-        : "/dashboard";
+        : "/";
       router.replace(target);
     }
   }, [user, loading, router, next]);

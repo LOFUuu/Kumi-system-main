@@ -107,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const roleHome = (role: Role) =>
     role === "admin" ? "/admin" :
     role === "counselor" ? "/admin/residents" :
-    "/dashboard";
+    "/";
 
   const login = async (email: string, password: string, opts?: { next?: string }) => {
     let user: User;
