@@ -80,15 +80,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const cached = readStoredUser();
     if (cached) setUser(cached);
 
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
+    const headers: Record<string, string> = {};
+    if (cached?.id) headers["x-user-id"] = String(cached.id);
+    if (cached?.email) headers["x-user-email"] = cached.email;
+    if (cached?.role) headers["x-user-role"] = cached.role;
+
+    fetch("/api/auth/me", { cache: "no-store", headers })
+      .then((res) => {
+        if (!res.ok) {
+          // If server returns error (e.g. 500, 502, 503 during cold starts),
+          // DO NOT wipe the user session! Keep cached state intact.
+          return null;
+        }
+        return res.json();
+      })
       .then((data) => {
-        if (!active) return;
+        if (!active || data === null) return;
         if (data && data.user) {
           persist(data.user as User);
-        } else {
-          // If server says unauthenticated (no session cookie or invalid session),
-          // sync client state to unauthenticated as well.
+        } else if (data && data.user === null) {
+          // Server explicitly returned 200 with user: null, confirming logged out state
           persist(null);
         }
       })

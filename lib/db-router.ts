@@ -15,6 +15,12 @@ export async function isOnlineMode(): Promise<boolean> {
     return false;
   }
 
+  // If running in cloud/Vercel with MONGODB_URI, we are ALWAYS online.
+  // There is no local MariaDB on Vercel or cloud hosts.
+  if (process.env.VERCEL || (process.env.NODE_ENV === "production" && process.env.MONGODB_URI)) {
+    return true;
+  }
+
   const now = Date.now();
   if (now - lastCheckTime < CACHE_TTL_MS && lastCheckTime > 0) {
     return cachedIsOnline;
@@ -23,14 +29,7 @@ export async function isOnlineMode(): Promise<boolean> {
   lastCheckTime = now;
   try {
     await dbConnect();
-    if (mongoose.connection.readyState === 1 && mongoose.connection.db) {
-      // Ping check with 5000ms timeout (increased for Vercel serverless cold starts)
-      await Promise.race([
-        mongoose.connection.db.admin().ping(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Mongo ping timeout")), 5000)
-        ),
-      ]);
+    if (mongoose.connection.readyState === 1) {
       cachedIsOnline = true;
       return true;
     }
@@ -46,6 +45,10 @@ export async function isOnlineMode(): Promise<boolean> {
  * Mark system as offline immediately (called when an Atlas operation fails or times out).
  */
 export function markOffline(): void {
+  // Never mark offline on Vercel or cloud production where MariaDB is not available.
+  if (process.env.VERCEL || (process.env.NODE_ENV === "production" && process.env.MONGODB_URI)) {
+    return;
+  }
   cachedIsOnline = false;
   lastCheckTime = Date.now();
 }

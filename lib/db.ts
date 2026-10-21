@@ -133,17 +133,25 @@ export async function getListings(filter?: {
       }
 
       const docs = await queryBuilder.lean();
-      const result = docs.map((d: any) => ({
-        ...serialize<HouseListing>(d),
-        createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
-      }));
+      const result = docs.map((d: any) => {
+        const s = serialize<HouseListing>(d);
+        if (Array.isArray(s.images) && s.images.length > 2) {
+          s.images = s.images.slice(0, 2);
+        }
+        return {
+          ...s,
+          createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
+        };
+      });
 
       listingsCache.set(cacheKey, { data: result, expires: Date.now() + LISTINGS_CACHE_TTL });
       return result;
     } catch (e) {
+      if (process.env.VERCEL) return [];
       // fallback to offline
     }
   }
+  if (process.env.VERCEL) return [];
   try {
     const offlineResult = await maria.getListingsMariaDB(filter);
     listingsCache.set(cacheKey, { data: offlineResult, expires: Date.now() + LISTINGS_CACHE_TTL });
@@ -293,7 +301,10 @@ export async function createListing(data: any): Promise<HouseListing> {
       maria.createListingMariaDB({ ...res, id: res.id || id }).catch(() => {});
       clearListingsCache();
       return res;
-    } catch (e) {
+    } catch (e: any) {
+      if (process.env.VERCEL) {
+        throw new Error(e?.message || "Failed to save listing to database.");
+      }
       markOffline();
     }
   }

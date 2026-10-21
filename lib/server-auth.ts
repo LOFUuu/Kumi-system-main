@@ -21,8 +21,9 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<AuthUser |
   }
 
   const findUser = async (filter: { id?: number; email?: string }): Promise<AuthUser | null> => {
-    if (online) {
+    if (online || process.env.MONGODB_URI) {
       try {
+        await dbConnect();
         const query: any = {};
         if (filter.id) query._id = Number(filter.id);
         if (filter.email) query.email = String(filter.email).toLowerCase().trim();
@@ -35,22 +36,24 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<AuthUser |
         // failed online, try local
       }
     }
-    // Offline local database lookup (safely caught if MariaDB is down/not configured)
-    try {
-      if (filter.id) {
-        const u = await getUserByIdMariaDB(filter.id);
-        if (u && u.isActive !== false && !u.isArchived) {
-          return u as AuthUser;
+    // Offline local database lookup (only if not in cloud serverless environment)
+    if (!process.env.VERCEL) {
+      try {
+        if (filter.id) {
+          const u = await getUserByIdMariaDB(filter.id);
+          if (u && u.isActive !== false && !u.isArchived) {
+            return u as AuthUser;
+          }
         }
-      }
-      if (filter.email) {
-        const u = await getUserByEmailForAuthMariaDB(filter.email);
-        if (u && u.isActive !== false && !u.isArchived) {
-          return u as AuthUser;
+        if (filter.email) {
+          const u = await getUserByEmailForAuthMariaDB(filter.email);
+          if (u && u.isActive !== false && !u.isArchived) {
+            return u as AuthUser;
+          }
         }
+      } catch {
+        // MariaDB is down or unreachable
       }
-    } catch {
-      // MariaDB is down or unreachable
     }
     return null;
   };

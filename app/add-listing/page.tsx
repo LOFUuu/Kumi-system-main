@@ -60,6 +60,55 @@ function StepCard({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Client-side image compression so photos upload instantly and listings load in milliseconds
+async function compressImageFile(file: File, maxWidth = 1280, maxHeight = 1280, quality = 0.8): Promise<File> {
+  if (!file.type.startsWith("image/")) return file;
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(file);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob || blob.size >= file.size) {
+              resolve(file);
+            } else {
+              const safeName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+              resolve(new File([blob], safeName, { type: "image/jpeg" }));
+            }
+          },
+          "image/jpeg",
+          quality
+        );
+      };
+      img.onerror = () => resolve(file);
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function AddListingPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -179,16 +228,21 @@ export default function AddListingPage() {
       let proofDocuments: string[] = [];
       let images: string[] = [];
 
-      // Upload proof docs
+      // Upload proof docs (compress any images)
       if (selectedFiles.length > 0) {
-        const { paths } = await api.uploadListingDocs(selectedFiles);
+        const compressedDocs = await Promise.all(
+          selectedFiles.map((f) => (f.type.startsWith("image/") ? compressImageFile(f) : f))
+        );
+        const { paths } = await api.uploadListingDocs(compressedDocs);
         proofDocuments = paths;
       }
 
-      // Upload property photos via listing docs endpoint (same multipart handler)
+      // Upload property photos via listing docs endpoint (compress all photos)
       const photoFiles: File[] = [];
-      if (mainPhoto) photoFiles.push(mainPhoto);
-      photoFiles.push(...additionalPhotos);
+      if (mainPhoto) photoFiles.push(await compressImageFile(mainPhoto));
+      for (const p of additionalPhotos) {
+        photoFiles.push(await compressImageFile(p));
+      }
       if (photoFiles.length > 0) {
         const { paths } = await api.uploadListingDocs(photoFiles);
         images = paths;
