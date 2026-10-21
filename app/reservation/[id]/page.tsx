@@ -697,6 +697,14 @@ function BookingForm() {
             </div>
           </div>
 
+          {/* 48-Hour Cancellation Policy Notice */}
+          <div className="flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50/80 p-4 text-xs text-blue-950 shadow-2xs">
+            <Clock className="h-4 w-4 text-blue-700 flex-shrink-0 mt-0.5" />
+            <div className="leading-relaxed">
+              <strong className="font-bold text-blue-950">48-Hour Cancellation Policy:</strong> Amenity bookings can be cancelled online with slot release up to <strong>48 hours before</strong> your scheduled session in your History page. Cancellations within 48 hours require contacting the HOA office directly.
+            </div>
+          </div>
+
           <button
             type="submit"
             disabled={submitting || dateBlocked}

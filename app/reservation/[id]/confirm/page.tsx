@@ -251,6 +251,19 @@ function ConfirmBody() {
                 </div>
               </div>
 
+              {/* 48-Hour Policy Reminder in Confirmation */}
+              <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 flex items-start gap-3">
+                <Clock className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-700" />
+                <div className="text-xs text-blue-900 leading-relaxed">
+                  <p className="font-bold text-sm text-blue-950 mb-0.5">48-Hour Cancellation Policy</p>
+                  You can track, review, or cancel this booking anytime up to <strong>48 hours before</strong> your schedule in your{" "}
+                  <Link href="/history" className="font-bold underline text-blue-800 hover:text-blue-950">
+                    History
+                  </Link>{" "}
+                  tab. Cancellations within 48 hours require contacting the HOA office directly.
+                </div>
+              </div>
+
               {/* Booking Summary */}
               <div className="rounded-2xl border border-cream-2 bg-cream/30 p-4">
                 <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-muted">Reservation Summary</h3>
@@ -541,6 +554,14 @@ function ConfirmBody() {
                 <p className="text-[11px] text-amber-800 pl-6 leading-relaxed">
                   Once submitted, your payment and reservation will be sent for verification. The HOA admin will review your receipt and update your booking status.
                 </p>
+              </div>
+
+              {/* 48-Hour Cancellation Policy Callout */}
+              <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 flex items-start gap-3">
+                <Clock className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-700" />
+                <div className="text-xs text-blue-900 leading-relaxed">
+                  <strong className="font-bold text-blue-950">48-Hour Cancellation Policy:</strong> Once booked, cancellations are allowed online up to <strong>48 hours prior</strong> to the reservation date in your History page.
+                </div>
               </div>
 
               {/* Action Error Message */}

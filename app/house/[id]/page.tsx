@@ -344,6 +344,15 @@ export default function HouseDetailPage() {
   const isViewingRequested = viewingStatus === "viewing_requested";
   const isViewingCompleted = viewingStatus === "viewing_completed";
 
+  // 48-Hour Cancellation Eligibility for this viewing
+  const viewingScheduledTimeStr = myViewing
+    ? (myViewing.scheduledAt || (myViewing.preferredDate && myViewing.preferredTime ? `${myViewing.preferredDate}T${myViewing.preferredTime.length === 4 ? `0${myViewing.preferredTime}` : myViewing.preferredTime}:00` : (myViewing.preferredDate ? `${myViewing.preferredDate}T09:00:00` : "")))
+    : "";
+  const viewingCancellationEligibility = viewingScheduledTimeStr
+    ? getCancellationEligibility(viewingScheduledTimeStr, false)
+    : null;
+  const isViewingCancellable = (isViewingRequested || isViewingScheduled) && Boolean(viewingCancellationEligibility?.canCancel ?? viewingCancellationEligibility?.eligible);
+
   // Transaction status — owner-controlled (reserved / sold_rented block viewings)
   const txStatus = (listing.transactionStatus as string) ?? "available";
   const isReserved = txStatus === "reserved";
@@ -556,6 +565,38 @@ export default function HouseDetailPage() {
                     </div>
                   </div>
                   <StatusFlow current="viewing_scheduled" />
+
+                  {/* 48-Hour Cancellation Policy Badge */}
+                  {viewingCancellationEligibility && (
+                    <div className={`mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl p-3 text-xs ${
+                      isViewingCancellable
+                        ? "bg-blue-100/70 border border-blue-200 text-blue-900"
+                        : "bg-amber-100/70 border border-amber-300 text-amber-950"
+                    }`}>
+                      <span className="flex items-start sm:items-center gap-1.5 font-medium leading-relaxed">
+                        <Clock className={`h-4 w-4 shrink-0 mt-0.5 sm:mt-0 ${isViewingCancellable ? "text-blue-700" : "text-amber-700"}`} />
+                        {isViewingCancellable ? (
+                          <span>
+                            <strong>48-Hour Cancellation Policy:</strong> Free online cancellation available until{" "}
+                            <strong>{viewingCancellationEligibility.deadlineFormatted}</strong>.
+                          </span>
+                        ) : (
+                          <span>
+                            <strong>48-Hour Policy:</strong> Non-cancellable online (&lt;48h remaining). Please contact HOA directly for changes.
+                          </span>
+                        )}
+                      </span>
+                      {isViewingCancellable && (
+                        <button
+                          type="button"
+                          onClick={() => setShowCancelModal(true)}
+                          className="font-bold text-rose-700 hover:text-rose-800 underline text-xs shrink-0 self-start sm:self-auto"
+                        >
+                          Cancel Appointment
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -578,6 +619,38 @@ export default function HouseDetailPage() {
                     has been submitted. The HOA/Owner will confirm your viewing appointment shortly.
                   </p>
                   <StatusFlow current="viewing_requested" />
+
+                  {/* 48-Hour Cancellation Policy Badge */}
+                  {viewingCancellationEligibility && (
+                    <div className={`mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl p-3 text-xs ${
+                      isViewingCancellable
+                        ? "bg-amber-100/70 border border-amber-300 text-amber-900"
+                        : "bg-amber-100/50 border border-amber-200 text-amber-950"
+                    }`}>
+                      <span className="flex items-start sm:items-center gap-1.5 font-medium leading-relaxed">
+                        <Clock className={`h-4 w-4 shrink-0 mt-0.5 sm:mt-0 ${isViewingCancellable ? "text-amber-700" : "text-amber-800"}`} />
+                        {isViewingCancellable ? (
+                          <span>
+                            <strong>48-Hour Cancellation Policy:</strong> Free online cancellation available until{" "}
+                            <strong>{viewingCancellationEligibility.deadlineFormatted}</strong>.
+                          </span>
+                        ) : (
+                          <span>
+                            <strong>48-Hour Policy:</strong> Non-cancellable online (&lt;48h remaining). Please contact HOA directly for changes.
+                          </span>
+                        )}
+                      </span>
+                      {isViewingCancellable && (
+                        <button
+                          type="button"
+                          onClick={() => setShowCancelModal(true)}
+                          className="font-bold text-rose-700 hover:text-rose-800 underline text-xs shrink-0 self-start sm:self-auto"
+                        >
+                          Cancel Appointment
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -671,7 +744,7 @@ export default function HouseDetailPage() {
                 </button>
               </>
             ) : isViewingScheduled || isViewingRequested ? (
-              /* Viewing Scheduled / Requested state -> Primary: View Appointment, Secondary: Contact HOA */
+              /* Viewing Scheduled / Requested state -> Primary: View Appointment, Secondary: Contact HOA, Tertiary: Cancel */
               <>
                 <button
                   onClick={openDetailsModal}
@@ -687,6 +760,27 @@ export default function HouseDetailPage() {
                   <Phone className="h-4 w-4" />
                   Contact HOA
                 </button>
+                {isViewingCancellable ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelModal(true)}
+                    className="w-full sm:w-auto rounded-xl border border-rose-200 bg-rose-50 px-4 py-3.5 text-sm font-bold text-rose-700 hover:bg-rose-100 transition shadow-2xs flex items-center justify-center gap-1.5"
+                    title="Cancel viewing under 48-hour policy"
+                  >
+                    <X className="h-4 w-4" />
+                    Cancel Appointment
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full sm:w-auto rounded-xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-xs font-semibold text-gray-400 cursor-not-allowed flex items-center justify-center gap-1.5"
+                    title={viewingCancellationEligibility?.reason || "Viewing cannot be cancelled online within 48 hours of scheduled time. Please contact HOA directly."}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Non-cancellable (&lt;48h)
+                  </button>
+                )}
               </>
             ) : (
               /* Initial state / No active viewing -> Primary: Schedule Viewing, Secondary: Contact HOA */
@@ -995,13 +1089,13 @@ export default function HouseDetailPage() {
 
               {/* 48-Hour Cancellation Action */}
               {(() => {
-                const scheduledStartTime = myViewing.scheduledAt || (myViewing.preferredDate && myViewing.preferredTime ? `${myViewing.preferredDate}T${myViewing.preferredTime}:00+08:00` : "");
-                const eligibility = getCancellationEligibility(scheduledStartTime, false);
-                const isCancellable = (myViewing.status === "viewing_requested" || myViewing.status === "viewing_scheduled") && Boolean(eligibility.canCancel ?? eligibility.eligible);
-
-                if (isCancellable) {
+                if (isViewingCancellable) {
                   return (
-                    <div className="pt-2 border-t border-cream-2">
+                    <div className="pt-2 border-t border-cream-2 space-y-1.5">
+                      <div className="text-[11px] text-green-dark flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5 text-green-mid" />
+                        <span>Online cancellation permitted until <strong>{viewingCancellationEligibility?.deadlineFormatted}</strong>.</span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => setShowCancelModal(true)}
@@ -1014,8 +1108,8 @@ export default function HouseDetailPage() {
                 }
                 if (myViewing.status === "viewing_requested" || myViewing.status === "viewing_scheduled") {
                   return (
-                    <div className="pt-2 text-center text-[11px] text-muted italic">
-                      Viewing cannot be cancelled online within 48 hours of scheduled time. Please contact HOA directly.
+                    <div className="pt-2 border-t border-cream-2 text-center text-[11px] text-amber-900 bg-amber-50 rounded-xl p-2.5 border border-amber-200">
+                      ⚠️ <strong>48-Hour Policy:</strong> {viewingCancellationEligibility?.reason || "Viewing cannot be cancelled online within 48 hours of scheduled time. Please contact HOA directly."}
                     </div>
                   );
                 }
