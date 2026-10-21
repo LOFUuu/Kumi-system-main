@@ -564,8 +564,9 @@ export async function unarchiveAmenity(id: number | string): Promise<boolean> {
 }
 
 // Compute the set of dates that are already blocked for an amenity.
-// - A private approved reservation blocks the entire day.
-// - A public approved reservation blocks the day once booked pax >= capacity.
+// - A private pending/approved reservation blocks the entire day.
+// - A public pending/approved reservation blocks the day once booked pax >= capacity.
+// - Releasing a slot happens automatically when cancelled or declined.
 export async function getBlockedDates(amenityId: number): Promise<string[]> {
   const online = await isOnlineMode();
   if (online) {
@@ -581,11 +582,22 @@ export async function getBlockedDates(amenityId: number): Promise<string[]> {
         ],
       };
 
-      const [approvedDates, publicGroups, amenity] = await Promise.all([
-        Reservation.find({ amenityId, reservationType: "private", status: "approved", ...nonArchived } as any)
-          .distinct("date"),
+      const [privateDates, publicGroups, amenity] = await Promise.all([
+        Reservation.find({
+          amenityId,
+          reservationType: "private",
+          status: { $in: ["approved", "pending"] },
+          ...nonArchived,
+        } as any).distinct("date"),
         Reservation.aggregate<{ _id: string; pax: number }>([
-          { $match: { amenityId, reservationType: "public", status: "approved", ...nonArchived } },
+          {
+            $match: {
+              amenityId,
+              reservationType: "public",
+              status: { $in: ["approved", "pending"] },
+              ...nonArchived,
+            },
+          },
           { $group: { _id: "$date", pax: { $sum: "$paxCount" } } },
         ]),
         Amenity.findOne({ _id: Number(amenityId) } as any),
@@ -596,7 +608,7 @@ export async function getBlockedDates(amenityId: number): Promise<string[]> {
         .filter((g) => g._id && g.pax >= capacity)
         .map((g) => g._id);
 
-      return Array.from(new Set([...approvedDates, ...publicFull])).filter(Boolean);
+      return Array.from(new Set([...privateDates, ...publicFull])).filter(Boolean);
     } catch (e) {}
   }
   // Offline: compute blocked dates from local MariaDB
@@ -605,11 +617,11 @@ export async function getBlockedDates(amenityId: number): Promise<string[]> {
     const capacity = amenityRow?.maxCapacity ?? 0;
 
     const privateRows = await mariaQuery<any[]>(
-      `SELECT date FROM reservations WHERE amenityId = ? AND reservationType = 'private' AND status = 'approved' AND isArchived = 0`,
+      `SELECT date FROM reservations WHERE amenityId = ? AND reservationType = 'private' AND status IN ('approved', 'pending') AND isArchived = 0`,
       [amenityId]
     );
     const publicRows = await mariaQuery<any[]>(
-      `SELECT date, SUM(paxCount) as pax FROM reservations WHERE amenityId = ? AND reservationType = 'public' AND status = 'approved' AND isArchived = 0 GROUP BY date`,
+      `SELECT date, SUM(paxCount) as pax FROM reservations WHERE amenityId = ? AND reservationType = 'public' AND status IN ('approved', 'pending') AND isArchived = 0 GROUP BY date`,
       [amenityId]
     );
 
@@ -622,6 +634,7 @@ export async function getBlockedDates(amenityId: number): Promise<string[]> {
 }
 
 // True if `date` is available for a new public booking with the given pax.
+// Considers both pending and approved bookings; releases upon cancellation or decline.
 export async function isDateAvailableForPublic(
   amenityId: number,
   date: string,
@@ -642,14 +655,22 @@ export async function isDateAvailableForPublic(
           { isArchived: { $exists: false } },
         ],
       };
-      const [amenity, approvedPaxDoc] = await Promise.all([
+      const [amenity, bookedPaxDoc] = await Promise.all([
         Amenity.findOne({ _id: Number(amenityId) } as any),
         Reservation.aggregate<{ pax: number }>([
-          { $match: { amenityId, reservationType: "public", status: "approved", date, ...nonArchived } },
+          {
+            $match: {
+              amenityId,
+              reservationType: "public",
+              status: { $in: ["approved", "pending"] },
+              date,
+              ...nonArchived,
+            },
+          },
           { $group: { _id: null, pax: { $sum: "$paxCount" } } },
         ]),
       ]);
-      const used = approvedPaxDoc[0]?.pax ?? 0;
+      const used = bookedPaxDoc[0]?.pax ?? 0;
       return used + Math.max(1, pax) <= (amenity?.maxCapacity ?? 0);
     } catch (e) {}
   }
@@ -657,7 +678,7 @@ export async function isDateAvailableForPublic(
   try {
     const amenityRow = await maria.getAmenityMariaDB(amenityId);
     const paxRows = await mariaQuery<any[]>(
-      `SELECT SUM(paxCount) as pax FROM reservations WHERE amenityId = ? AND reservationType = 'public' AND status = 'approved' AND date = ? AND isArchived = 0`,
+      `SELECT SUM(paxCount) as pax FROM reservations WHERE amenityId = ? AND reservationType = 'public' AND status IN ('approved', 'pending') AND date = ? AND isArchived = 0`,
       [amenityId, date]
     );
     const used = Number(paxRows[0]?.pax) || 0;
@@ -866,6 +887,70 @@ export async function createAnnouncementNotifications(announcement: Announcement
     }
   } catch (err) {
     console.error("[Notification] createAnnouncementNotifications error:", err);
+  }
+}
+
+export async function notifyAdmins(data: {
+  title: string;
+  message: string;
+  type?: "viewing" | "reservation" | "general";
+  referenceId?: number | string;
+  link?: string;
+}): Promise<void> {
+  try {
+    await dbConnect();
+    const adminUsers = await (User as any).find({
+      role: "admin",
+      isActive: { $ne: false },
+      $or: [{ isArchived: false }, { isArchived: { $exists: false } }],
+    }).lean();
+
+    for (const admin of adminUsers) {
+      const uId = (admin as any)._id ?? (admin as any).id;
+      await createNotification({
+        userId: uId,
+        userEmail: admin.email,
+        title: data.title,
+        message: data.message,
+        type: data.type || "general",
+        referenceId: data.referenceId,
+        link: data.link || "",
+      });
+    }
+  } catch (err) {
+    console.error("[Notification] notifyAdmins error:", err);
+  }
+}
+
+export async function notifyUserByEmail(
+  email: string,
+  data: {
+    title: string;
+    message: string;
+    type?: "viewing" | "reservation" | "general";
+    referenceId?: number | string;
+    link?: string;
+  }
+): Promise<void> {
+  if (!email) return;
+  try {
+    await dbConnect();
+    const userDoc = await (User as any).findOne({
+      email: email.toLowerCase().trim(),
+    }).lean();
+
+    const uId = (userDoc as any)?._id ?? (userDoc as any)?.id ?? email;
+    await createNotification({
+      userId: uId,
+      userEmail: email.toLowerCase().trim(),
+      title: data.title,
+      message: data.message,
+      type: data.type || "general",
+      referenceId: data.referenceId,
+      link: data.link || "",
+    });
+  } catch (err) {
+    console.error("[Notification] notifyUserByEmail error:", err);
   }
 }
 

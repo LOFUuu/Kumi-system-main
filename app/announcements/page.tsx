@@ -291,23 +291,23 @@ export default function AnnouncementsPage() {
   }
 
   return (
-    <div className="section pb-24">
+    <div className="mx-auto w-full max-w-6xl px-4 pt-9 pb-20">
       {/* ── 1. ANNOUNCEMENT PAGE HEADER ───────────────────────────────────────────── */}
-      <div className="mx-auto max-w-6xl">
+      <div className="w-full">
         <Reveal>
-          <div className="text-center">
-            <h1 className="font-serif text-4xl sm:text-5xl font-bold text-green-dark tracking-tight">
+          <div className="text-left">
+            <h1 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-bold text-green-dark tracking-tight">
               Announcements
             </h1>
-            <p className="mx-auto mt-3 max-w-xl text-sm sm:text-base text-muted leading-relaxed">
+            <p className="mt-2 text-sm sm:text-base text-muted leading-relaxed max-w-2xl">
               Stay informed with the latest news, notices, events, and important updates from Mabuhay Homes.
             </p>
-            <div className="mx-auto mt-4 h-1 w-16 rounded-full bg-gold/60" />
+            <div className="mt-3.5 h-1 w-14 rounded-full bg-gold/70" />
           </div>
         </Reveal>
 
         {/* ── 2. FILTER & SEARCH TOOLBAR ────────────────────────────────────────── */}
-        <Reveal className="mt-10" y={20}>
+        <Reveal className="mt-6" y={20}>
           <div className="rounded-3xl border border-cream-2 bg-white p-4 sm:p-5 shadow-sm space-y-4">
             {/* Top row: Search input & counts */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -372,7 +372,7 @@ export default function AnnouncementsPage() {
         </Reveal>
 
         {/* ── 3. ANNOUNCEMENT CARDS GRID & LOADING SKELETON ───────────────────── */}
-        <div className="mt-8">
+        <div className="mt-6">
           {loading ? (
             /* 9. LOADING STATE */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -416,10 +416,10 @@ export default function AnnouncementsPage() {
                   <article
                     key={a.id}
                     onClick={() => handleOpenModal(a)}
-                    className={`group relative flex flex-col justify-between overflow-hidden rounded-3xl border bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-green-900/5 cursor-pointer ${
+                    className={`group relative flex flex-col justify-between overflow-hidden rounded-3xl border bg-white p-6 shadow-[0_4px_20px_-2px_rgba(18,63,42,0.05)] transition-all duration-300 ease-out hover:-translate-y-[6px] hover:shadow-[0_16px_32px_-4px_rgba(18,63,42,0.11),0_6px_12px_-2px_rgba(0,0,0,0.03)] will-change-transform cursor-pointer ${
                       isUnread
-                        ? "border-emerald-500 ring-2 ring-emerald-500/20 shadow-md"
-                        : "border-cream-2 hover:border-gold/50"
+                        ? "border-emerald-500 ring-2 ring-emerald-500/20"
+                        : "border-cream-2"
                     }`}
                   >
                     {/* Top Gold Border Accent for Important Notices */}

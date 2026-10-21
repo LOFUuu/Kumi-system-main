@@ -74,6 +74,16 @@ const amenitySchema = new Schema<AmenityType>(
     image: String,
     lat: Number,
     lng: Number,
+    // ── Dynamic Pricing Configuration ──────────────────────────────────────────
+    pricingModel: {
+      type: String,
+      enum: ["per_head", "fixed", "base_plus_extra"],
+      default: "per_head",
+    },
+    basePrice: { type: Number, default: 0 },
+    pricePerPerson: { type: Number, default: 0 },
+    includedGuests: { type: Number, default: 1 },
+    extraGuestFee: { type: Number, default: 0 },
   } as any,
   { timestamps: true }
 );
@@ -140,12 +150,19 @@ const reservationSchema = new Schema<ReservationType>(
     paxCount: { type: Number, default: 1 },
     downpayment: { type: Number, default: 0 },
     totalAmount: { type: Number, default: 0 },
-    status: { type: String, enum: ["pending", "approved", "declined"], required: true },
+    status: { type: String, enum: ["pending", "approved", "declined", "cancelled"], required: true },
     notes: String,
     userEmail: String,
     approvedAt: String,
     gcashRef: String,
     receiptPath: String,
+    // ── Dynamic Pricing Snapshot ─────────────────────────────────────────────
+    pricingModel: { type: String, default: "per_head" },
+    pricingBreakdown: { type: Schema.Types.Mixed },
+    // ── 48-Hour Cancellation Tracking ───────────────────────────────────────
+    cancelledAt: { type: String, default: null },
+    cancelledBy: { type: String, default: null },
+    cancelReason: { type: String, default: null },
     // ── Archiving ───────────────────────────────────────────────────────────
     isArchived: { type: Boolean, default: false },
     archivedAt: { type: String, default: null },
@@ -232,12 +249,23 @@ const propertyViewingSchema = new Schema<PropertyViewingType>(
     message: { type: String, default: "" },
     status: {
       type: String,
-      enum: ["viewing_requested", "viewing_scheduled", "viewing_completed", "viewing_declined"],
+      enum: [
+        "viewing_requested",
+        "viewing_scheduled",
+        "viewing_completed",
+        "viewing_declined",
+        "viewing_cancelled",
+        "cancelled",
+      ],
       default: "viewing_requested",
       required: true,
     },
     adminNotes: { type: String, default: "" },
     scheduledAt: { type: String, default: null },
+    // ── 48-Hour Cancellation Tracking ───────────────────────────────────────
+    cancelledAt: { type: String, default: null },
+    cancelledBy: { type: String, default: null },
+    cancelReason: { type: String, default: null },
   } as any,
   { timestamps: true }
 );
@@ -259,10 +287,11 @@ const notificationSchema = new Schema<NotificationType>(
 
 // Clear cached models in dev if schema path is missing
 if (models.Listing && !(models.Listing.schema as any).path("transactionStatus")) delete (models as any).Listing;
-if (models.Amenity && !(models.Amenity.schema as any).path("isArchived")) delete (models as any).Amenity;
+if (models.Amenity && !(models.Amenity.schema as any).path("pricingModel")) delete (models as any).Amenity;
 if (models.User && !(models.User.schema as any).path("needsReview")) delete (models as any).User;
 if (models.Transaction && !(models.Transaction.schema as any).path("isArchived")) delete (models as any).Transaction;
-if (models.Reservation && !(models.Reservation.schema as any).path("isArchived")) delete (models as any).Reservation;
+if (models.Reservation && !(models.Reservation.schema as any).path("cancelledAt")) delete (models as any).Reservation;
+if (models.PropertyViewing && !(models.PropertyViewing.schema as any).path("cancelledAt")) delete (models as any).PropertyViewing;
 if (models.Notification && !(models.Notification.schema as any).path("type")) delete (models as any).Notification;
 
 export const Listing = (models.Listing as mongoose.Model<HouseListing>) || model<HouseListing>("Listing", listingSchema);

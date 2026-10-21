@@ -67,6 +67,16 @@ const STATUS_CONFIG: Record<
     color: "bg-rose-100 text-rose-700 border-rose-200",
     icon: XCircle,
   },
+  viewing_cancelled: {
+    label: "Cancelled",
+    color: "bg-neutral-100 text-neutral-700 border-neutral-300",
+    icon: XCircle,
+  },
+  cancelled: {
+    label: "Cancelled",
+    color: "bg-neutral-100 text-neutral-700 border-neutral-300",
+    icon: XCircle,
+  },
 };
 
 function StatusBadge({ status }: { status: ViewingStatus }) {

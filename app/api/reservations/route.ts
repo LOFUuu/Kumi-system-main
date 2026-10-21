@@ -8,11 +8,13 @@ import {
   createReservation,
   createTransaction,
   deleteReservation,
+  notifyAdmins,
 } from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/server-auth";
 import { createPayment } from "@/lib/payment";
 import {
   getBookingTotal,
+  getBookingBreakdown,
   type Reservation as ReservationType,
 } from "@/lib/mock-data";
 
@@ -102,7 +104,8 @@ export async function POST(req: NextRequest) {
 
   const role = String(body.role || "non_resident");
   const isResident = RESIDENT_ROLES.includes(role);
-  const totalAmount = getBookingTotal(amenity, bookingType, reservationType, pax, isResident);
+  const breakdown = getBookingBreakdown(amenity, bookingType, reservationType, pax, isResident);
+  const totalAmount = breakdown.totalAmount;
   const downpayment =
     reservationType === "private" ? amenity.downpaymentPrivate : amenity.downpayment;
 
@@ -122,7 +125,18 @@ export async function POST(req: NextRequest) {
     userEmail: userEmail || undefined,
     gcashRef: gcashRef || undefined,
     receiptPath: receiptPath || undefined,
+    pricingModel: breakdown.model,
+    pricingBreakdown: breakdown,
   });
+
+  // Notify HOA Administrators about new reservation
+  notifyAdmins({
+    title: "New Amenity Reservation Request",
+    message: `${residentName} requested a ${reservationType} booking for ${amenity.name} on ${date} (${bookingType === "day" ? "Day" : "Night"} Session, ${pax} pax). Total: ₱${totalAmount.toLocaleString()}.`,
+    type: "reservation",
+    referenceId: reservation.id,
+    link: "/admin/reservations",
+  }).catch(() => {});
 
   const amenityGcash = await getPaymentConfig("amenity");
   const { payment, placeholder } = createPayment(downpayment, amenityGcash.accountNumber);

@@ -25,6 +25,7 @@ import { buildPlaceholderQR, HOAGCashNumber } from "@/lib/payment";
 import AvailabilityCalendar, { CalendarDateStatus } from "@/components/AvailabilityCalendar";
 import {
   formatPHP,
+  getBookingBreakdown,
   getBookingTotal,
   getRate,
   type Amenity,
@@ -153,9 +154,12 @@ function BookingForm() {
   }, [id, reservationType, bookingType, pax]);
 
   const rate = amenity ? getRate(amenity, bookingType, isResident) : 0;
-  const total = amenity
+  const breakdown = amenity
+    ? getBookingBreakdown(amenity, bookingType, reservationType, pax, isResident)
+    : null;
+  const total = breakdown?.totalAmount ?? (amenity
     ? getBookingTotal(amenity, bookingType, reservationType, pax, isResident)
-    : 0;
+    : 0);
   const downpayment = amenity
     ? (reservationType === "private" ? amenity.downpaymentPrivate : amenity.downpayment)
     : 0;
@@ -551,17 +555,39 @@ function BookingForm() {
 
                   {/* Pricing info under time slots */}
                   {date && !dateBlocked && (
-                    <div className="mt-3 rounded border border-[#ddd] bg-[#f9f9f9] px-4 py-2.5 text-xs text-[#555]">
+                    <div className="mt-3 rounded-xl border border-cream-2 bg-cream/30 p-3 text-xs text-[#555] space-y-1.5">
                       <div className="flex justify-between">
-                        <span>Rate:</span>
-                        <span className="font-bold text-[#333]">
+                        <span className="font-semibold text-green-dark">Pricing Model:</span>
+                        <span className="font-bold text-green-mid uppercase text-[11px]">
                           {reservationType === "private"
-                            ? formatPHP(amenity?.ratePrivate || 0) + " flat"
-                            : formatPHP(rate) + "/head"}
+                            ? "Private Flat Rate"
+                            : breakdown?.model === "fixed"
+                            ? "Fixed Fee"
+                            : breakdown?.model === "base_plus_extra"
+                            ? "Base + Extra Guests"
+                            : "Per-Head"}
                         </span>
                       </div>
-                      <div className="flex justify-between mt-1">
-                        <span>Reservation type:</span>
+                      <div className="flex justify-between">
+                        <span>Rate Breakdown:</span>
+                        <span className="font-bold text-[#333]">
+                          {breakdown?.summaryText || (reservationType === "private"
+                            ? formatPHP(amenity?.ratePrivate || 0) + " flat"
+                            : formatPHP(rate) + "/head")}
+                        </span>
+                      </div>
+                      {reservationType === "public" && breakdown?.model === "base_plus_extra" && (
+                        <div className="text-[11px] text-muted border-t border-cream-2 pt-1">
+                          Base covers up to {breakdown.includedGuests} guests ({formatPHP(breakdown.basePrice)}).
+                          {breakdown.extraGuests > 0 ? (
+                            <span className="text-green-dark font-medium"> + {breakdown.extraGuests} extra guest{breakdown.extraGuests > 1 ? "s" : ""} at {formatPHP(breakdown.extraGuestFee)}/head ({formatPHP(breakdown.extraGuestsCost || 0)}).</span>
+                          ) : (
+                            <span> No extra guest fee for current party size.</span>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex justify-between border-t border-cream-2 pt-1">
+                        <span>Reservation Type:</span>
                         <span className="font-bold text-[#333] capitalize">{reservationType}</span>
                       </div>
                     </div>
@@ -577,16 +603,26 @@ function BookingForm() {
           </div>
 
           {/* Pricing summary */}
-          <div className={`flex items-center justify-between rounded-2xl p-5 text-white ${reservationType === "private" ? "bg-gold-muted" : "bg-green-mid"}`}>
+          <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl p-5 text-white ${reservationType === "private" ? "bg-gold-muted" : "bg-green-mid"}`}>
             <div>
-              <div className="text-sm opacity-90">
-                {reservationType === "private"
+              <div className="text-sm font-semibold opacity-95">
+                {breakdown?.summaryText || (reservationType === "private"
                   ? `Private — ${bookingType === "day" ? "Day" : "Night"} Session (Flat Rate)`
-                  : `${pax} person${pax > 1 ? "s" : ""} × ${bookingType === "day" ? "Day" : "Night"} (${formatPHP(rate)}/head)`}
+                  : `${pax} person${pax > 1 ? "s" : ""} × ${bookingType === "day" ? "Day" : "Night"} (${formatPHP(rate)}/head)`)}
               </div>
-              <div className="text-[11px] opacity-75">+ {formatPHP(downpayment)} downpayment required to confirm</div>
+              <div className="text-[11px] opacity-80 mt-1">
+                {reservationType === "public" && breakdown?.model === "base_plus_extra" && breakdown.extraGuests > 0 && (
+                  <span className="block font-medium">
+                    Base: {formatPHP(breakdown.basePrice)} (up to {breakdown.includedGuests} pax) + Extra: {breakdown.extraGuests} × {formatPHP(breakdown.extraGuestFee)}
+                  </span>
+                )}
+                + {formatPHP(downpayment)} downpayment required to confirm
+              </div>
             </div>
-            <div className="font-serif text-3xl font-bold">{formatPHP(total)}</div>
+            <div className="sm:text-right">
+              <div className="text-[11px] uppercase tracking-wider opacity-75 font-bold">Total Price</div>
+              <div className="font-serif text-3xl font-bold">{formatPHP(total)}</div>
+            </div>
           </div>
 
           {/* GCash downpayment instructions */}

@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Increase the body size limit for API routes to handle base64 receipt uploads
   experimental: {
+    cpus: 2,
     serverActions: {
       bodySizeLimit: "10mb",
     },

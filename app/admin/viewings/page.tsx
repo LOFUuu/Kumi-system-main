@@ -65,6 +65,16 @@ const STATUS_CONFIG: Record<
     color: "bg-rose-100 text-rose-700 border-rose-200",
     icon: XCircle,
   },
+  viewing_cancelled: {
+    label: "Cancelled",
+    color: "bg-neutral-100 text-neutral-700 border-neutral-300",
+    icon: XCircle,
+  },
+  cancelled: {
+    label: "Cancelled",
+    color: "bg-neutral-100 text-neutral-700 border-neutral-300",
+    icon: XCircle,
+  },
 };
 
 function StatusBadge({ status }: { status: ViewingStatus }) {
@@ -93,7 +103,7 @@ function UpdateModal({
   onUpdated: (v: PropertyViewing) => void;
 }) {
   const defaultScheduled = viewing.scheduledAt || (viewing.preferredDate && viewing.preferredTime ? `${viewing.preferredDate}T${viewing.preferredTime}` : "");
-  const [action, setAction] = useState<"schedule" | "complete" | "decline" | "">("");
+  const [action, setAction] = useState<"schedule" | "complete" | "decline" | "cancel" | "">("");
   const [adminNotes, setAdminNotes] = useState(viewing.adminNotes || "");
   const [scheduledAt, setScheduledAt] = useState(defaultScheduled);
   const [busy, setBusy] = useState(false);
@@ -119,6 +129,7 @@ function UpdateModal({
         schedule: "viewing_scheduled",
         complete: "viewing_completed",
         decline: "viewing_declined",
+        cancel: "viewing_cancelled",
       };
       const payload: Record<string, unknown> = {
         status: statusMap[action],
@@ -199,11 +210,12 @@ function UpdateModal({
           {/* Action selection */}
           <div>
             <label className="field-label">Action</label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
                 { key: "schedule", label: "Confirm Schedule", icon: CalendarCheck, color: "border-blue-300 bg-blue-50 text-blue-700" },
                 { key: "complete", label: "Mark Completed", icon: CheckCircle2, color: "border-emerald-300 bg-emerald-50 text-emerald-700" },
                 { key: "decline", label: "Decline", icon: XCircle, color: "border-rose-300 bg-rose-50 text-rose-700" },
+                { key: "cancel", label: "Cancel", icon: XCircle, color: "border-neutral-300 bg-neutral-100 text-neutral-700" },
               ].map(({ key, label, icon: Icon, color }) => (
                 <button
                   key={key}
@@ -326,6 +338,7 @@ export default function AdminViewingsPage() {
     viewing_scheduled: viewings.filter((v) => v.status === "viewing_scheduled").length,
     viewing_completed: viewings.filter((v) => v.status === "viewing_completed").length,
     viewing_declined: viewings.filter((v) => v.status === "viewing_declined").length,
+    viewing_cancelled: viewings.filter((v) => v.status === "viewing_cancelled" || v.status === "cancelled").length,
   };
 
   // Filter + sort
@@ -371,6 +384,7 @@ export default function AdminViewingsPage() {
     { key: "viewing_scheduled", label: "Scheduled", count: counts.viewing_scheduled },
     { key: "viewing_completed", label: "Completed", count: counts.viewing_completed },
     { key: "viewing_declined", label: "Declined", count: counts.viewing_declined },
+    { key: "viewing_cancelled", label: "Cancelled", count: counts.viewing_cancelled },
   ];
 
   return (

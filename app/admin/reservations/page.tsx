@@ -33,6 +33,7 @@ function StatusBadge({ status }: { status: string }) {
     approved: "bg-emerald-100 text-emerald-700 border-emerald-200",
     pending: "bg-amber-100 text-amber-700 border-amber-200",
     declined: "bg-rose-100 text-rose-700 border-rose-200",
+    cancelled: "bg-neutral-100 text-neutral-700 border-neutral-300",
   };
   return (
     <span
@@ -441,6 +442,7 @@ export default function AdminReservationsPage() {
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>
             <option value="declined">Declined</option>
+            <option value="cancelled">Cancelled</option>
           </select>
 
           {/* Date range */}

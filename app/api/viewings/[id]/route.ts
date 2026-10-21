@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPropertyViewings, updatePropertyViewing } from "@/lib/db";
+import {
+  getPropertyViewings,
+  updatePropertyViewing,
+  notifyAdmins,
+  notifyUserByEmail,
+} from "@/lib/db";
 import { howaGuard, isHowaRole, requestRole } from "@/lib/role";
+import { getCancellationEligibility } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
 
-// PATCH /api/viewings/[id] — admin updates viewing status
+// PATCH /api/viewings/[id] — admin updates status or user/admin cancels viewing
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -31,7 +37,86 @@ export async function PATCH(
   const role = requestRole(req);
   const isHowa = isHowaRole(role);
 
-  // Admin-only status transitions
+  // ── CANCELLATION HANDLER (User or Admin) ───────────────────────────────────
+  const isCancel =
+    body.action === "cancel" ||
+    body.status === "cancelled" ||
+    body.status === "viewing_cancelled" ||
+    body.status === "viewing_declined";
+
+  if (isCancel) {
+    // Only active (requested or scheduled) viewings can be cancelled
+    if (
+      !["viewing_requested", "viewing_scheduled"].includes(viewing.status as string)
+    ) {
+      return NextResponse.json(
+        { error: `Cannot cancel a viewing that is already ${(viewing.status as string).replace(/_/g, " ")}.` },
+        { status: 400 }
+      );
+    }
+
+    const residentEmail = String(req.headers.get("x-user-email") || "").toLowerCase().trim();
+
+    if (!isHowa) {
+      if ((viewing.residentEmail || "").toLowerCase().trim() !== residentEmail) {
+        return NextResponse.json(
+          { error: "Unauthorized: You can only cancel your own viewing requests." },
+          { status: 403 }
+        );
+      }
+
+      // Check 48-hour policy
+      const scheduledTimeStr =
+        viewing.scheduledAt ||
+        (viewing.preferredDate && viewing.preferredTime
+          ? `${viewing.preferredDate}T${viewing.preferredTime}+08:00`
+          : "");
+
+      const eligibility = getCancellationEligibility(scheduledTimeStr, false);
+      if (!eligibility.canCancel) {
+        return NextResponse.json(
+          { error: eligibility.reason || "Cancellations must be made at least 48 hours prior to the scheduled viewing time." },
+          { status: 400 }
+        );
+      }
+    }
+
+    const cancelledAt = new Date().toISOString();
+    const cancelledBy = isHowa ? "admin" : (residentEmail || "user");
+    const cancelReason = String(body.reason || (isHowa ? "Cancelled by Administrator" : "Cancelled by User")).trim();
+
+    const updated = await updatePropertyViewing(numericId, {
+      status: "viewing_cancelled",
+      cancelledAt,
+      cancelledBy,
+      cancelReason,
+    });
+
+    // Notify appropriate party
+    if (!isHowa) {
+      // User cancelled -> Notify HOA Admins
+      notifyAdmins({
+        title: "Property Viewing Cancelled by User",
+        message: `${viewing.residentName} cancelled their viewing appointment for ${viewing.listingName} on ${viewing.preferredDate} at ${viewing.preferredTime}. Slot is now available.`,
+        type: "viewing",
+        referenceId: numericId,
+        link: "/admin/viewings",
+      }).catch(() => {});
+    } else if (viewing.residentEmail) {
+      // Admin cancelled -> Notify Resident
+      notifyUserByEmail(viewing.residentEmail, {
+        title: "Viewing Appointment Cancelled by HOA",
+        message: `Your viewing appointment for ${viewing.listingName} on ${viewing.preferredDate} was cancelled by the HOA Administration. Reason: ${cancelReason}.`,
+        type: "viewing",
+        referenceId: numericId,
+        link: "/history?tab=viewings",
+      }).catch(() => {});
+    }
+
+    return NextResponse.json({ viewing: updated });
+  }
+
+  // ── Admin-only status transitions ──────────────────────────────────────────
   const validAdminStatuses = ["viewing_requested", "viewing_scheduled", "viewing_completed", "viewing_declined"];
   if (body.status && validAdminStatuses.includes(body.status)) {
     const denied = howaGuard(req);
@@ -71,19 +156,28 @@ export async function PATCH(
     }
 
     const updated = await updatePropertyViewing(numericId, patch);
-    return NextResponse.json({ viewing: updated });
-  }
 
-  // Resident cancels their own viewing request (only if viewing_requested)
-  if (body.status === "viewing_declined" && !isHowa) {
-    const residentEmail = String(req.headers.get("x-user-email") || "").trim();
-    if ((viewing as any).residentEmail !== residentEmail) {
-      return NextResponse.json({ error: "You can only cancel your own viewing requests." }, { status: 403 });
+    // Notify resident about appointment confirmation or decline
+    if (viewing.residentEmail) {
+      if (body.status === "viewing_scheduled") {
+        notifyUserByEmail(viewing.residentEmail, {
+          title: "Property Viewing Confirmed! 📅",
+          message: `Your viewing appointment for ${viewing.listingName} is confirmed for ${viewing.preferredDate} at ${viewing.preferredTime}.`,
+          type: "viewing",
+          referenceId: numericId,
+          link: "/history?tab=viewings",
+        }).catch(() => {});
+      } else if (body.status === "viewing_declined") {
+        notifyUserByEmail(viewing.residentEmail, {
+          title: "Property Viewing Declined",
+          message: `Your viewing request for ${viewing.listingName} on ${viewing.preferredDate} was declined. ${patch.adminNotes ? `Reason: "${patch.adminNotes}".` : ""}`,
+          type: "viewing",
+          referenceId: numericId,
+          link: "/history?tab=viewings",
+        }).catch(() => {});
+      }
     }
-    if (!["viewing_requested"].includes((viewing as any).status)) {
-      return NextResponse.json({ error: "Only pending viewing requests can be cancelled." }, { status: 400 });
-    }
-    const updated = await updatePropertyViewing(numericId, { status: "viewing_declined" });
+
     return NextResponse.json({ viewing: updated });
   }
 

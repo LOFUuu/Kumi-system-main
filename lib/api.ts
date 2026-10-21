@@ -316,8 +316,10 @@ export const api = {
         paymentPlaceholder: boolean;
       }
     >("/api/reservations", "POST", payload),
-  reviewReservation: (id: number, action: "approve" | "reject") =>
-    send<{ reservation: Reservation }>(`/api/reservations/${id}`, "PATCH", { action }),
+  reviewReservation: (id: number, action: "approve" | "reject" | "cancel", reason?: string) =>
+    send<{ reservation: Reservation }>(`/api/reservations/${id}`, "PATCH", { action, reason }, howaHeaders()),
+  cancelReservation: (id: number, reason?: string) =>
+    send<{ reservation: Reservation }>(`/api/reservations/${id}`, "PATCH", { action: "cancel", reason }, howaHeaders()),
 
   uploadPaymentReceipt: async (file: File): Promise<{ path: string }> => {
     const fd = new FormData();
@@ -390,6 +392,10 @@ export const api = {
   /** Admin/Resident: update a viewing status */
   updateViewing: (id: number, payload: Record<string, unknown>) =>
     send<{ viewing: PropertyViewing }>(`/api/viewings/${id}`, "PATCH", payload, howaHeaders("admin")),
+
+  /** Resident/Admin: cancel a viewing request under the 48-hour policy */
+  cancelViewing: (id: number, reason?: string) =>
+    send<{ viewing: PropertyViewing }>(`/api/viewings/${id}`, "PATCH", { action: "cancel", reason }, howaHeaders("resident")),
 
   /** Homeowner: fetch viewing requests for listings owned by current user */
   ownerViewings: (status?: string) =>

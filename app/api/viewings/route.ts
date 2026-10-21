@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getListing, getPropertyViewings, createPropertyViewing } from "@/lib/db";
+import { getListing, getPropertyViewings, createPropertyViewing, notifyAdmins } from "@/lib/db";
 import { isHowaRole, requestRole } from "@/lib/role";
 
 export const dynamic = "force-dynamic";
@@ -118,6 +118,14 @@ export async function POST(req: NextRequest) {
       adminNotes: "",
       scheduledAt: null,
     });
+
+    notifyAdmins({
+      title: "New Property Viewing Request",
+      message: `${residentName || "Resident"} requested a viewing for ${listing.houseName} on ${preferredDate} at ${preferredTime}.`,
+      type: "viewing",
+      referenceId: viewing.id,
+      link: "/admin/viewings",
+    }).catch(() => {});
 
     return NextResponse.json({ viewing }, { status: 201 });
   } catch (err: any) {

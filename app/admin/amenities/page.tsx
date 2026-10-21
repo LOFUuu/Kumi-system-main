@@ -31,6 +31,11 @@ interface AmenityFormState {
   downpaymentPrivate: number;
   isActive: boolean;
   image: string;
+  pricingModel: "per_head" | "fixed" | "base_plus_extra";
+  basePrice: number;
+  pricePerPerson: number;
+  includedGuests: number;
+  extraGuestFee: number;
 }
 
 const DEFAULT_FORM: AmenityFormState = {
@@ -44,6 +49,11 @@ const DEFAULT_FORM: AmenityFormState = {
   downpaymentPrivate: 500,
   isActive: true,
   image: "https://picsum.photos/seed/amenity/800/600",
+  pricingModel: "per_head",
+  basePrice: 1000,
+  pricePerPerson: 100,
+  includedGuests: 5,
+  extraGuestFee: 150,
 };
 
 export default function AdminAmenitiesPage() {
@@ -102,6 +112,11 @@ export default function AdminAmenitiesPage() {
       downpaymentPrivate: amenity.downpaymentPrivate ?? 500,
       isActive: amenity.isActive ?? true,
       image: amenity.image || "https://picsum.photos/seed/amenity/800/600",
+      pricingModel: amenity.pricingModel ?? "per_head",
+      basePrice: amenity.basePrice ?? amenity.ratePrivate ?? 1000,
+      pricePerPerson: amenity.pricePerPerson ?? amenity.rateWalkin ?? 100,
+      includedGuests: amenity.includedGuests ?? 5,
+      extraGuestFee: amenity.extraGuestFee ?? 150,
     });
     setError("");
     setIsModalOpen(true);
@@ -306,14 +321,44 @@ export default function AdminAmenitiesPage() {
                     </p>
 
                     <div className="mt-4 space-y-1.5 rounded-xl border border-cream-2 bg-cream/40 p-3 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-muted">Public (Walk-in):</span>
-                        <strong className="text-green-dark">{formatPHP(a.rateWalkin)} / head</strong>
+                      <div className="flex items-center justify-between pb-1 mb-1 border-b border-cream-2">
+                        <span className="text-[11px] font-bold text-muted uppercase">Pricing Model:</span>
+                        <span className="rounded-full bg-green-light/25 px-2 py-0.5 text-[10px] font-extrabold uppercase text-green-dark">
+                          {a.pricingModel === "fixed"
+                            ? "Fixed Fee"
+                            : a.pricingModel === "base_plus_extra"
+                            ? "Base + Extra Fee"
+                            : "Per Head"}
+                        </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted">Public (Night):</span>
-                        <strong className="text-green-dark">{formatPHP(a.rateWhole)} / head</strong>
-                      </div>
+                      {a.pricingModel === "base_plus_extra" ? (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-muted">Base Price (up to {a.includedGuests ?? 5} pax):</span>
+                            <strong className="text-green-dark">{formatPHP(a.basePrice ?? a.ratePrivate ?? 0)}</strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted">Extra Guest Fee:</span>
+                            <strong className="text-green-dark">{formatPHP(a.extraGuestFee ?? 150)} / extra pax</strong>
+                          </div>
+                        </>
+                      ) : a.pricingModel === "fixed" ? (
+                        <div className="flex justify-between">
+                          <span className="text-muted">Fixed Flat Rate:</span>
+                          <strong className="text-green-dark">{formatPHP(a.basePrice ?? a.ratePrivate ?? 0)}</strong>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-muted">Public (Walk-in / Day):</span>
+                            <strong className="text-green-dark">{formatPHP(a.pricePerPerson || a.rateWalkin)} / head</strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted">Public (Night):</span>
+                            <strong className="text-green-dark">{formatPHP(a.rateWhole)} / head</strong>
+                          </div>
+                        </>
+                      )}
                       <div className="flex justify-between border-t border-cream-2 pt-1">
                         <span className="text-muted">Private Flat Rate:</span>
                         <strong className="text-green-mid">{formatPHP(a.ratePrivate)}</strong>
@@ -537,8 +582,161 @@ export default function AdminAmenitiesPage() {
                     />
                   </div>
 
-                  {/* Capacity & Rates Grid */}
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Pricing Model Selection */}
+                  <div className="rounded-2xl border border-cream-2 bg-cream/30 p-4 space-y-3">
+                    <label className="block text-[11px] font-extrabold uppercase tracking-wider text-green-dark">
+                      Pricing Model *
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFormData((prev) => ({ ...prev, pricingModel: "per_head" }))}
+                        className={`rounded-xl border p-2.5 text-center text-xs font-bold transition ${
+                          formData.pricingModel === "per_head"
+                            ? "border-green-mid bg-green-mid text-white shadow-xs"
+                            : "border-cream-2 bg-white text-green-dark hover:bg-cream/50"
+                        }`}
+                      >
+                        Per-Head
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData((prev) => ({ ...prev, pricingModel: "fixed" }))}
+                        className={`rounded-xl border p-2.5 text-center text-xs font-bold transition ${
+                          formData.pricingModel === "fixed"
+                            ? "border-green-mid bg-green-mid text-white shadow-xs"
+                            : "border-cream-2 bg-white text-green-dark hover:bg-cream/50"
+                        }`}
+                      >
+                        Fixed Fee
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData((prev) => ({ ...prev, pricingModel: "base_plus_extra" }))}
+                        className={`rounded-xl border p-2.5 text-center text-xs font-bold transition ${
+                          formData.pricingModel === "base_plus_extra"
+                            ? "border-green-mid bg-green-mid text-white shadow-xs"
+                            : "border-cream-2 bg-white text-green-dark hover:bg-cream/50"
+                        }`}
+                      >
+                        Base + Extra
+                      </button>
+                    </div>
+
+                    <p className="text-[11px] text-muted">
+                      {formData.pricingModel === "per_head" &&
+                        "Guests are charged directly multiplied by the per-person rate."}
+                      {formData.pricingModel === "fixed" &&
+                        "A single flat booking fee is charged regardless of party size."}
+                      {formData.pricingModel === "base_plus_extra" &&
+                        "Base fee covers up to included guests. Extra guests pay an additional fee per person."}
+                    </p>
+
+                    {/* Dynamic Fields for Selected Model */}
+                    {formData.pricingModel === "base_plus_extra" ? (
+                      <div className="grid grid-cols-3 gap-3 pt-2">
+                        <div>
+                          <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
+                            Base Fee (₱) *
+                          </label>
+                          <input
+                            type="number"
+                            required
+                            min={0}
+                            className="field"
+                            value={formData.basePrice}
+                            onChange={(e) => {
+                              const val = Number(e.target.value) || 0;
+                              setFormData({ ...formData, basePrice: val, ratePrivate: val });
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
+                            Included Guests *
+                          </label>
+                          <input
+                            type="number"
+                            required
+                            min={1}
+                            className="field"
+                            value={formData.includedGuests}
+                            onChange={(e) =>
+                              setFormData({ ...formData, includedGuests: Number(e.target.value) || 1 })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
+                            Extra Guest Fee (₱) *
+                          </label>
+                          <input
+                            type="number"
+                            required
+                            min={0}
+                            className="field"
+                            value={formData.extraGuestFee}
+                            onChange={(e) =>
+                              setFormData({ ...formData, extraGuestFee: Number(e.target.value) || 0 })
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : formData.pricingModel === "fixed" ? (
+                      <div className="pt-2">
+                        <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
+                          Fixed Flat Rate (₱) *
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min={0}
+                          className="field"
+                          value={formData.basePrice}
+                          onChange={(e) => {
+                            const val = Number(e.target.value) || 0;
+                            setFormData({ ...formData, basePrice: val, ratePrivate: val });
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3 pt-2">
+                        <div>
+                          <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
+                            Price Per Person (₱) *
+                          </label>
+                          <input
+                            type="number"
+                            required
+                            min={0}
+                            className="field"
+                            value={formData.pricePerPerson}
+                            onChange={(e) => {
+                              const val = Number(e.target.value) || 0;
+                              setFormData({ ...formData, pricePerPerson: val, rateWalkin: val });
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
+                            Night Session (₱/Head)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            className="field"
+                            value={formData.rateWhole}
+                            onChange={(e) =>
+                              setFormData({ ...formData, rateWhole: Number(e.target.value) || 0 })
+                            }
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Capacity & Downpayment Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
                         Max Capacity (Pax) *
@@ -554,52 +752,6 @@ export default function AdminAmenitiesPage() {
                         }
                       />
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
-                        Public Day Rate (₱/Head) *
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        min={0}
-                        className="field"
-                        value={formData.rateWalkin}
-                        onChange={(e) =>
-                          setFormData({ ...formData, rateWalkin: Number(e.target.value) || 0 })
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
-                        Public Night Rate (₱/Head)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        className="field"
-                        value={formData.rateWhole}
-                        onChange={(e) =>
-                          setFormData({ ...formData, rateWhole: Number(e.target.value) || 0 })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
-                        Private Flat Rate (₱) *
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        min={0}
-                        className="field"
-                        value={formData.ratePrivate}
-                        onChange={(e) =>
-                          setFormData({ ...formData, ratePrivate: Number(e.target.value) || 0 })
-                        }
-                      />
-                    </div>
-
                     <div>
                       <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
                         Public Downpayment (₱)

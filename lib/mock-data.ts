@@ -240,6 +240,12 @@ export interface Amenity {
   image: string;
   lat: number;
   lng: number;
+  // ── Dynamic Pricing Configuration ──────────────────────────────────────────
+  pricingModel?: "per_head" | "fixed" | "base_plus_extra";
+  basePrice?: number; // base booking price for fixed or base_plus_extra
+  pricePerPerson?: number; // override for per-head rate
+  includedGuests?: number; // headcount covered by base rate
+  extraGuestFee?: number; // charge per additional person exceeding includedGuests
 }
 
 // Resident discount applied to public (per-head) rates.
@@ -260,6 +266,8 @@ export const MOCK_AMENITIES: Amenity[] = [
     image: "/images/amenities/pool.jpg",
     lat: 14.3432,
     lng: 120.9809,
+    pricingModel: "per_head",
+    pricePerPerson: 100,
   },
   {
     id: 2,
@@ -275,8 +283,23 @@ export const MOCK_AMENITIES: Amenity[] = [
     image: "/images/amenities/court.jpg",
     lat: 14.3427,
     lng: 120.9802,
+    pricingModel: "per_head",
+    pricePerPerson: 100,
   },
 ];
+
+export interface PricingBreakdown {
+  model: "per_head" | "fixed" | "base_plus_extra";
+  modelLabel: string;
+  basePrice: number;
+  pricePerPerson: number;
+  includedGuests: number;
+  extraGuests: number;
+  extraGuestFee: number;
+  discount: number;
+  totalAmount: number;
+  summaryText: string;
+}
 
 export interface Reservation {
   id: number;
@@ -290,7 +313,7 @@ export interface Reservation {
   paxCount: number;
   downpayment: number;
   totalAmount: number;
-  status: "pending" | "approved" | "declined";
+  status: "pending" | "approved" | "declined" | "cancelled";
   notes?: string;
   userEmail?: string;
   approvedAt?: string;
@@ -299,6 +322,13 @@ export interface Reservation {
   isArchived?: boolean;
   archivedAt?: string;
   archiveReason?: string;
+  // ── Pricing snapshot ───────────────────────────────────────────────────────
+  pricingModel?: "per_head" | "fixed" | "base_plus_extra";
+  pricingBreakdown?: PricingBreakdown;
+  // ── 48-Hour Cancellation Tracking ─────────────────────────────────────────
+  cancelledAt?: string;
+  cancelledBy?: string;
+  cancelReason?: string;
 }
 
 export const MOCK_RESERVATIONS: Reservation[] = [
@@ -400,12 +430,15 @@ export type ViewingStatus =
   | "viewing_requested"
   | "viewing_scheduled"
   | "viewing_completed"
-  | "viewing_declined";
+  | "viewing_declined"
+  | "viewing_cancelled"
+  | "cancelled";
 
 export interface PropertyViewing {
   id: number;
   listingId: number;
   listingName: string;
+  houseName?: string;
   residentName: string;
   residentEmail: string;
   preferredDate: string;   // ISO date string e.g. "2026-10-05"
@@ -415,26 +448,251 @@ export interface PropertyViewing {
   adminNotes?: string;     // set by HOA when scheduling or declining
   scheduledAt?: string;    // ISO date — when HOA confirms the exact schedule
   createdAt?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  cancelReason?: string;
 }
 
 export const formatPHP = (n: number) =>
   "₱" + n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// Compute the discounted per-head rate for a public booking. Residents get a
+// Compute the standard per-head rate for a public booking. Residents get a
 // flat 20% discount; non-residents pay the full rate.
 export const getRate = (amenity: Amenity, bookingType: "day" | "night", isResident: boolean) => {
-  const base = bookingType === "night" ? amenity.rateWhole : amenity.rateWalkin;
+  const base = amenity.pricePerPerson || (bookingType === "night" ? amenity.rateWhole : amenity.rateWalkin);
   return isResident ? Math.round(base * (1 - RESIDENT_DISCOUNT)) : base;
 };
 
-// Total payable for a booking — private is a flat rate, public is per head × pax.
+export interface PricingBreakdown {
+  model: "per_head" | "fixed" | "base_plus_extra";
+  modelLabel: string;
+  basePrice: number;
+  pricePerPerson: number;
+  includedGuests: number;
+  extraGuests: number;
+  extraGuestFee: number;
+  extraGuestsCost: number;
+  discount: number;
+  totalAmount: number;
+  summaryText: string;
+}
+
+// Detailed dynamic pricing breakdown generator
+export const getBookingBreakdown = (
+  amenity: Amenity,
+  bookingType: "day" | "night",
+  reservationTypeOrPax: "public" | "private" | number = "public",
+  paxOrReservationType: number | "public" | "private" = 1,
+  isResident: boolean = false
+): PricingBreakdown => {
+  const reservationType: "public" | "private" =
+    typeof reservationTypeOrPax === "string"
+      ? (reservationTypeOrPax as "public" | "private")
+      : typeof paxOrReservationType === "string"
+      ? (paxOrReservationType as "public" | "private")
+      : "public";
+
+  const pax: number =
+    typeof paxOrReservationType === "number"
+      ? paxOrReservationType
+      : typeof reservationTypeOrPax === "number"
+      ? reservationTypeOrPax
+      : 1;
+
+  const guestCount = Math.max(1, pax);
+
+  // Private reservation: whole venue exclusivity
+  if (reservationType === "private") {
+    const flatRate = amenity.ratePrivate || amenity.basePrice || 1000;
+    return {
+      model: "fixed",
+      modelLabel: "Private Venue (Flat Rate)",
+      basePrice: flatRate,
+      pricePerPerson: 0,
+      includedGuests: amenity.maxCapacity,
+      extraGuests: 0,
+      extraGuestFee: 0,
+      extraGuestsCost: 0,
+      discount: 0,
+      totalAmount: flatRate,
+      summaryText: `Private Booking — Whole Venue Flat Rate: ${formatPHP(flatRate)}`,
+    };
+  }
+
+  const model = amenity.pricingModel || "per_head";
+
+  // Fixed Pricing Model
+  if (model === "fixed") {
+    const fixedRate =
+      amenity.basePrice !== undefined && amenity.basePrice > 0
+        ? amenity.basePrice
+        : bookingType === "night"
+        ? amenity.rateWhole
+        : amenity.rateWalkin;
+
+    return {
+      model: "fixed",
+      modelLabel: "Fixed Rate",
+      basePrice: fixedRate,
+      pricePerPerson: 0,
+      includedGuests: amenity.maxCapacity,
+      extraGuests: 0,
+      extraGuestFee: 0,
+      extraGuestsCost: 0,
+      discount: 0,
+      totalAmount: fixedRate,
+      summaryText: `Fixed Booking Rate: ${formatPHP(fixedRate)} (covers up to ${amenity.maxCapacity} guests)`,
+    };
+  }
+
+  // Base Rate + Additional Guest Fee Model
+  if (model === "base_plus_extra") {
+    const baseRate =
+      amenity.basePrice !== undefined && amenity.basePrice > 0
+        ? amenity.basePrice
+        : bookingType === "night"
+        ? amenity.rateWhole
+        : amenity.rateWalkin;
+
+    const included = Math.max(1, amenity.includedGuests || 1);
+    const rawExtra =
+      amenity.extraGuestFee !== undefined && amenity.extraGuestFee > 0
+        ? amenity.extraGuestFee
+        : amenity.pricePerPerson || (bookingType === "night" ? amenity.rateWhole : amenity.rateWalkin);
+
+    const extraRate = isResident ? Math.round(rawExtra * (1 - RESIDENT_DISCOUNT)) : rawExtra;
+    const extraGuests = Math.max(0, guestCount - included);
+    const extraTotal = extraGuests * extraRate;
+    const totalAmount = baseRate + extraTotal;
+    const discount = isResident ? Math.round((rawExtra - extraRate) * extraGuests) : 0;
+
+    let summaryText = `Base Rate: ${formatPHP(baseRate)} (covers first ${included} guest${included > 1 ? "s" : ""})`;
+    if (extraGuests > 0) {
+      summaryText += ` + ${extraGuests} extra guest${extraGuests > 1 ? "s" : ""} × ${formatPHP(extraRate)} = ${formatPHP(totalAmount)}`;
+    } else {
+      summaryText += ` = ${formatPHP(totalAmount)}`;
+    }
+    if (isResident && discount > 0) {
+      summaryText += ` (Includes 20% resident discount of ${formatPHP(discount)})`;
+    }
+
+    return {
+      model: "base_plus_extra",
+      modelLabel: "Base Rate + Extra Guest Fee",
+      basePrice: baseRate,
+      pricePerPerson: extraRate,
+      includedGuests: included,
+      extraGuests,
+      extraGuestFee: extraRate,
+      extraGuestsCost: extraTotal,
+      discount,
+      totalAmount,
+      summaryText,
+    };
+  }
+
+  // Default: Per-Head Pricing Model
+  const rawPerHead =
+    amenity.pricePerPerson !== undefined && amenity.pricePerPerson > 0
+      ? amenity.pricePerPerson
+      : bookingType === "night"
+      ? amenity.rateWhole
+      : amenity.rateWalkin;
+
+  const perHead = isResident ? Math.round(rawPerHead * (1 - RESIDENT_DISCOUNT)) : rawPerHead;
+  const totalAmount = perHead * guestCount;
+  const discount = isResident ? Math.round((rawPerHead - perHead) * guestCount) : 0;
+
+  const summaryText = `${guestCount} guest${guestCount > 1 ? "s" : ""} × ${formatPHP(perHead)}/person = ${formatPHP(totalAmount)}${
+    isResident ? " (20% Resident Discount Applied)" : ""
+  }`;
+
+  return {
+    model: "per_head",
+    modelLabel: "Per-Head Pricing",
+    basePrice: 0,
+    pricePerPerson: perHead,
+    includedGuests: 0,
+    extraGuests: 0,
+    extraGuestFee: 0,
+    extraGuestsCost: 0,
+    discount,
+    totalAmount,
+    summaryText,
+  };
+};
+
+// Total payable for a booking — automatically adapts to the amenity's configured pricing model
 export const getBookingTotal = (
   amenity: Amenity,
   bookingType: "day" | "night",
   reservationType: "public" | "private",
   pax: number,
   isResident: boolean
-) =>
-  reservationType === "private"
-    ? amenity.ratePrivate
-    : getRate(amenity, bookingType, isResident) * Math.max(1, pax);
+): number => {
+  return getBookingBreakdown(amenity, bookingType, reservationType, pax, isResident).totalAmount;
+};
+
+// ── 48-Hour Cancellation Evaluation ──────────────────────────────────────────
+export interface CancellationEligibility {
+  canCancel: boolean;
+  eligible?: boolean;
+  deadline: Date;
+  deadlineFormatted: string;
+  hoursRemaining: number;
+  reason?: string;
+}
+
+export function getCancellationEligibility(
+  scheduledStartTime: Date | string,
+  isAdmin = false
+): CancellationEligibility {
+  const start = new Date(scheduledStartTime);
+  if (isNaN(start.getTime())) {
+    return {
+      canCancel: isAdmin,
+      eligible: isAdmin,
+      deadline: new Date(0),
+      deadlineFormatted: "—",
+      hoursRemaining: 0,
+      reason: isAdmin ? undefined : "Invalid scheduled start time.",
+    };
+  }
+
+  // Cancellation Deadline = Scheduled Start Time − 48 Hours
+  const deadline = new Date(start.getTime() - 48 * 60 * 60 * 1000);
+  const now = new Date();
+  const diffMs = deadline.getTime() - now.getTime();
+  const hoursRemaining = Math.max(0, diffMs / (1000 * 60 * 60));
+
+  const deadlineFormatted = deadline.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  if (isAdmin) {
+    return {
+      canCancel: true,
+      eligible: true,
+      deadline,
+      deadlineFormatted,
+      hoursRemaining,
+    };
+  }
+
+  const canCancel = now.getTime() <= deadline.getTime();
+  return {
+    canCancel,
+    eligible: canCancel,
+    deadline,
+    deadlineFormatted,
+    hoursRemaining,
+    reason: canCancel
+      ? undefined
+      : `Cancellation deadline has passed (${deadlineFormatted}). Cancellations must be made at least 48 hours prior to start time.`,
+  };
+}

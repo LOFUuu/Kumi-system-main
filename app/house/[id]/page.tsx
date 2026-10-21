@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { formatPHP, type HouseListing, type PropertyViewing } from "@/lib/mock-data";
+import { formatPHP, getCancellationEligibility, type HouseListing, type PropertyViewing } from "@/lib/mock-data";
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
 
@@ -168,6 +168,13 @@ export default function HouseDetailPage() {
   const [submitError, setSubmitError] = useState("");
   const [unavailableSlots, setUnavailableSlots] = useState<{ date: string; time: string; status: string }[]>([]);
 
+  // Cancel Viewing Modal state
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+  const [cancelSuccessMsg, setCancelSuccessMsg] = useState("");
+
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Load listing
@@ -279,6 +286,26 @@ export default function HouseDetailPage() {
     }
   };
 
+  const handleCancelViewing = async () => {
+    if (!myViewing) return;
+    setCancelling(true);
+    setCancelError("");
+    try {
+      const { viewing } = await api.cancelViewing(myViewing.id, cancelReason);
+      setMyViewing(viewing);
+      setShowCancelModal(false);
+      setShowDetailsModal(false);
+      setCancelReason("");
+      loadAvailability();
+      setCancelSuccessMsg("Viewing appointment was successfully cancelled. Your slot has been released.");
+      setTimeout(() => setCancelSuccessMsg(""), 5000);
+    } catch (err: unknown) {
+      setCancelError(err instanceof Error ? err.message : "Failed to cancel viewing.");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="section">
@@ -311,7 +338,8 @@ export default function HouseDetailPage() {
     : ["https://picsum.photos/seed/casa-1/800/600"];
 
   const viewingStatus = myViewing?.status ?? null;
-  const canScheduleViewing = !viewingStatus || viewingStatus === "viewing_declined";
+  const isViewingCancelled = viewingStatus === "viewing_cancelled" || viewingStatus === "cancelled";
+  const canScheduleViewing = !viewingStatus || viewingStatus === "viewing_declined" || isViewingCancelled;
   const isViewingScheduled = viewingStatus === "viewing_scheduled";
   const isViewingRequested = viewingStatus === "viewing_requested";
   const isViewingCompleted = viewingStatus === "viewing_completed";
@@ -569,6 +597,31 @@ export default function HouseDetailPage() {
                   </p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* STATE: Viewing Cancelled */}
+          {user && !viewingLoading && isViewingCancelled && (
+            <div className="mt-6 rounded-2xl border border-neutral-300 bg-neutral-50 p-5 shadow-sm transition-all duration-500">
+              <div className="flex items-start gap-3.5">
+                <div className="rounded-full bg-neutral-200 p-2 text-neutral-700">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-bold text-neutral-900">Viewing Cancelled</h4>
+                  <p className="mt-1 text-xs leading-relaxed text-neutral-700">
+                    This viewing appointment was cancelled. {myViewing?.cancelReason && `Reason: "${myViewing.cancelReason}".`} You can schedule a new viewing whenever you are ready.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Cancel Success Alert */}
+          {cancelSuccessMsg && (
+            <div className="mt-6 flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-semibold text-emerald-900 animate-in fade-in">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+              <span>{cancelSuccessMsg}</span>
             </div>
           )}
 
@@ -940,6 +993,35 @@ export default function HouseDetailPage() {
                 </p>
               </div>
 
+              {/* 48-Hour Cancellation Action */}
+              {(() => {
+                const scheduledStartTime = myViewing.scheduledAt || (myViewing.preferredDate && myViewing.preferredTime ? `${myViewing.preferredDate}T${myViewing.preferredTime}:00+08:00` : "");
+                const eligibility = getCancellationEligibility(scheduledStartTime, false);
+                const isCancellable = (myViewing.status === "viewing_requested" || myViewing.status === "viewing_scheduled") && Boolean(eligibility.canCancel ?? eligibility.eligible);
+
+                if (isCancellable) {
+                  return (
+                    <div className="pt-2 border-t border-cream-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCancelModal(true)}
+                        className="w-full rounded-xl border border-rose-200 bg-rose-50 py-2.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition shadow-2xs flex items-center justify-center gap-1.5"
+                      >
+                        <X className="h-4 w-4" /> Cancel Viewing Appointment
+                      </button>
+                    </div>
+                  );
+                }
+                if (myViewing.status === "viewing_requested" || myViewing.status === "viewing_scheduled") {
+                  return (
+                    <div className="pt-2 text-center text-[11px] text-muted italic">
+                      Viewing cannot be cancelled online within 48 hours of scheduled time. Please contact HOA directly.
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
@@ -959,6 +1041,91 @@ export default function HouseDetailPage() {
                   <Phone className="h-4 w-4" /> Contact HOA
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Cancel Viewing Confirmation Modal ═════════════════════════════════ */}
+      {showCancelModal && myViewing && (
+        <div
+          className="fixed inset-0 z-[2600] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in"
+          onClick={() => !cancelling && setShowCancelModal(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3.5">
+              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-serif text-lg font-bold text-green-dark">
+                  Cancel Viewing Appointment?
+                </h3>
+                <p className="mt-1 text-xs text-muted leading-relaxed">
+                  Are you sure you want to cancel this viewing? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            {cancelError && (
+              <div className="rounded-xl bg-danger-bg p-3 text-xs font-semibold text-danger">
+                {cancelError}
+              </div>
+            )}
+
+            <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-3.5 text-xs text-rose-950 space-y-1">
+              <div>
+                <span className="font-semibold text-rose-800">Property: </span>
+                <span className="font-bold">{listing.houseName}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-rose-800">Schedule: </span>
+                <span>{formatDate(myViewing.preferredDate)} at {formatTime(myViewing.preferredTime)}</span>
+              </div>
+              <div className="text-[11px] text-rose-700 pt-1 border-t border-rose-200/60">
+                ℹ️ <strong>48-Hour Cancellation Policy:</strong> Your slot will be immediately released so other residents can schedule.
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
+                Reason for Cancellation (Optional)
+              </label>
+              <textarea
+                rows={2}
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="e.g. Schedule conflict, found another property..."
+                className="field text-xs"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                disabled={cancelling}
+                onClick={() => setShowCancelModal(false)}
+                className="btn-ghost flex-1 justify-center !py-2.5 text-xs font-semibold text-green-dark border-cream-2 hover:bg-cream"
+              >
+                Keep Appointment
+              </button>
+              <button
+                type="button"
+                disabled={cancelling}
+                onClick={handleCancelViewing}
+                className="flex-1 rounded-xl bg-rose-600 px-4 py-2.5 text-center text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50 transition shadow-sm flex items-center justify-center gap-1.5"
+              >
+                {cancelling ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Cancelling...
+                  </>
+                ) : (
+                  "Confirm Cancellation"
+                )}
+              </button>
             </div>
           </div>
         </div>
