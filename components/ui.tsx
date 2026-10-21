@@ -28,14 +28,14 @@ export function ListingCard({ listing }: { listing: HouseListing }) {
   const isRent = listing.listingType === "rent";
   const cover = listing.images[0];
   return (
-    <div className="group overflow-hidden rounded-3xl border border-[#123f2a]/10 bg-white shadow-[0_4px_20px_-2px_rgba(18,63,42,0.06)] transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_15px_35px_-5px_rgba(18,63,42,0.14)]">
+    <div className="group overflow-hidden rounded-3xl border border-[#123f2a]/10 bg-white shadow-[0_4px_20px_-2px_rgba(18,63,42,0.06)] transition-all duration-300 ease-out hover:-translate-y-[7px] hover:shadow-[0_16px_32px_-4px_rgba(18,63,42,0.12),0_6px_12px_-2px_rgba(0,0,0,0.04)] will-change-transform">
       {/* Image Container */}
       <div className="relative h-52 overflow-hidden bg-gray-100">
         {cover ? (
           <img
             src={cover}
             alt={listing.houseName}
-            className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+            className="h-full w-full object-cover object-center"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-gray-400">

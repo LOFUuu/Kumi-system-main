@@ -45,6 +45,7 @@ export default function Reveal({
           ease: "power3.out",
           stagger: stagger ? 0.12 : 0,
           scrollTrigger: { trigger: el, start, once: true },
+          clearProps: "transform",
         }
       );
     }, el);
