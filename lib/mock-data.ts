@@ -192,6 +192,20 @@ export interface InAppNotification {
   referenceId?: number | string;
   link?: string;
   isRead: boolean;
+  metadata?: {
+    amenityName?: string;
+    listingName?: string;
+    date?: string;
+    time?: string;
+    guests?: number;
+    status?: string;
+    totalAmount?: number;
+    reason?: string;
+    category?: string;
+    residentName?: string;
+    poster?: string;
+    [key: string]: any;
+  };
   createdAt?: string;
 }
 

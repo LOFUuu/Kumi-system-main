@@ -108,7 +108,35 @@ export async function PATCH(
         type: "reservation",
         referenceId: resId,
         link: "/admin/reservations",
+        metadata: {
+          amenityName: reservation.amenityName,
+          date: reservation.date,
+          time: reservation.bookingType === "day" ? "Day Session" : "Night Session",
+          guests: reservation.paxCount || 1,
+          status: "Cancelled",
+          residentName: reservation.residentName,
+          reason: cancelReason,
+        },
       }).catch(() => {});
+
+      // User cancelled -> Send cancellation confirmation to Resident
+      if (reservation.userEmail) {
+        notifyUserByEmail(reservation.userEmail, {
+          title: "Booking Cancellation Confirmed",
+          message: `You have cancelled your reservation for ${reservation.amenityName} on ${reservation.date} (${reservation.bookingType} session). The booking slot has been released.`,
+          type: "reservation",
+          referenceId: resId,
+          link: "/history?tab=reservations",
+          metadata: {
+            amenityName: reservation.amenityName,
+            date: reservation.date,
+            time: reservation.bookingType === "day" ? "Day Session" : "Night Session",
+            guests: reservation.paxCount || 1,
+            status: "Cancelled",
+            reason: cancelReason,
+          },
+        }).catch(() => {});
+      }
     } else if (reservation.userEmail) {
       // Admin cancelled -> Notify Resident
       notifyUserByEmail(reservation.userEmail, {
@@ -117,6 +145,14 @@ export async function PATCH(
         type: "reservation",
         referenceId: resId,
         link: "/history?tab=reservations",
+        metadata: {
+          amenityName: reservation.amenityName,
+          date: reservation.date,
+          time: reservation.bookingType === "day" ? "Day Session" : "Night Session",
+          guests: reservation.paxCount || 1,
+          status: "Cancelled",
+          reason: cancelReason,
+        },
       }).catch(() => {});
     }
 
@@ -168,15 +204,24 @@ export async function PATCH(
 
   // Notify resident about approval/declination
   if (reservation.userEmail) {
+    const isApprove = action === "approve";
     notifyUserByEmail(reservation.userEmail, {
-      title: action === "approve" ? "Reservation Approved! 🎉" : "Reservation Declined",
+      title: isApprove ? "Amenity Booking Approved! 🎉" : "Amenity Booking Declined",
       message:
-        action === "approve"
+        isApprove
           ? `Your reservation for ${reservation.amenityName} on ${reservation.date} (${reservation.bookingType === "day" ? "Day" : "Night"} Session) has been approved by the HOA!`
           : `Your reservation for ${reservation.amenityName} on ${reservation.date} was declined by the HOA.`,
       type: "reservation",
       referenceId: resId,
       link: "/history?tab=reservations",
+      metadata: {
+        amenityName: reservation.amenityName,
+        date: reservation.date,
+        time: reservation.bookingType === "day" ? "Day Session (8:00 AM - 5:00 PM)" : "Night Session (6:00 PM - 11:00 PM)",
+        guests: reservation.paxCount || 1,
+        totalAmount: reservation.totalAmount,
+        status: isApprove ? "Approved" : "Declined",
+      },
     }).catch(() => {});
   }
 

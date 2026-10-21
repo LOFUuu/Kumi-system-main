@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import SyncStatusBadge from "./SyncStatusBadge";
+import NotificationBell from "./NotificationBell";
 
 const LINKS: { href: string; label: string; icon: LucideIcon; sub?: boolean; amber?: boolean }[] = [
   { href: "/admin/residents", label: "Residents", icon: Users },
@@ -87,12 +88,15 @@ export default function AdminSidebar() {
           </span>
         </Link>
 
-        {/* Section label */}
-        {!collapsed && (
-          <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-            ADMINISTRATIVE PANEL
-          </p>
-        )}
+        {/* Section label & Admin Notification Bell */}
+        <div className={`mb-2 flex items-center px-2 ${collapsed ? "justify-center" : "justify-between"}`}>
+          {!collapsed && (
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              ADMINISTRATIVE PANEL
+            </p>
+          )}
+          <NotificationBell align="left" compact />
+        </div>
 
         {/* Nav links */}
         <nav className="space-y-1 scroll-thin overflow-y-auto flex-1 pr-1">

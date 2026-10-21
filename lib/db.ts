@@ -827,6 +827,7 @@ export async function createNotification(data: {
   type?: "announcement" | "viewing" | "reservation" | "dues" | "general";
   referenceId?: number | string;
   link?: string;
+  metadata?: Record<string, any>;
 }): Promise<NotificationType> {
   const online = await isOnlineMode();
   const payload = {
@@ -838,11 +839,26 @@ export async function createNotification(data: {
     referenceId: data.referenceId,
     link: data.link || "",
     isRead: false,
+    metadata: data.metadata || undefined,
   };
 
   if (online) {
     try {
       await dbConnect();
+
+      // Deduplication: prevent creating identical notifications for the same recipient and event
+      if (payload.referenceId) {
+        const existing = await (Notification as any).findOne({
+          $or: [
+            { userId: payload.userId, type: payload.type, referenceId: payload.referenceId, title: payload.title },
+            payload.userEmail ? { userEmail: payload.userEmail, type: payload.type, referenceId: payload.referenceId, title: payload.title } : null,
+          ].filter(Boolean),
+        }).lean();
+        if (existing) {
+          return serialize<NotificationType>(existing);
+        }
+      }
+
       const id = await getNextId(Notification as any);
       const doc = await (Notification as any).create({ ...payload, _id: id });
       const plain = (doc as any)?.toObject ? (doc as any).toObject() : doc;
@@ -865,9 +881,10 @@ export async function createAnnouncementNotifications(announcement: Announcement
       const uId = (u as any)._id ?? (u as any).id;
       // Prevent duplicate notification for same announcement event
       const existing = await (Notification as any).findOne({
-        userId: uId,
-        type: "announcement",
-        referenceId: announcement.id,
+        $or: [
+          { userId: uId, type: "announcement", referenceId: announcement.id },
+          { userEmail: u.email ? u.email.toLowerCase().trim() : undefined, type: "announcement", referenceId: announcement.id }
+        ].filter(Boolean),
       }).lean();
 
       if (!existing) {
@@ -875,18 +892,74 @@ export async function createAnnouncementNotifications(announcement: Announcement
         await (Notification as any).create({
           _id: id,
           userId: uId,
-          userEmail: u.email,
+          userEmail: u.email ? u.email.toLowerCase().trim() : undefined,
           title: `Announcement: ${announcement.title}`,
-          message: announcement.content.length > 120 ? announcement.content.slice(0, 117) + "…" : announcement.content,
+          message: announcement.content.length > 150 ? announcement.content.slice(0, 147) + "…" : announcement.content,
           type: "announcement",
           referenceId: announcement.id,
           link: "/announcements",
           isRead: false,
+          metadata: {
+            title: announcement.title,
+            category: announcement.category || "Community",
+            poster: announcement.poster || "HOA Administration",
+            date: announcement.postDate || new Date().toISOString().slice(0, 10),
+          },
         });
       }
     }
   } catch (err) {
     console.error("[Notification] createAnnouncementNotifications error:", err);
+  }
+}
+
+export async function syncUserAnnouncements(user: { id?: number | string; email?: string; role?: string }): Promise<void> {
+  if (!user || user.role === "admin") return;
+  const online = await isOnlineMode();
+  if (!online) return;
+  try {
+    await dbConnect();
+    const activeAnnouncements = await (Announcement as any).find({
+      status: "active",
+      $or: [{ isArchived: false }, { isArchived: { $exists: false } }],
+    }).lean();
+
+    if (!activeAnnouncements || activeAnnouncements.length === 0) return;
+
+    const uId = user.id ? Number(user.id) || user.id : user.email;
+    const uEmail = user.email ? user.email.toLowerCase().trim() : undefined;
+
+    for (const ann of activeAnnouncements) {
+      const annId = (ann as any)._id ?? (ann as any).id;
+      const orClauses: any[] = [];
+      if (uId) orClauses.push({ userId: uId, type: "announcement", referenceId: annId });
+      if (uEmail) orClauses.push({ userEmail: uEmail, type: "announcement", referenceId: annId });
+
+      const existing = await (Notification as any).findOne({ $or: orClauses }).lean();
+
+      if (!existing) {
+        const id = await getNextId(Notification as any);
+        await (Notification as any).create({
+          _id: id,
+          userId: uId,
+          userEmail: uEmail,
+          title: `Announcement: ${ann.title}`,
+          message: ann.content.length > 150 ? ann.content.slice(0, 147) + "…" : ann.content,
+          type: "announcement",
+          referenceId: annId,
+          link: "/announcements",
+          isRead: false,
+          metadata: {
+            title: ann.title,
+            category: ann.category || "Community",
+            poster: ann.poster || "Super Admin",
+            date: ann.postDate || (ann.createdAt ? new Date(ann.createdAt).toISOString().slice(0, 10) : undefined),
+          },
+        });
+      }
+    }
+  } catch (err) {
+    console.error("[Notification] syncUserAnnouncements error:", err);
   }
 }
 
@@ -896,6 +969,7 @@ export async function notifyAdmins(data: {
   type?: "viewing" | "reservation" | "general";
   referenceId?: number | string;
   link?: string;
+  metadata?: Record<string, any>;
 }): Promise<void> {
   try {
     await dbConnect();
@@ -915,6 +989,7 @@ export async function notifyAdmins(data: {
         type: data.type || "general",
         referenceId: data.referenceId,
         link: data.link || "",
+        metadata: data.metadata,
       });
     }
   } catch (err) {
@@ -930,6 +1005,7 @@ export async function notifyUserByEmail(
     type?: "viewing" | "reservation" | "general";
     referenceId?: number | string;
     link?: string;
+    metadata?: Record<string, any>;
   }
 ): Promise<void> {
   if (!email) return;
@@ -948,6 +1024,7 @@ export async function notifyUserByEmail(
       type: data.type || "general",
       referenceId: data.referenceId,
       link: data.link || "",
+      metadata: data.metadata,
     });
   } catch (err) {
     console.error("[Notification] notifyUserByEmail error:", err);
@@ -980,6 +1057,7 @@ export async function getUserNotifications(userIdentifier: { id?: number | strin
 
       return docs.map((d: any) => ({
         ...serialize<NotificationType>(d),
+        metadata: d.metadata || undefined,
         createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
       }));
     } catch (e) {
@@ -999,7 +1077,15 @@ export async function markNotificationRead(notificationId: number | string, user
         ? { $or: [{ _id: numId }, { id: numId }] }
         : { _id: notificationId };
       if (userId) {
-        filter.userId = { $in: [userId, String(userId), Number(userId)].filter(Boolean) };
+        filter.$or = filter.$or || [{ _id: numId }];
+        const uidNum = Number(userId);
+        const uOr = [
+          { userId },
+          { userId: String(userId) },
+          Number.isFinite(uidNum) ? { userId: uidNum } : null,
+          typeof userId === "string" && userId.includes("@") ? { userEmail: userId.toLowerCase().trim() } : null,
+        ].filter(Boolean);
+        filter.$and = [{ $or: uOr }];
       }
       const res = await (Notification as any).updateOne(filter, { $set: { isRead: true } });
       return res.modifiedCount > 0 || res.matchedCount > 0;

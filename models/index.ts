@@ -281,6 +281,7 @@ const notificationSchema = new Schema<NotificationType>(
     referenceId: { type: Schema.Types.Mixed },
     link: { type: String, default: "" },
     isRead: { type: Boolean, default: false, index: true },
+    metadata: { type: Schema.Types.Mixed },
   } as any,
   { timestamps: true }
 );
@@ -292,7 +293,7 @@ if (models.User && !(models.User.schema as any).path("needsReview")) delete (mod
 if (models.Transaction && !(models.Transaction.schema as any).path("isArchived")) delete (models as any).Transaction;
 if (models.Reservation && !(models.Reservation.schema as any).path("cancelledAt")) delete (models as any).Reservation;
 if (models.PropertyViewing && !(models.PropertyViewing.schema as any).path("cancelledAt")) delete (models as any).PropertyViewing;
-if (models.Notification && !(models.Notification.schema as any).path("type")) delete (models as any).Notification;
+if (models.Notification && !(models.Notification.schema as any).path("metadata")) delete (models as any).Notification;
 
 export const Listing = (models.Listing as mongoose.Model<HouseListing>) || model<HouseListing>("Listing", listingSchema);
 export const Amenity = (models.Amenity as mongoose.Model<AmenityType>) || model<AmenityType>("Amenity", amenitySchema);

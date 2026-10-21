@@ -9,6 +9,7 @@ import {
   createTransaction,
   deleteReservation,
   notifyAdmins,
+  notifyUserByEmail,
 } from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/server-auth";
 import { createPayment } from "@/lib/payment";
@@ -136,7 +137,35 @@ export async function POST(req: NextRequest) {
     type: "reservation",
     referenceId: reservation.id,
     link: "/admin/reservations",
+    metadata: {
+      amenityName: amenity.name,
+      date,
+      time: bookingType === "day" ? "Day Session (8:00 AM - 5:00 PM)" : "Night Session (6:00 PM - 11:00 PM)",
+      guests: pax,
+      status: "Pending",
+      totalAmount,
+      residentName,
+    },
   }).catch(() => {});
+
+  // Notify Resident about submitted reservation
+  if (userEmail) {
+    notifyUserByEmail(userEmail, {
+      title: "Amenity Reservation Submitted",
+      message: `Your reservation request for ${amenity.name} on ${date} (${bookingType === "day" ? "Day" : "Night"} Session, ${pax} guests) has been submitted and is currently pending review.`,
+      type: "reservation",
+      referenceId: reservation.id,
+      link: "/history?tab=reservations",
+      metadata: {
+        amenityName: amenity.name,
+        date,
+        time: bookingType === "day" ? "Day Session (8:00 AM - 5:00 PM)" : "Night Session (6:00 PM - 11:00 PM)",
+        guests: pax,
+        status: "Pending",
+        totalAmount,
+      },
+    }).catch(() => {});
+  }
 
   const amenityGcash = await getPaymentConfig("amenity");
   const { payment, placeholder } = createPayment(downpayment, amenityGcash.accountNumber);

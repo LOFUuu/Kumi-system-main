@@ -101,7 +101,33 @@ export async function PATCH(
         type: "viewing",
         referenceId: numericId,
         link: "/admin/viewings",
+        metadata: {
+          listingName: viewing.listingName,
+          date: viewing.preferredDate,
+          time: viewing.preferredTime,
+          status: "Cancelled",
+          residentName: viewing.residentName,
+          reason: cancelReason,
+        },
       }).catch(() => {});
+
+      // User cancelled -> Notify resident with confirmation
+      if (viewing.residentEmail) {
+        notifyUserByEmail(viewing.residentEmail, {
+          title: "Viewing Cancellation Confirmed",
+          message: `You have cancelled your viewing appointment for ${viewing.listingName} on ${viewing.preferredDate} at ${viewing.preferredTime}.`,
+          type: "viewing",
+          referenceId: numericId,
+          link: "/history?tab=viewings",
+          metadata: {
+            listingName: viewing.listingName,
+            date: viewing.preferredDate,
+            time: viewing.preferredTime,
+            status: "Cancelled",
+            reason: cancelReason,
+          },
+        }).catch(() => {});
+      }
     } else if (viewing.residentEmail) {
       // Admin cancelled -> Notify Resident
       notifyUserByEmail(viewing.residentEmail, {
@@ -110,6 +136,13 @@ export async function PATCH(
         type: "viewing",
         referenceId: numericId,
         link: "/history?tab=viewings",
+        metadata: {
+          listingName: viewing.listingName,
+          date: viewing.preferredDate,
+          time: viewing.preferredTime,
+          status: "Cancelled",
+          reason: cancelReason,
+        },
       }).catch(() => {});
     }
 
@@ -166,6 +199,12 @@ export async function PATCH(
           type: "viewing",
           referenceId: numericId,
           link: "/history?tab=viewings",
+          metadata: {
+            listingName: viewing.listingName,
+            date: viewing.preferredDate,
+            time: viewing.preferredTime,
+            status: "Confirmed",
+          },
         }).catch(() => {});
       } else if (body.status === "viewing_declined") {
         notifyUserByEmail(viewing.residentEmail, {
@@ -174,6 +213,13 @@ export async function PATCH(
           type: "viewing",
           referenceId: numericId,
           link: "/history?tab=viewings",
+          metadata: {
+            listingName: viewing.listingName,
+            date: viewing.preferredDate,
+            time: viewing.preferredTime,
+            status: "Declined",
+            reason: patch.adminNotes,
+          },
         }).catch(() => {});
       }
     }

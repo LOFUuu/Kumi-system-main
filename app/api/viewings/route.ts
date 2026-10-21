@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getListing, getPropertyViewings, createPropertyViewing, notifyAdmins } from "@/lib/db";
+import { getListing, getPropertyViewings, createPropertyViewing, notifyAdmins, notifyUserByEmail } from "@/lib/db";
 import { isHowaRole, requestRole } from "@/lib/role";
 
 export const dynamic = "force-dynamic";
@@ -125,7 +125,31 @@ export async function POST(req: NextRequest) {
       type: "viewing",
       referenceId: viewing.id,
       link: "/admin/viewings",
+      metadata: {
+        listingName: listing.houseName,
+        date: preferredDate,
+        time: preferredTime,
+        residentName: residentName || "Resident",
+        status: "Requested",
+      },
     }).catch(() => {});
+
+    // Notify Resident about submitted viewing request
+    if (residentEmail) {
+      notifyUserByEmail(residentEmail, {
+        title: "Property Viewing Request Submitted",
+        message: `Your property viewing request for ${listing.houseName} on ${preferredDate} at ${preferredTime} has been submitted and is waiting for confirmation.`,
+        type: "viewing",
+        referenceId: viewing.id,
+        link: "/history?tab=viewings",
+        metadata: {
+          listingName: listing.houseName,
+          date: preferredDate,
+          time: preferredTime,
+          status: "Pending",
+        },
+      }).catch(() => {});
+    }
 
     return NextResponse.json({ viewing }, { status: 201 });
   } catch (err: any) {
