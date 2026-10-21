@@ -24,11 +24,11 @@ export async function isOnlineMode(): Promise<boolean> {
   try {
     await dbConnect();
     if (mongoose.connection.readyState === 1 && mongoose.connection.db) {
-      // Ping check with 1200ms strict timeout
+      // Ping check with 5000ms timeout (increased for Vercel serverless cold starts)
       await Promise.race([
         mongoose.connection.db.admin().ping(),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Mongo ping timeout")), 1200)
+          setTimeout(() => reject(new Error("Mongo ping timeout")), 5000)
         ),
       ]);
       cachedIsOnline = true;
