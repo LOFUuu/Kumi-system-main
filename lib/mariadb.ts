@@ -24,9 +24,15 @@ const poolOptions: PoolOptions = {
   connectTimeout: 3000,
 };
 
+let _packetSizeConfigured = false;
+
 export function getMariaDBPool(): Pool {
   if (!global._mariadbPool) {
     global._mariadbPool = mysql.createPool(poolOptions);
+    if (!_packetSizeConfigured) {
+      _packetSizeConfigured = true;
+      global._mariadbPool.query("SET GLOBAL max_allowed_packet = 67108864").catch(() => {});
+    }
   }
   return global._mariadbPool;
 }

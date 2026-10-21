@@ -21,6 +21,7 @@
 import nodemailer from "nodemailer";
 import type { SendMailOptions } from "nodemailer";
 import { google } from "googleapis";
+import { isOnlineMode } from "./db-router";
 
 // ─── Resend HTTP API (Primary for Vercel / Cloud deployments) ────────────────
 
@@ -116,6 +117,7 @@ async function sendViaBrevo(opts: {
   try {
     const res = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
+      signal: AbortSignal.timeout(3500),
       headers: {
         "api-key": apiKey,
         "Content-Type": "application/json",
@@ -275,6 +277,13 @@ async function sendMail(opts: {
   html?: string;
   replyTo?: string;
 }): Promise<void> {
+  // If the system is offline, skip email delivery to prevent network hangs
+  const online = await isOnlineMode().catch(() => false);
+  if (!online) {
+    console.log(`[Mailer] Offline mode detected. Skipping email delivery to ${opts.to}.`);
+    return;
+  }
+
   const nmOpts: SendMailOptions = {
     from: opts.from,
     to: opts.to,

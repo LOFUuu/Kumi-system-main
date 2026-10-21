@@ -520,6 +520,60 @@ export async function getAmenityMariaDB(id: number | string): Promise<AmenityTyp
   };
 }
 
+export async function createAmenityMariaDB(data: any): Promise<AmenityType> {
+  let id = data.id || data._id;
+  if (!id) {
+    const maxRow = await mariaQuery<any[]>(`SELECT MAX(id) as maxId FROM amenities`);
+    id = (maxRow[0]?.maxId || 0) + 1;
+  }
+  await mariaQuery(
+    `INSERT INTO amenities (id, name, description, maxCapacity, rateWalkin, rateWhole, ratePrivate, downpayment, downpaymentPrivate, isActive, isArchived, image, lat, lng)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE name=VALUES(name), isActive=VALUES(isActive)`,
+    [
+      id,
+      data.name || "",
+      data.description || "",
+      Number(data.maxCapacity) || 50,
+      Number(data.rateWalkin) || 0,
+      Number(data.rateWhole) || 0,
+      Number(data.ratePrivate) || 0,
+      Number(data.downpayment) || 200,
+      Number(data.downpaymentPrivate) || 500,
+      data.isActive !== false ? 1 : 0,
+      data.image || "",
+      data.lat || 0,
+      data.lng || 0,
+    ]
+  );
+  const result = await getAmenityMariaDB(id);
+  return result!;
+}
+
+export async function updateAmenityMariaDB(id: number | string, data: any): Promise<AmenityType | null> {
+  const fields: string[] = [];
+  const params: any[] = [];
+  const mappings: Record<string, string> = {
+    name: "name", description: "description", maxCapacity: "maxCapacity",
+    rateWalkin: "rateWalkin", rateWhole: "rateWhole", ratePrivate: "ratePrivate",
+    downpayment: "downpayment", downpaymentPrivate: "downpaymentPrivate",
+    isActive: "isActive", isArchived: "isArchived", image: "image", lat: "lat", lng: "lng",
+  };
+  for (const [key, col] of Object.entries(mappings)) {
+    if (data[key] !== undefined) {
+      fields.push(`\`${col}\` = ?`);
+      let val = data[key];
+      if (typeof val === "boolean") val = val ? 1 : 0;
+      params.push(val);
+    }
+  }
+  if (fields.length > 0) {
+    params.push(Number(id));
+    await mariaQuery(`UPDATE amenities SET ${fields.join(", ")} WHERE id = ?`, params);
+  }
+  return getAmenityMariaDB(id);
+}
+
 // ==========================================
 // ANNOUNCEMENTS
 // ==========================================
@@ -599,9 +653,8 @@ export async function deleteAnnouncementMariaDB(id: number | string): Promise<bo
 // ==========================================
 // RESERVATIONS
 // ==========================================
-export async function getReservationsMariaDB(): Promise<ReservationType[]> {
-  const rows = await mariaQuery<any[]>(`SELECT * FROM reservations WHERE isArchived = 0 ORDER BY id DESC`);
-  return rows.map((r) => ({
+function rowToReservation(r: any): ReservationType {
+  return {
     id: r.id,
     amenityId: r.amenityId,
     amenityName: r.amenityName || "",
@@ -620,7 +673,84 @@ export async function getReservationsMariaDB(): Promise<ReservationType[]> {
     gcashRef: r.gcashRef || undefined,
     receiptPath: r.receiptPath || undefined,
     isArchived: Boolean(r.isArchived),
-  }));
+    archiveReason: r.archiveReason || undefined,
+    archivedAt: toDateString(r.archivedAt),
+  };
+}
+
+export async function getReservationsMariaDB(includeArchived = false): Promise<ReservationType[]> {
+  const sql = includeArchived
+    ? `SELECT * FROM reservations ORDER BY id DESC`
+    : `SELECT * FROM reservations WHERE isArchived = 0 ORDER BY id DESC`;
+  const rows = await mariaQuery<any[]>(sql);
+  return rows.map(rowToReservation);
+}
+
+export async function getArchivedReservationsMariaDB(): Promise<ReservationType[]> {
+  const rows = await mariaQuery<any[]>(
+    `SELECT * FROM reservations WHERE isArchived = 1 ORDER BY archivedAt DESC, id DESC`
+  );
+  return rows.map(rowToReservation);
+}
+
+export async function archiveReservationMariaDB(
+  id: number | string,
+  reason?: string
+): Promise<ReservationType | null> {
+  const now = new Date().toISOString();
+  await mariaQuery(
+    `UPDATE reservations SET isArchived = 1, archivedAt = ?, archiveReason = ? WHERE id = ?`,
+    [now, reason || "Archived by Administrator", Number(id)]
+  );
+  const rows = await mariaQuery<any[]>(`SELECT * FROM reservations WHERE id = ?`, [Number(id)]);
+  if (!rows.length) return null;
+  const result = rowToReservation(rows[0]);
+  await enqueueSync("reservations", Number(id), "UPDATE", result);
+  return result;
+}
+
+export async function unarchiveReservationMariaDB(
+  id: number | string
+): Promise<{ ok: boolean; error?: string; reservation?: ReservationType }> {
+  const rows = await mariaQuery<any[]>(`SELECT * FROM reservations WHERE id = ? LIMIT 1`, [Number(id)]);
+  if (!rows.length) return { ok: false, error: "Reservation not found." };
+  const r = rows[0];
+  // If previously approved, check for slot conflicts
+  if (r.status === "approved") {
+    const conflicts = await mariaQuery<any[]>(
+      `SELECT id FROM reservations WHERE id != ? AND amenityId = ? AND date = ? AND bookingType = ? AND status = 'approved' AND isArchived = 0 LIMIT 1`,
+      [Number(id), r.amenityId, r.date, r.bookingType]
+    );
+    if (conflicts.length > 0) {
+      return {
+        ok: false,
+        error: `Slot conflict: Amenity on ${r.date} (${r.bookingType} session) is already occupied by an active approved reservation.`,
+      };
+    }
+  }
+  await mariaQuery(
+    `UPDATE reservations SET isArchived = 0, archivedAt = NULL, archiveReason = NULL WHERE id = ?`,
+    [Number(id)]
+  );
+  const updated = await mariaQuery<any[]>(`SELECT * FROM reservations WHERE id = ?`, [Number(id)]);
+  const result = rowToReservation(updated[0]);
+  await enqueueSync("reservations", Number(id), "UPDATE", result);
+  return { ok: true, reservation: result };
+}
+
+export async function deleteReservationMariaDB(
+  id: number | string
+): Promise<{ ok: boolean; error?: string }> {
+  const rows = await mariaQuery<any[]>(`SELECT id FROM reservations WHERE id = ? LIMIT 1`, [Number(id)]);
+  if (!rows.length) return { ok: false, error: "Reservation not found." };
+  // Void linked transactions
+  await mariaQuery(
+    `UPDATE transactions SET status = 'voided' WHERE refType = 'amenity' AND refId = ?`,
+    [Number(id)]
+  );
+  await mariaQuery(`DELETE FROM reservations WHERE id = ?`, [Number(id)]);
+  await enqueueSync("reservations", Number(id), "DELETE", { id: Number(id) });
+  return { ok: true };
 }
 
 export async function createReservationMariaDB(data: any): Promise<ReservationType> {

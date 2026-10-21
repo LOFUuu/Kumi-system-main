@@ -132,21 +132,19 @@ export async function POST(req: NextRequest) {
 
   const created = await createListing(docs as any);
 
-  // Send security email notification to Admin if submission needs validation
+  // Send security email notification to Admin asynchronously so listing upload is never delayed or blocked
   if (verificationStatus === "pending") {
-    try {
-      await sendAdminListingNotificationEmail({
-        listingId: created.id,
-        houseName: docs.houseName,
-        propertyAddress: address,
-        ownerName,
-        ownerContact: ownerContactNumber,
-        status: "Pending Ownership Validation",
-        actionRequired: "Review proof of ownership documents and validate listing",
-      });
-    } catch (err) {
-      console.error("[Mailer] Failed to send admin listing notification:", err);
-    }
+    sendAdminListingNotificationEmail({
+      listingId: created.id,
+      houseName: docs.houseName,
+      propertyAddress: address,
+      ownerName,
+      ownerContact: ownerContactNumber,
+      status: "Pending Ownership Validation",
+      actionRequired: "Review proof of ownership documents and validate listing",
+    }).catch((err) => {
+      console.warn("[Mailer] Background admin notification error:", err?.message || err);
+    });
   }
 
   return NextResponse.json({ listing: created }, { status: 201 });

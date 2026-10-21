@@ -12,7 +12,7 @@ import {
   PaymentConfig,
   Notification,
 } from "../models";
-import { isOnlineMode } from "./db-router";
+import { isOnlineMode, markOffline } from "./db-router";
 import * as maria from "./mariadb-service";
 import { mariaQuery } from "./mariadb";
 import type {
@@ -293,7 +293,9 @@ export async function createListing(data: any): Promise<HouseListing> {
       maria.createListingMariaDB({ ...res, id: res.id || id }).catch(() => {});
       clearListingsCache();
       return res;
-    } catch (e) {}
+    } catch (e) {
+      markOffline();
+    }
   }
   try {
     return await maria.createListingMariaDB(data);
@@ -312,7 +314,9 @@ export async function updateListing(id: number | string, data: any): Promise<Hou
       maria.updateListingMariaDB(id, data).catch(() => {});
       clearListingsCache();
       if (doc) return serialize<HouseListing>(doc);
-    } catch (e) {}
+    } catch (e) {
+      markOffline();
+    }
   }
   try {
     return await maria.updateListingMariaDB(id, data);
@@ -373,30 +377,67 @@ export async function getAmenities(): Promise<AmenityType[]> {
   if (cachedAmenities && Date.now() < cachedAmenities.expires) {
     return cachedAmenities.data;
   }
-  await dbConnect();
-  const docs = await Amenity.find({ $or: [{ isArchived: false }, { isArchived: { $exists: false } }] }).lean();
-  const result = docs.map((d) => serialize<AmenityType>(d));
-  cachedAmenities = { data: result, expires: Date.now() + AMENITIES_CACHE_TTL };
-  return result;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const docs = await Amenity.find({ $or: [{ isArchived: false }, { isArchived: { $exists: false } }] }).lean();
+      const result = docs.map((d) => serialize<AmenityType>(d));
+      cachedAmenities = { data: result, expires: Date.now() + AMENITIES_CACHE_TTL };
+      return result;
+    } catch (e) {
+      // fallback to offline
+    }
+  }
+  try {
+    const result = await maria.getAmenitiesMariaDB();
+    cachedAmenities = { data: result, expires: Date.now() + AMENITIES_CACHE_TTL };
+    return result;
+  } catch {
+    return [];
+  }
 }
 
 export async function getArchivedAmenities(): Promise<AmenityType[]> {
-  await dbConnect();
-  const docs = await Amenity.find({ isArchived: true }).lean();
-  return docs.map((d) => serialize<AmenityType>(d));
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const docs = await Amenity.find({ isArchived: true }).lean();
+      return docs.map((d) => serialize<AmenityType>(d));
+    } catch (e) {}
+  }
+  try {
+    const rows = await mariaQuery<any[]>(`SELECT * FROM amenities WHERE isArchived = 1 ORDER BY id ASC`);
+    return rows.map((r) => ({
+      id: r.id, name: r.name, description: r.description || "",
+      maxCapacity: r.maxCapacity, rateWalkin: Number(r.rateWalkin),
+      rateWhole: Number(r.rateWhole), ratePrivate: Number(r.ratePrivate),
+      downpayment: Number(r.downpayment), downpaymentPrivate: Number(r.downpaymentPrivate),
+      isActive: Boolean(r.isActive), isArchived: Boolean(r.isArchived),
+      image: r.image || "", lat: r.lat, lng: r.lng,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function getAmenity(id: number | string): Promise<AmenityType | null> {
-  await dbConnect();
-  const doc = await Amenity.findOne({ _id: Number(id) } as any);
-  return doc ? serialize<AmenityType>(doc.toObject()) : null;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = await Amenity.findOne({ _id: Number(id) } as any);
+      if (doc) return serialize<AmenityType>(doc.toObject());
+    } catch (e) {}
+  }
+  return maria.getAmenityMariaDB(id);
 }
 
 export async function createAmenity(data: Partial<AmenityType>): Promise<AmenityType> {
-  await dbConnect();
+  const online = await isOnlineMode();
   const id = await getNextId(Amenity);
-  const doc = (await Amenity.create({
-    _id: id,
+  const payload = {
     name: data.name ?? "New Amenity",
     description: data.description ?? "",
     maxCapacity: Number(data.maxCapacity) || 50,
@@ -409,17 +450,28 @@ export async function createAmenity(data: Partial<AmenityType>): Promise<Amenity
     image: data.image || "https://picsum.photos/seed/amenity/800/600",
     lat: Number(data.lat) || 14.3430,
     lng: Number(data.lng) || 120.9807,
-  } as any)) as any;
+  };
+
+  let created: AmenityType;
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = (await Amenity.create({ _id: id, ...payload } as any)) as any;
+      clearAmenitiesCache();
+      const plain = doc?.toObject ? doc.toObject() : doc;
+      created = serialize<AmenityType>(plain);
+      maria.createAmenityMariaDB({ ...payload, id }).catch(() => {});
+      return created;
+    } catch (e) {}
+  }
   clearAmenitiesCache();
-  const plain = doc?.toObject ? doc.toObject() : doc;
-  return serialize<AmenityType>(plain);
+  return maria.createAmenityMariaDB({ ...payload, id });
 }
 
 export async function updateAmenity(
   id: number | string,
   data: Partial<AmenityType>
 ): Promise<AmenityType | null> {
-  await dbConnect();
   const update: Record<string, unknown> = {};
   if (data.name !== undefined) update.name = data.name;
   if (data.description !== undefined) update.description = data.description;
@@ -434,67 +486,128 @@ export async function updateAmenity(
   if (data.lat !== undefined) update.lat = Number(data.lat);
   if (data.lng !== undefined) update.lng = Number(data.lng);
 
-  const doc = await Amenity.findOneAndUpdate(
-    { _id: Number(id) } as any,
-    { $set: update },
-    { new: true }
-  ).lean();
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = await Amenity.findOneAndUpdate(
+        { _id: Number(id) } as any,
+        { $set: update },
+        { new: true }
+      ).lean();
+      clearAmenitiesCache();
+      maria.updateAmenityMariaDB(id, data).catch(() => {});
+      return doc ? serialize<AmenityType>(doc) : null;
+    } catch (e) {}
+  }
   clearAmenitiesCache();
-  return doc ? serialize<AmenityType>(doc) : null;
+  return maria.updateAmenityMariaDB(id, data);
 }
 
 export async function deleteAmenity(id: number | string): Promise<boolean> {
-  await dbConnect();
-  const res = await Amenity.deleteOne({ _id: Number(id) } as any);
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const res = await Amenity.deleteOne({ _id: Number(id) } as any);
+      clearAmenitiesCache();
+      mariaQuery(`DELETE FROM amenities WHERE id = ?`, [Number(id)]).catch(() => {});
+      return res.deletedCount > 0;
+    } catch (e) {}
+  }
   clearAmenitiesCache();
-  return res.deletedCount > 0;
+  await mariaQuery(`DELETE FROM amenities WHERE id = ?`, [Number(id)]);
+  return true;
 }
 
 export async function archiveAmenity(id: number | string): Promise<boolean> {
-  await dbConnect();
-  const res = await Amenity.updateOne({ _id: Number(id) } as any, { $set: { isArchived: true } });
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const res = await Amenity.updateOne({ _id: Number(id) } as any, { $set: { isArchived: true } });
+      clearAmenitiesCache();
+      mariaQuery(`UPDATE amenities SET isArchived = 1 WHERE id = ?`, [Number(id)]).catch(() => {});
+      return res.modifiedCount > 0;
+    } catch (e) {}
+  }
   clearAmenitiesCache();
-  return res.modifiedCount > 0;
+  await mariaQuery(`UPDATE amenities SET isArchived = 1 WHERE id = ?`, [Number(id)]);
+  return true;
 }
 
 export async function unarchiveAmenity(id: number | string): Promise<boolean> {
-  await dbConnect();
-  const res = await Amenity.updateOne({ _id: Number(id) } as any, { $set: { isArchived: false } });
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const res = await Amenity.updateOne({ _id: Number(id) } as any, { $set: { isArchived: false } });
+      clearAmenitiesCache();
+      mariaQuery(`UPDATE amenities SET isArchived = 0 WHERE id = ?`, [Number(id)]).catch(() => {});
+      return res.modifiedCount > 0;
+    } catch (e) {}
+  }
   clearAmenitiesCache();
-  return res.modifiedCount > 0;
+  await mariaQuery(`UPDATE amenities SET isArchived = 0 WHERE id = ?`, [Number(id)]);
+  return true;
 }
 
 // Compute the set of dates that are already blocked for an amenity.
 // - A private approved reservation blocks the entire day.
 // - A public approved reservation blocks the day once booked pax >= capacity.
 export async function getBlockedDates(amenityId: number): Promise<string[]> {
-  await dbConnect();
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
 
-  const nonArchived = {
-    $or: [
-      { isArchived: false },
-      { isArchived: "false" },
-      { isArchived: 0 },
-      { isArchived: { $exists: false } },
-    ],
-  };
+      const nonArchived = {
+        $or: [
+          { isArchived: false },
+          { isArchived: "false" },
+          { isArchived: 0 },
+          { isArchived: { $exists: false } },
+        ],
+      };
 
-  const [approvedDates, publicGroups, amenity] = await Promise.all([
-    Reservation.find({ amenityId, reservationType: "private", status: "approved", ...nonArchived } as any)
-      .distinct("date"),
-    Reservation.aggregate<{ _id: string; pax: number }>([
-      { $match: { amenityId, reservationType: "public", status: "approved", ...nonArchived } },
-      { $group: { _id: "$date", pax: { $sum: "$paxCount" } } },
-    ]),
-    Amenity.findOne({ _id: Number(amenityId) } as any),
-  ]);
+      const [approvedDates, publicGroups, amenity] = await Promise.all([
+        Reservation.find({ amenityId, reservationType: "private", status: "approved", ...nonArchived } as any)
+          .distinct("date"),
+        Reservation.aggregate<{ _id: string; pax: number }>([
+          { $match: { amenityId, reservationType: "public", status: "approved", ...nonArchived } },
+          { $group: { _id: "$date", pax: { $sum: "$paxCount" } } },
+        ]),
+        Amenity.findOne({ _id: Number(amenityId) } as any),
+      ]);
 
-  const capacity = amenity?.maxCapacity ?? 0;
-  const publicFull = publicGroups
-    .filter((g) => g._id && g.pax >= capacity)
-    .map((g) => g._id);
+      const capacity = amenity?.maxCapacity ?? 0;
+      const publicFull = publicGroups
+        .filter((g) => g._id && g.pax >= capacity)
+        .map((g) => g._id);
 
-  return Array.from(new Set([...approvedDates, ...publicFull])).filter(Boolean);
+      return Array.from(new Set([...approvedDates, ...publicFull])).filter(Boolean);
+    } catch (e) {}
+  }
+  // Offline: compute blocked dates from local MariaDB
+  try {
+    const amenityRow = await maria.getAmenityMariaDB(amenityId);
+    const capacity = amenityRow?.maxCapacity ?? 0;
+
+    const privateRows = await mariaQuery<any[]>(
+      `SELECT date FROM reservations WHERE amenityId = ? AND reservationType = 'private' AND status = 'approved' AND isArchived = 0`,
+      [amenityId]
+    );
+    const publicRows = await mariaQuery<any[]>(
+      `SELECT date, SUM(paxCount) as pax FROM reservations WHERE amenityId = ? AND reservationType = 'public' AND status = 'approved' AND isArchived = 0 GROUP BY date`,
+      [amenityId]
+    );
+
+    const privateDates = privateRows.map((r) => r.date);
+    const publicFull = publicRows.filter((r) => Number(r.pax) >= capacity).map((r) => r.date);
+    return Array.from(new Set([...privateDates, ...publicFull])).filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 // True if `date` is available for a new public booking with the given pax.
@@ -503,28 +616,44 @@ export async function isDateAvailableForPublic(
   date: string,
   pax: number
 ): Promise<boolean> {
-  await dbConnect();
   const blocked = await getBlockedDates(amenityId);
   if (blocked.includes(date)) return false;
 
-  const nonArchived = {
-    $or: [
-      { isArchived: false },
-      { isArchived: "false" },
-      { isArchived: 0 },
-      { isArchived: { $exists: false } },
-    ],
-  };
-
-  const [amenity, approvedPaxDoc] = await Promise.all([
-    Amenity.findOne({ _id: Number(amenityId) } as any),
-    Reservation.aggregate<{ pax: number }>([
-      { $match: { amenityId, reservationType: "public", status: "approved", date, ...nonArchived } },
-      { $group: { _id: null, pax: { $sum: "$paxCount" } } },
-    ]),
-  ]);
-  const used = approvedPaxDoc[0]?.pax ?? 0;
-  return used + Math.max(1, pax) <= (amenity?.maxCapacity ?? 0);
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const nonArchived = {
+        $or: [
+          { isArchived: false },
+          { isArchived: "false" },
+          { isArchived: 0 },
+          { isArchived: { $exists: false } },
+        ],
+      };
+      const [amenity, approvedPaxDoc] = await Promise.all([
+        Amenity.findOne({ _id: Number(amenityId) } as any),
+        Reservation.aggregate<{ pax: number }>([
+          { $match: { amenityId, reservationType: "public", status: "approved", date, ...nonArchived } },
+          { $group: { _id: null, pax: { $sum: "$paxCount" } } },
+        ]),
+      ]);
+      const used = approvedPaxDoc[0]?.pax ?? 0;
+      return used + Math.max(1, pax) <= (amenity?.maxCapacity ?? 0);
+    } catch (e) {}
+  }
+  // Offline fallback
+  try {
+    const amenityRow = await maria.getAmenityMariaDB(amenityId);
+    const paxRows = await mariaQuery<any[]>(
+      `SELECT SUM(paxCount) as pax FROM reservations WHERE amenityId = ? AND reservationType = 'public' AND status = 'approved' AND date = ? AND isArchived = 0`,
+      [amenityId, date]
+    );
+    const used = Number(paxRows[0]?.pax) || 0;
+    return used + Math.max(1, pax) <= (amenityRow?.maxCapacity ?? 0);
+  } catch {
+    return true;
+  }
 }
 
 export async function getNextId(collection: any): Promise<number> {
@@ -1319,136 +1448,167 @@ export async function getReservations(includeArchived = false): Promise<Reservat
     } catch (e) {}
   }
   try {
-    return await maria.getReservationsMariaDB();
+    return await maria.getReservationsMariaDB(includeArchived);
   } catch {
     return [];
   }
 }
 
 export async function getArchivedReservations(): Promise<ReservationType[]> {
-  await dbConnect();
-  const docs = await Reservation.find({
-    $or: [{ isArchived: true }, { isArchived: "true" }, { isArchived: 1 }],
-  } as any)
-    .sort({ archivedAt: -1, _id: -1 })
-    .lean();
-  return docs.map((d) => serialize<ReservationType>(d));
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const docs = await Reservation.find({
+        $or: [{ isArchived: true }, { isArchived: "true" }, { isArchived: 1 }],
+      } as any)
+        .sort({ archivedAt: -1, _id: -1 })
+        .lean();
+      return docs.map((d) => serialize<ReservationType>(d));
+    } catch (e) {}
+  }
+  try {
+    return await maria.getArchivedReservationsMariaDB();
+  } catch {
+    return [];
+  }
 }
 
 export async function archiveReservation(
   id: number | string,
   reason?: string
 ): Promise<ReservationType | null> {
-  await dbConnect();
-  const resId = Number(id);
-  const now = new Date().toISOString();
-  const doc = await Reservation.findOneAndUpdate(
-    { _id: resId } as any,
-    {
-      $set: {
-        isArchived: true,
-        archivedAt: now,
-        archiveReason: reason || "Archived by Administrator",
-      },
-    },
-    { new: true }
-  ).lean();
-  return doc ? serialize<ReservationType>(doc) : null;
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const resId = Number(id);
+      const now = new Date().toISOString();
+      const doc = await Reservation.findOneAndUpdate(
+        { _id: resId } as any,
+        {
+          $set: {
+            isArchived: true,
+            archivedAt: now,
+            archiveReason: reason || "Archived by Administrator",
+          },
+        },
+        { new: true }
+      ).lean();
+      maria.archiveReservationMariaDB(id, reason).catch(() => {});
+      return doc ? serialize<ReservationType>(doc) : null;
+    } catch (e) {}
+  }
+  return maria.archiveReservationMariaDB(id, reason);
 }
 
 export async function unarchiveReservation(
   id: number | string
 ): Promise<{ ok: boolean; error?: string; reservation?: ReservationType }> {
-  await dbConnect();
-  const resId = Number(id);
-  const reservation = await Reservation.findOne({ _id: resId } as any);
-  if (!reservation) {
-    return { ok: false, error: "Reservation not found." };
-  }
-
-  // If the reservation was previously approved, check for slot conflicts before restoring!
-  if (reservation.status === "approved") {
-    const nonArchived = {
-      $or: [
-        { isArchived: false },
-        { isArchived: "false" },
-        { isArchived: 0 },
-        { isArchived: { $exists: false } },
-      ],
-    };
-
-    let conflictQuery: any = {
-      _id: { $ne: resId },
-      amenityId: reservation.amenityId,
-      date: reservation.date,
-      status: "approved",
-      ...nonArchived,
-    };
-
-    if (reservation.reservationType !== "private") {
-      conflictQuery = {
-        _id: { $ne: resId },
-        amenityId: reservation.amenityId,
-        date: reservation.date,
-        status: "approved",
-        ...nonArchived,
-        $or: [
-          { reservationType: "private" },
-          { bookingType: reservation.bookingType },
-        ],
-      };
-    }
-
-    const conflict = await Reservation.findOne(conflictQuery as any);
-    if (conflict) {
-      return {
-        ok: false,
-        error: `Slot conflict: Amenity "${reservation.amenityName}" on ${reservation.date} (${reservation.bookingType} session) is already occupied by active approved reservation #${conflict._id} (${conflict.residentName}).`,
-      };
-    }
-
-    if (reservation.reservationType === "public") {
-      const available = await isDateAvailableForPublic(
-        reservation.amenityId,
-        reservation.date,
-        reservation.paxCount
-      );
-      if (!available) {
-        return {
-          ok: false,
-          error: `Capacity exceeded: Amenity "${reservation.amenityName}" has reached full capacity for ${reservation.date}.`,
-        };
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const resId = Number(id);
+      const reservation = await Reservation.findOne({ _id: resId } as any);
+      if (!reservation) {
+        return { ok: false, error: "Reservation not found." };
       }
-    }
+
+      // If the reservation was previously approved, check for slot conflicts before restoring!
+      if (reservation.status === "approved") {
+        const nonArchived = {
+          $or: [
+            { isArchived: false },
+            { isArchived: "false" },
+            { isArchived: 0 },
+            { isArchived: { $exists: false } },
+          ],
+        };
+
+        let conflictQuery: any = {
+          _id: { $ne: resId },
+          amenityId: reservation.amenityId,
+          date: reservation.date,
+          status: "approved",
+          ...nonArchived,
+        };
+
+        if (reservation.reservationType !== "private") {
+          conflictQuery = {
+            _id: { $ne: resId },
+            amenityId: reservation.amenityId,
+            date: reservation.date,
+            status: "approved",
+            ...nonArchived,
+            $or: [
+              { reservationType: "private" },
+              { bookingType: reservation.bookingType },
+            ],
+          };
+        }
+
+        const conflict = await Reservation.findOne(conflictQuery as any);
+        if (conflict) {
+          return {
+            ok: false,
+            error: `Slot conflict: Amenity "${reservation.amenityName}" on ${reservation.date} (${reservation.bookingType} session) is already occupied by active approved reservation #${conflict._id} (${conflict.residentName}).`,
+          };
+        }
+
+        if (reservation.reservationType === "public") {
+          const available = await isDateAvailableForPublic(
+            reservation.amenityId,
+            reservation.date,
+            reservation.paxCount
+          );
+          if (!available) {
+            return {
+              ok: false,
+              error: `Capacity exceeded: Amenity "${reservation.amenityName}" has reached full capacity for ${reservation.date}.`,
+            };
+          }
+        }
+      }
+
+      reservation.isArchived = false;
+      reservation.archivedAt = null as any;
+      reservation.archiveReason = null as any;
+      await reservation.save();
+      maria.unarchiveReservationMariaDB(id).catch(() => {});
+
+      const updated = (await Reservation.findById(resId).lean()) as any;
+      return { ok: true, reservation: serialize<ReservationType>(updated) };
+    } catch (e) {}
   }
-
-  reservation.isArchived = false;
-  reservation.archivedAt = null as any;
-  reservation.archiveReason = null as any;
-  await reservation.save();
-
-  const updated = (await Reservation.findById(resId).lean()) as any;
-  return { ok: true, reservation: serialize<ReservationType>(updated) };
+  return maria.unarchiveReservationMariaDB(id);
 }
 
 export async function deleteReservation(
   id: number | string
 ): Promise<{ ok: boolean; error?: string }> {
-  await dbConnect();
-  const resId = Number(id);
-  const reservation = await Reservation.findOne({ _id: resId } as any);
-  if (!reservation) {
-    return { ok: false, error: "Reservation not found." };
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const resId = Number(id);
+      const reservation = await Reservation.findOne({ _id: resId } as any);
+      if (!reservation) {
+        return { ok: false, error: "Reservation not found." };
+      }
+
+      // Preserve financial audit trail by marking linked transaction status as voided
+      await Transaction.updateMany(
+        { refType: "amenity", refId: resId },
+        { $set: { status: "voided" } }
+      );
+
+      await Reservation.deleteOne({ _id: resId } as any);
+      maria.deleteReservationMariaDB(id).catch(() => {});
+      return { ok: true };
+    } catch (e) {}
   }
-
-  // Preserve financial audit trail by marking linked transaction status as voided
-  await Transaction.updateMany(
-    { refType: "amenity", refId: resId },
-    { $set: { status: "voided" } }
-  );
-
-  await Reservation.deleteOne({ _id: resId } as any);
-  return { ok: true };
+  return maria.deleteReservationMariaDB(id);
 }
 
 export async function generateMonthlyDues(targetMonth?: string): Promise<{ createdCount: number }> {
@@ -1719,80 +1879,147 @@ export const DEFAULT_PAYMENT_CONFIGS: Record<"amenity" | "dues", Omit<PaymentCon
 };
 
 export async function getPaymentConfigs(): Promise<Record<"amenity" | "dues", PaymentConfigType>> {
-  await dbConnect();
-  const docs = await PaymentConfig.find().lean();
-  const map: Record<string, any> = {};
-  for (const d of docs) {
-    if (d && (d as any).category) {
-      map[(d as any).category] = {
-        id: String((d as any)._id),
-        category: (d as any).category,
-        accountName: (d as any).accountName || "MABUHAY HOMES HOA",
-        accountNumber: (d as any).accountNumber || "0917 123 4567",
-        qrCodeUrl: (d as any).qrCodeUrl || "",
-        instructions: (d as any).instructions || "",
-        isActive: (d as any).isActive !== false,
-        updatedBy: (d as any).updatedBy || "System",
-        updatedAt: (d as any).updatedAt ? new Date((d as any).updatedAt).toISOString() : undefined,
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const docs = await PaymentConfig.find().lean();
+      const map: Record<string, any> = {};
+      for (const d of docs) {
+        if (d && (d as any).category) {
+          map[(d as any).category] = {
+            id: String((d as any)._id),
+            category: (d as any).category,
+            accountName: (d as any).accountName || "MABUHAY HOMES HOA",
+            accountNumber: (d as any).accountNumber || "0917 123 4567",
+            qrCodeUrl: (d as any).qrCodeUrl || "",
+            instructions: (d as any).instructions || "",
+            isActive: (d as any).isActive !== false,
+            updatedBy: (d as any).updatedBy || "System",
+            updatedAt: (d as any).updatedAt ? new Date((d as any).updatedAt).toISOString() : undefined,
+          };
+        }
+      }
+      return {
+        amenity: map.amenity || { ...DEFAULT_PAYMENT_CONFIGS.amenity },
+        dues: map.dues || { ...DEFAULT_PAYMENT_CONFIGS.dues },
       };
-    }
+    } catch (e) {}
   }
-
-  return {
-    amenity: map.amenity || { ...DEFAULT_PAYMENT_CONFIGS.amenity },
-    dues: map.dues || { ...DEFAULT_PAYMENT_CONFIGS.dues },
-  };
+  // Offline fallback: read from local MariaDB
+  try {
+    const rows = await mariaQuery<any[]>(`SELECT * FROM payment_configs`);
+    const map: Record<string, any> = {};
+    for (const r of rows) {
+      if (r && r.category) {
+        map[r.category] = {
+          id: String(r.id),
+          category: r.category,
+          accountName: r.accountName || "MABUHAY HOMES HOA",
+          accountNumber: r.accountNumber || "0917 123 4567",
+          qrCodeUrl: r.qrCodeUrl || "",
+          instructions: r.instructions || "",
+          isActive: Boolean(r.isActive),
+          updatedBy: r.updatedBy || "System",
+          updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : undefined,
+        };
+      }
+    }
+    return {
+      amenity: map.amenity || { ...DEFAULT_PAYMENT_CONFIGS.amenity },
+      dues: map.dues || { ...DEFAULT_PAYMENT_CONFIGS.dues },
+    };
+  } catch {
+    return {
+      amenity: { ...DEFAULT_PAYMENT_CONFIGS.amenity },
+      dues: { ...DEFAULT_PAYMENT_CONFIGS.dues },
+    };
+  }
 }
 
 export async function getPaymentConfig(category: "amenity" | "dues"): Promise<PaymentConfigType> {
-  await dbConnect();
-  const doc = await PaymentConfig.findOne({ category } as any).lean() as any;
-  if (!doc) {
-    const def = DEFAULT_PAYMENT_CONFIGS[category];
-    return { ...def };
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = await PaymentConfig.findOne({ category } as any).lean() as any;
+      if (doc) {
+        return {
+          id: String(doc._id),
+          category: doc.category,
+          accountName: doc.accountName || "MABUHAY HOMES HOA",
+          accountNumber: doc.accountNumber || "0917 123 4567",
+          qrCodeUrl: doc.qrCodeUrl || "",
+          instructions: doc.instructions || "",
+          isActive: doc.isActive !== false,
+          updatedBy: doc.updatedBy || "System",
+          updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : undefined,
+        };
+      }
+    } catch (e) {}
   }
-  return {
-    id: String(doc._id),
-    category: doc.category,
-    accountName: doc.accountName || "MABUHAY HOMES HOA",
-    accountNumber: doc.accountNumber || "0917 123 4567",
-    qrCodeUrl: doc.qrCodeUrl || "",
-    instructions: doc.instructions || "",
-    isActive: doc.isActive !== false,
-    updatedBy: doc.updatedBy || "System",
-    updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : undefined,
-  };
+  // Offline fallback
+  try {
+    const rows = await mariaQuery<any[]>(`SELECT * FROM payment_configs WHERE category = ? LIMIT 1`, [category]);
+    if (rows.length) {
+      const r = rows[0];
+      return {
+        id: String(r.id),
+        category: r.category,
+        accountName: r.accountName || "MABUHAY HOMES HOA",
+        accountNumber: r.accountNumber || "0917 123 4567",
+        qrCodeUrl: r.qrCodeUrl || "",
+        instructions: r.instructions || "",
+        isActive: Boolean(r.isActive),
+        updatedBy: r.updatedBy || "System",
+        updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : undefined,
+      };
+    }
+  } catch (e) {}
+  return { ...DEFAULT_PAYMENT_CONFIGS[category] };
 }
 
 export async function upsertPaymentConfig(
   category: "amenity" | "dues",
   data: Partial<PaymentConfigType>
 ): Promise<PaymentConfigType> {
-  await dbConnect();
-  const updateData: Record<string, unknown> = {
-    ...data,
-    category,
-  };
+  const online = await isOnlineMode();
+  const updateData: Record<string, unknown> = { ...data, category };
   delete (updateData as any)._id;
   delete (updateData as any).id;
 
-  const doc = await PaymentConfig.findOneAndUpdate(
-    { category } as any,
-    { $set: updateData },
-    { new: true, upsert: true }
-  ).lean() as any;
-
-  return {
-    id: String(doc._id),
-    category: doc.category,
-    accountName: doc.accountName,
-    accountNumber: doc.accountNumber,
-    qrCodeUrl: doc.qrCodeUrl || "",
-    instructions: doc.instructions || "",
-    isActive: doc.isActive !== false,
-    updatedBy: doc.updatedBy,
-    updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : undefined,
-  };
+  if (online) {
+    try {
+      await dbConnect();
+      const doc = await PaymentConfig.findOneAndUpdate(
+        { category } as any,
+        { $set: updateData },
+        { new: true, upsert: true }
+      ).lean() as any;
+      // Mirror to local MariaDB
+      mariaQuery(
+        `UPDATE payment_configs SET accountName = ?, accountNumber = ?, qrCodeUrl = ?, instructions = ?, isActive = ?, updatedBy = ? WHERE category = ?`,
+        [doc.accountName, doc.accountNumber, doc.qrCodeUrl || "", doc.instructions || "", doc.isActive ? 1 : 0, doc.updatedBy || "Admin", category]
+      ).catch(() => {});
+      return {
+        id: String(doc._id),
+        category: doc.category,
+        accountName: doc.accountName,
+        accountNumber: doc.accountNumber,
+        qrCodeUrl: doc.qrCodeUrl || "",
+        instructions: doc.instructions || "",
+        isActive: doc.isActive !== false,
+        updatedBy: doc.updatedBy,
+        updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : undefined,
+      };
+    } catch (e) {}
+  }
+  // Offline: update local MariaDB only (will sync when back online)
+  await mariaQuery(
+    `UPDATE payment_configs SET accountName = ?, accountNumber = ?, qrCodeUrl = ?, instructions = ?, isActive = ?, updatedBy = ? WHERE category = ?`,
+    [data.accountName || "MABUHAY HOMES HOA", data.accountNumber || "0917 123 4567", data.qrCodeUrl || "", data.instructions || "", data.isActive !== false ? 1 : 0, data.updatedBy || "Admin", category]
+  );
+  return getPaymentConfig(category);
 }
 
 export interface TransactionFilter {
@@ -2065,7 +2292,9 @@ export async function createReservation(data: any): Promise<ReservationType> {
       const res = serialize<ReservationType>(plain);
       maria.createReservationMariaDB({ ...data, id }).catch(() => {});
       return res;
-    } catch (e) {}
+    } catch (e) {
+      markOffline();
+    }
   }
   return maria.createReservationMariaDB(data);
 }
@@ -2078,7 +2307,9 @@ export async function updateReservation(id: number | string, data: any): Promise
       const doc = await Reservation.findOneAndUpdate({ _id: Number(id) } as any, { $set: data }, { new: true }).lean();
       maria.updateReservationMariaDB(id, data).catch(() => {});
       if (doc) return serialize<ReservationType>(doc);
-    } catch (e) {}
+    } catch (e) {
+      markOffline();
+    }
   }
   return maria.updateReservationMariaDB(id, data);
 }
