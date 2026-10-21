@@ -1,23 +1,18 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { MapPin, BedDouble, ShowerHead, Ruler, ChevronRight } from "lucide-react";
+import { MapPin, BedDouble, ShowerHead, Ruler } from "lucide-react";
 import { formatPHP, type HouseListing } from "@/lib/mock-data";
 
 export function StatBox({ icon, value, label }: { icon: ReactNode; value: string | number; label: string }) {
   return (
     <div className="group relative overflow-hidden rounded-3xl border border-[#123f2a]/10 bg-white p-5 sm:p-6 shadow-[0_8px_25px_-5px_rgba(18,63,42,0.08)] transition-all duration-300 hover:shadow-[0_12px_35px_-5px_rgba(18,63,42,0.14)] hover:-translate-y-1">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8f3ec] text-[#123f2a] transition-transform duration-300 group-hover:scale-105">
-            {icon}
-          </div>
-          <div>
-            <div className="font-serif text-3xl font-bold text-[#123f2a]">{value}</div>
-            <div className="text-xs font-semibold text-gray-500 tracking-wide">{label}</div>
-          </div>
+      <div className="flex items-center gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e8f3ec] text-[#123f2a] transition-transform duration-300 group-hover:scale-105">
+          {icon}
         </div>
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-50 text-gray-400 group-hover:bg-[#123f2a] group-hover:text-white transition-all duration-200">
-          <ChevronRight className="h-4 w-4" />
+        <div>
+          <div className="font-serif text-3xl font-bold text-[#123f2a]">{value}</div>
+          <div className="text-xs font-semibold text-gray-500 tracking-wide">{label}</div>
         </div>
       </div>
     </div>
