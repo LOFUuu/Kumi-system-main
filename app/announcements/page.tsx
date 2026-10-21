@@ -291,7 +291,7 @@ export default function AnnouncementsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 pt-9 pb-20">
+    <div className="mx-auto w-full max-w-6xl px-4 pt-[38px] pb-16">
       {/* ── 1. ANNOUNCEMENT PAGE HEADER ───────────────────────────────────────────── */}
       <div className="w-full">
         <Reveal>
@@ -302,12 +302,12 @@ export default function AnnouncementsPage() {
             <p className="mt-2 text-sm sm:text-base text-muted leading-relaxed max-w-2xl">
               Stay informed with the latest news, notices, events, and important updates from Mabuhay Homes.
             </p>
-            <div className="mt-3.5 h-1 w-14 rounded-full bg-gold/70" />
+            <div className="mt-3 h-1 w-12 rounded-full bg-amber-400" />
           </div>
         </Reveal>
 
         {/* ── 2. FILTER & SEARCH TOOLBAR ────────────────────────────────────────── */}
-        <Reveal className="mt-6" y={20}>
+        <Reveal className="mt-6" y={15}>
           <div className="rounded-3xl border border-cream-2 bg-white p-4 sm:p-5 shadow-sm space-y-4">
             {/* Top row: Search input & counts */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -345,7 +345,7 @@ export default function AnnouncementsPage() {
                   <button
                     key={cat}
                     onClick={() => setSelectedCategory(cat)}
-                    className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs sm:text-sm font-semibold transition-all duration-200 ${
+                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs sm:text-sm font-semibold transition-all duration-200 ${
                       isActive
                         ? "bg-green-dark text-white shadow-md shadow-green-dark/15 translate-y-[-1px]"
                         : "bg-cream/80 text-muted border border-cream-2 hover:bg-cream hover:text-green-dark"
@@ -358,7 +358,7 @@ export default function AnnouncementsPage() {
                     <span
                       className={`ml-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
                         isActive
-                          ? "bg-gold text-green-deep"
+                          ? "bg-amber-400 text-green-deep"
                           : "bg-cream-2 text-muted group-hover:text-green-dark"
                       }`}
                     >
@@ -402,7 +402,7 @@ export default function AnnouncementsPage() {
             </div>
           ) : filteredItems.length > 0 ? (
             <Reveal
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-fr"
               stagger
               deps={[filteredItems.length, selectedCategory, searchQuery]}
             >
@@ -416,7 +416,7 @@ export default function AnnouncementsPage() {
                   <article
                     key={a.id}
                     onClick={() => handleOpenModal(a)}
-                    className={`group relative flex flex-col justify-between overflow-hidden rounded-3xl border bg-white p-6 shadow-[0_4px_20px_-2px_rgba(18,63,42,0.05)] transition-all duration-300 ease-out hover:-translate-y-[6px] hover:shadow-[0_16px_32px_-4px_rgba(18,63,42,0.11),0_6px_12px_-2px_rgba(0,0,0,0.03)] will-change-transform cursor-pointer ${
+                    className={`group relative flex flex-col justify-between overflow-hidden rounded-3xl border bg-white p-6 shadow-[0_4px_20px_-2px_rgba(18,63,42,0.05)] transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-[0_12px_28px_-4px_rgba(18,63,42,0.12)] will-change-transform cursor-pointer h-full ${
                       isUnread
                         ? "border-emerald-500 ring-2 ring-emerald-500/20"
                         : "border-cream-2"
@@ -483,7 +483,9 @@ export default function AnnouncementsPage() {
                     <div className="mt-6 flex items-center justify-end border-t border-cream-2/70 pt-4 text-xs">
                       <button
                         type="button"
-                        className="inline-flex items-center gap-1 font-bold text-green-mid group-hover:text-gold transition-colors duration-200"
+                        className={`inline-flex items-center gap-1 font-bold transition-colors duration-200 ${
+                          isPriority ? "text-amber-600 group-hover:text-amber-700" : "text-[#123f2a]/90 group-hover:text-green-mid"
+                        }`}
                       >
                         Read Announcement
                         <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-1" />
