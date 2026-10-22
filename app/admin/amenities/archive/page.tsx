@@ -291,39 +291,6 @@ export default function AdminArchivePage() {
             Archived items are safely hidden from active views and can be restored anytime.
           </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/admin/dues"
-            className="btn-ghost flex items-center gap-1.5 text-xs font-semibold text-green-dark border border-cream-2 shadow-xs px-3.5 py-2 rounded-xl hover:bg-cream transition"
-          >
-            ← Back to Dues
-          </Link>
-          <Link
-            href="/admin/listings"
-            className="btn-ghost flex items-center gap-1.5 text-xs font-semibold text-green-dark border border-cream-2 shadow-xs px-3.5 py-2 rounded-xl hover:bg-cream transition"
-          >
-            ← Back to Listings
-          </Link>
-          <Link
-            href="/admin/amenities"
-            className="btn-ghost flex items-center gap-1.5 text-xs font-semibold text-green-dark border border-cream-2 shadow-xs px-3.5 py-2 rounded-xl hover:bg-cream transition"
-          >
-            ← Back to Amenities
-          </Link>
-          <Link
-            href="/admin/residents"
-            className="btn-ghost flex items-center gap-1.5 text-xs font-semibold text-green-dark border border-cream-2 shadow-xs px-3.5 py-2 rounded-xl hover:bg-cream transition"
-          >
-            ← Back to Residents
-          </Link>
-          <Link
-            href="/admin/reservations"
-            className="btn-ghost flex items-center gap-1.5 text-xs font-semibold text-green-dark border border-cream-2 shadow-xs px-3.5 py-2 rounded-xl hover:bg-cream transition"
-          >
-            ← Back to Reservations
-          </Link>
-        </div>
       </div>
 
       {/* ── Archive Sub-Tabs ──────────────────────────────────────── */}
