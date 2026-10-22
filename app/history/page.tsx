@@ -52,6 +52,35 @@ function formatDate(d?: string) {
   }
 }
 
+const HISTORY_CACHE_KEY = "mh_history_cache";
+
+function getCachedHistory() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(HISTORY_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedHistory(data: {
+  txns?: Transaction[];
+  reservations?: Reservation[];
+  viewings?: PropertyViewing[];
+  dues?: DuesRecord[];
+}) {
+  if (typeof window === "undefined") return;
+  try {
+    const existing = getCachedHistory() || {};
+    sessionStorage.setItem(
+      HISTORY_CACHE_KEY,
+      JSON.stringify({ ...existing, ...data, timestamp: Date.now() })
+    );
+  } catch {}
+}
+
 type TabType = "all" | "reservations" | "viewings" | "payments" | "dues";
 
 function HistoryContent() {
@@ -70,11 +99,13 @@ function HistoryContent() {
     if (urlQ) setSearchQuery(urlQ);
   }, [urlQ]);
 
-  const [txns, setTxns] = useState<Transaction[]>([]);
-  const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [viewings, setViewings] = useState<PropertyViewing[]>([]);
-  const [dues, setDues] = useState<DuesRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Instant hydration from cache for sub-50ms page appearance
+  const cached = useMemo(() => getCachedHistory(), []);
+  const [txns, setTxns] = useState<Transaction[]>(() => cached?.txns || []);
+  const [reservations, setReservations] = useState<Reservation[]>(() => cached?.reservations || []);
+  const [viewings, setViewings] = useState<PropertyViewing[]>(() => cached?.viewings || []);
+  const [dues, setDues] = useState<DuesRecord[]>(() => cached?.dues || []);
+  const [loading, setLoading] = useState(() => !cached);
 
   // Cancellation Modal State
   const [cancelTarget, setCancelTarget] = useState<{
@@ -91,26 +122,52 @@ function HistoryContent() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.replace("/login?next=/history&reason=history");
+      // Double check localStorage before redirecting to prevent accidental logout on reload
+      const stored = typeof window !== "undefined" ? localStorage.getItem("mh_user") : null;
+      if (!stored) {
+        router.replace("/login?next=/history&reason=history");
+      }
     }
   }, [authLoading, user, router]);
 
   const loadData = () => {
     if (!user) return;
     const isNonRes = user.role === "non_resident";
-    Promise.all([
-      api.transactions().catch(() => []),
-      api.reservations().catch(() => []),
-      api.myViewings().catch(() => []),
-      isNonRes ? Promise.resolve([]) : api.dues().catch(() => []),
-    ]).then(([txnData, resData, viewingData, duesData]) => {
-      setTxns(txnData);
-      setReservations(resData);
-      setViewings(viewingData);
-      setDues(duesData);
-    }).finally(() => {
-      setLoading(false);
-    });
+
+    // Fetch endpoints in parallel and stream results into state as soon as each arrives
+    api.transactions()
+      .then((txnData) => {
+        setTxns(txnData);
+        saveCachedHistory({ txns: txnData });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+
+    api.reservations()
+      .then((resData) => {
+        setReservations(resData);
+        saveCachedHistory({ reservations: resData });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+
+    api.myViewings()
+      .then((viewingData) => {
+        setViewings(viewingData);
+        saveCachedHistory({ viewings: viewingData });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+
+    if (!isNonRes) {
+      api.dues()
+        .then((duesData) => {
+          setDues(duesData);
+          saveCachedHistory({ dues: duesData });
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
   };
 
   useEffect(() => {
@@ -260,15 +317,20 @@ function HistoryContent() {
     }
   };
 
-  if (authLoading || loading) {
+  const hasLocalSession = typeof window !== "undefined" && Boolean(localStorage.getItem("mh_user"));
+
+  if (authLoading && !user && !hasLocalSession) {
     return (
       <div className="section min-h-[60vh] flex items-center justify-center">
-        <p className="text-muted text-sm font-semibold animate-pulse">Loading your activity history…</p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#123f2a] border-t-transparent" />
+          <p className="text-muted text-xs font-semibold">Loading your activity history…</p>
+        </div>
       </div>
     );
   }
 
-  if (!user) {
+  if (!authLoading && !user && !hasLocalSession) {
     return (
       <div className="section">
         <div className="mx-auto max-w-md rounded-2xl border border-cream-2 bg-white p-8 text-center shadow-sm">
@@ -621,27 +683,41 @@ function HistoryContent() {
 
         {/* CONTENT SECTIONS BASED ON ACTIVE TAB */}
         {totalActivitiesCount === 0 && !searchQuery.trim() && statusFilter === "all" ? (
-          <div className="rounded-2xl border border-dashed border-cream-2 bg-white p-12 text-center shadow-xs">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-cream text-muted">
-              <History className="h-7 w-7 text-green-mid" />
+          loading ? (
+            <div className="space-y-3 animate-pulse">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="rounded-2xl border border-cream-2 bg-white p-5 shadow-xs flex items-center justify-between gap-4">
+                  <div className="space-y-2 flex-1">
+                    <div className="h-4 w-48 bg-cream-2/80 rounded-md" />
+                    <div className="h-3 w-72 bg-cream-2/50 rounded-md" />
+                  </div>
+                  <div className="h-7 w-20 bg-cream-2/70 rounded-full" />
+                </div>
+              ))}
             </div>
-            <h3 className="mt-4 font-serif text-lg font-bold text-green-dark">
-              No activity history available
-            </h3>
-            <p className="mt-1 text-xs text-muted max-w-sm mx-auto">
-              {isNonResident
-                ? "You have not made any amenity reservations or payments yet. Once you make a booking, it will appear here."
-                : "You have not made any amenity bookings, payments, or dues records yet."}
-            </p>
-            <div className="mt-5">
-              <Link
-                href="/reservation"
-                className="btn-green inline-flex items-center gap-1.5 !py-2.5 !px-5 text-xs font-bold shadow-xs"
-              >
-                <Plus className="h-4 w-4" /> Book an Amenity
-              </Link>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-cream-2 bg-white p-12 text-center shadow-xs">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-cream text-muted">
+                <History className="h-7 w-7 text-green-mid" />
+              </div>
+              <h3 className="mt-4 font-serif text-lg font-bold text-green-dark">
+                No activity history available
+              </h3>
+              <p className="mt-1 text-xs text-muted max-w-sm mx-auto">
+                {isNonResident
+                  ? "You have not made any amenity reservations or payments yet. Once you make a booking, it will appear here."
+                  : "You have not made any amenity bookings, payments, or dues records yet."}
+              </p>
+              <div className="mt-5">
+                <Link
+                  href="/reservation"
+                  className="btn-green inline-flex items-center gap-1.5 !py-2.5 !px-5 text-xs font-bold shadow-xs"
+                >
+                  <Plus className="h-4 w-4" /> Book an Amenity
+                </Link>
+              </div>
             </div>
-          </div>
+          )
         ) : (
           <>
             {/* 1. RESERVATIONS LIST */}
