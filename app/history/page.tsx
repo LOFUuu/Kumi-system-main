@@ -97,7 +97,6 @@ function HistoryContent() {
 
   const loadData = () => {
     if (!user) return;
-    setLoading(true);
     const isNonRes = user.role === "non_resident";
     Promise.all([
       api.transactions().catch(() => []),
@@ -109,13 +108,14 @@ function HistoryContent() {
       setReservations(resData);
       setViewings(viewingData);
       setDues(duesData);
+    }).finally(() => {
       setLoading(false);
     });
   };
 
   useEffect(() => {
     loadData();
-  }, [user]);
+  }, [user?.id, user?.email, user?.role]);
 
   // STRICT USER FILTERING: Only show items belonging to THIS logged-in user
   const myReservations = useMemo(() => {

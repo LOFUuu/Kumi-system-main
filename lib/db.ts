@@ -1900,15 +1900,21 @@ export async function generateMonthlyDues(targetMonth?: string): Promise<{ creat
   return { createdCount };
 }
 
+let lastAutoGenerateTime = 0;
+const AUTO_GENERATE_INTERVAL = 60 * 60 * 1000; // 1 hour cooldown
+
 export async function getDues(includeArchived = false): Promise<DuesType[]> {
   const online = await isOnlineMode();
   if (online) {
     try {
       await dbConnect();
-      try {
-        await generateMonthlyDues();
-      } catch (err) {
-        console.error("Error auto-generating monthly dues:", err);
+      // Auto-generate dues in the background if cooldown has passed, without blocking read queries
+      const now = Date.now();
+      if (now - lastAutoGenerateTime > AUTO_GENERATE_INTERVAL) {
+        lastAutoGenerateTime = now;
+        generateMonthlyDues().catch((err) => {
+          console.error("Error auto-generating monthly dues in background:", err);
+        });
       }
       const query = includeArchived
         ? {}

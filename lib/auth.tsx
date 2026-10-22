@@ -78,7 +78,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // First, hydrate from localStorage for instant UI feedback
     const cached = readStoredUser();
-    if (cached) setUser(cached);
+    if (cached) {
+      setUser(cached);
+      setLoading(false);
+    }
 
     const headers: Record<string, string> = {};
     if (cached?.id) headers["x-user-id"] = String(cached.id);
@@ -97,11 +100,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((data) => {
         if (!active || data === null) return;
         if (data && data.user) {
-          persist(data.user as User);
-        } else if (data && data.user === null) {
-          // Server explicitly returned 200 with user: null, confirming logged out state
-          persist(null);
+          const freshUser = data.user as User;
+          setUser((prev) => {
+            if (
+              prev &&
+              prev.id === freshUser.id &&
+              prev.email === freshUser.email &&
+              prev.role === freshUser.role &&
+              prev.fullName === freshUser.fullName &&
+              prev.blockNo === freshUser.blockNo &&
+              prev.lotNo === freshUser.lotNo
+            ) {
+              return prev;
+            }
+            if (isWellFormedUser(freshUser)) {
+              localStorage.setItem("mh_user", JSON.stringify(freshUser));
+            }
+            return freshUser;
+          });
         }
+        // If data.user is null on a background check, DO NOT wipe an existing cached session!
+        // Only explicit user logout (via logout()) wipes the stored session.
       })
       .catch(() => {
         /* keep cached user on network error */

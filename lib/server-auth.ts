@@ -25,8 +25,12 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<AuthUser |
       try {
         await dbConnect();
         const query: any = {};
-        if (filter.id) query._id = Number(filter.id);
-        if (filter.email) query.email = String(filter.email).toLowerCase().trim();
+        if (filter.id) {
+          query.$or = [{ _id: Number(filter.id) }, { _id: String(filter.id) }];
+        }
+        if (filter.email) {
+          query.email = { $regex: new RegExp(`^${filter.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") };
+        }
         const doc = await User.findOne(query).lean();
         if (doc && doc.isActive !== false && !(doc as any).isArchived) {
           const { _id, __v, createdAt, updatedAt, ...rest } = doc as any;
