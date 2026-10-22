@@ -200,6 +200,33 @@ export interface ParsedExcelDuesRow {
   errors: string[];
 }
 
+export function cleanUnitToken(val: unknown): string {
+  if (!val) return "";
+  const s = String(val).trim().toLowerCase();
+  // Strip common prefixes/words like "block", "blk", "lot", "lt", "#"
+  let stripped = s.replace(/\b(block|lot|blk|lt|phase|ph|b|l)\b/gi, "").replace(/[^a-z0-9]/gi, "").trim();
+  // Normalize internal leading zeros in alphanumeric tokens (e.g. "c03" -> "c3", "03" -> "3")
+  stripped = stripped.replace(/([a-z]+)0+(\d+)/gi, "$1$2").replace(/^0+/, "");
+  return stripped;
+}
+
+export function normalizeName(name: string): string {
+  if (!name) return "";
+  let n = name.toLowerCase().trim();
+  // Handle "Lastname, Firstname" format (e.g. "Reyes, Jose" -> "jose reyes")
+  if (n.includes(",")) {
+    const parts = n.split(",").map((p) => p.trim());
+    if (parts.length >= 2 && parts[0] && parts[1]) {
+      n = `${parts[1]} ${parts[0]}`;
+    }
+  }
+  return n
+    .replace(/\b(jr|sr|iii|ii|iv)\b\.?/gi, "")
+    .replace(/[^a-z0-9\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Parse an individual raw Excel or CSV row and match against system residents */
 export function parseDuesRow(
   row: Record<string, any>,
@@ -234,38 +261,126 @@ export function parseDuesRow(
     if (cleanedId) residentId = parseInt(cleanedId, 10);
   }
 
-  const residentName = String(residentNameRaw || "").trim();
+  let residentName = String(residentNameRaw || "").trim();
 
-  // Try to match with existing users
-  let matchedUser: User | undefined = undefined;
-  if (residentId !== undefined) {
-    matchedUser = users.find((u) => u.id === residentId);
+  // Extract Block & Lot, including combined fields (e.g., "C-03 / 11", "Block 3 Lot 11")
+  let rawBlock =
+    row["Block"] ??
+    row["block"] ??
+    row["Block No"] ??
+    row["blockNo"] ??
+    row["Block Number"] ??
+    "";
+  let rawLot =
+    row["Lot"] ??
+    row["lot"] ??
+    row["Lot No"] ??
+    row["lotNo"] ??
+    row["Lot Number"] ??
+    "";
+
+  const combinedUnitRaw =
+    row["Unit"] ??
+    row["unit"] ??
+    row["Unit No."] ??
+    row["Unit No"] ??
+    row["Unit/Block Code"] ??
+    row["Block / Lot"] ??
+    row["Block/Lot"] ??
+    row["Block & Lot"] ??
+    row["Address"] ??
+    "";
+
+  // If the residentName contains embedded unit info like "Jose Reyes - C-03 / 11" or "Jose Reyes (C-03 / 11)"
+  if (residentName) {
+    const embeddedMatch = residentName.match(/^(.*?)\s*[-–—(]\s*(?:block|blk)?\s*([a-z0-9-]+)\s*[\/,&-]\s*(?:lot|lt)?\s*([a-z0-9-]+)\s*\)?$/i);
+    if (embeddedMatch) {
+      residentName = embeddedMatch[1].trim();
+      if (!rawBlock) rawBlock = embeddedMatch[2].trim();
+      if (!rawLot) rawLot = embeddedMatch[3].trim();
+    }
   }
 
-  if (!matchedUser && residentName) {
-    const norm = residentName.toLowerCase().replace(/\s+/g, " ");
+  if ((!rawBlock || !rawLot) && combinedUnitRaw) {
+    const combinedStr = String(combinedUnitRaw).trim();
+    const match = combinedStr.match(/(?:block|blk)?\s*([a-z0-9-]+)\s*[\/,&-]\s*(?:lot|lt)?\s*([a-z0-9-]+)/i);
+    if (match) {
+      if (!rawBlock) rawBlock = match[1];
+      if (!rawLot) rawLot = match[2];
+    }
+  }
+
+  const cleanRowBlock = cleanUnitToken(rawBlock);
+  const cleanRowLot = cleanUnitToken(rawLot);
+  const rowNormName = normalizeName(residentName);
+
+  // ── Automated Entity Lookup / Cross-Referencing ────────────────────────────
+  let matchedUser: User | undefined = undefined;
+
+  // Criteria A: Direct ID match
+  if (residentId !== undefined) {
     matchedUser = users.find(
       (u) =>
-        u.fullName.toLowerCase().replace(/\s+/g, " ") === norm ||
-        u.email.toLowerCase() === norm
+        Number(u.id) === residentId ||
+        String(u.id) === String(residentId) ||
+        String((u as any)._id) === String(residentId)
     );
+  }
+
+  // Criteria B: Exact normalized Name match
+  if (!matchedUser && rowNormName) {
+    matchedUser = users.find((u) => {
+      const uNorm = normalizeName(u.fullName);
+      return uNorm === rowNormName || (u.email && u.email.toLowerCase() === rowNormName);
+    });
+  }
+
+  // Criteria C: Name + Unit/Block code combination (e.g. Jose Reyes - C-03 / 11)
+  if (!matchedUser && rowNormName) {
+    matchedUser = users.find((u) => {
+      const uNorm = normalizeName(u.fullName);
+      const nameOverlaps =
+        uNorm.includes(rowNormName) ||
+        rowNormName.includes(uNorm) ||
+        (uNorm.split(" ").length > 1 &&
+          rowNormName.split(" ").some((part) => part.length >= 3 && uNorm.includes(part)));
+
+      if (!nameOverlaps) return false;
+
+      const uBlock = cleanUnitToken(u.blockNo);
+      const uLot = cleanUnitToken(u.lotNo);
+
+      // Matches block and lot or matching unit
+      const blockMatches = !cleanRowBlock || cleanRowBlock === uBlock;
+      const lotMatches = !cleanRowLot || cleanRowLot === uLot;
+
+      return blockMatches && lotMatches;
+    });
+  }
+
+  // Criteria D: Unit match with partial name confirmation
+  if (!matchedUser && cleanRowBlock && cleanRowLot) {
+    matchedUser = users.find((u) => {
+      const uBlock = cleanUnitToken(u.blockNo);
+      const uLot = cleanUnitToken(u.lotNo);
+      if (uBlock !== cleanRowBlock || uLot !== cleanRowLot) return false;
+
+      // Ensure at least one token of name matches so we don't match a completely different person
+      if (!rowNormName) return true;
+      const uTokens = normalizeName(u.fullName).split(" ");
+      return rowNormName.split(" ").some((t) => t.length >= 3 && uTokens.includes(t));
+    });
   }
 
   const finalResidentName =
     matchedUser?.fullName || residentName || "Unknown Resident";
   const blockNo =
-    row["Block"] ??
-    row["block"] ??
-    row["Block No"] ??
-    row["blockNo"] ??
-    matchedUser?.blockNo ??
+    rawBlock ||
+    matchedUser?.blockNo ||
     "";
   const lotNo =
-    row["Lot"] ??
-    row["lot"] ??
-    row["Lot No"] ??
-    row["lotNo"] ??
-    matchedUser?.lotNo ??
+    rawLot ||
+    matchedUser?.lotNo ||
     "";
 
   // 2. Parse Month and Year

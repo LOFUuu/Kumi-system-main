@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPaymentConfig, getPaymentConfigs, upsertPaymentConfig } from "@/lib/db";
+import { validatePhone, validateName } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -49,19 +50,15 @@ export async function PUT(req: NextRequest) {
     }
 
     const accountName = String(body.accountName || "").trim();
-    if (!accountName) {
-      return NextResponse.json(
-        { error: "GCash account name is required." },
-        { status: 400 }
-      );
+    const nameErr = validateName(accountName, { required: true, label: "GCash account name" });
+    if (nameErr) {
+      return NextResponse.json({ error: nameErr }, { status: 400 });
     }
 
     const accountNumber = String(body.accountNumber || "").trim();
-    if (!accountNumber) {
-      return NextResponse.json(
-        { error: "GCash mobile number is required." },
-        { status: 400 }
-      );
+    const phoneErr = validatePhone(accountNumber, { required: true, label: "GCash mobile number" });
+    if (phoneErr) {
+      return NextResponse.json({ error: phoneErr }, { status: 400 });
     }
 
     const adminUser = req.headers.get("x-user-email") || "Admin";

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendContactEmail } from "@/lib/mailer";
+import { validateName, validateEmail, validateText } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -16,19 +17,19 @@ export async function POST(req: NextRequest) {
   const subject = String(body.subject || "").trim();
   const message = String(body.message || "").trim();
 
-  if (!fullName || !email || !message) {
-    return NextResponse.json(
-      { error: "Full name, email, and message are required." },
-      { status: 400 }
-    );
+  const nameErr = validateName(fullName, { required: true, label: "Full name" });
+  if (nameErr) return NextResponse.json({ error: nameErr }, { status: 400 });
+
+  const emailErr = validateEmail(email, { required: true });
+  if (emailErr) return NextResponse.json({ error: emailErr }, { status: 400 });
+
+  if (subject) {
+    const subErr = validateText(subject, { label: "Subject", max: 150 });
+    if (subErr) return NextResponse.json({ error: subErr }, { status: 400 });
   }
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json(
-      { error: "Please enter a valid email address." },
-      { status: 400 }
-    );
-  }
+  const msgErr = validateText(message, { required: true, label: "Message", max: 3000, multiline: true });
+  if (msgErr) return NextResponse.json({ error: msgErr }, { status: 400 });
 
   try {
     await sendContactEmail({ fullName, email, subject, message });

@@ -19,6 +19,13 @@ import {
 import { useAuth } from "@/lib/auth";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import { validatePassword } from "@/lib/password-validation";
+import {
+  sanitizePhoneInput,
+  validatePhone,
+  validateName,
+  validateEmail,
+  validateText,
+} from "@/lib/validation";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -86,13 +93,29 @@ export default function RegisterPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.fullName.trim()) {
-      setError("Please enter your full name.");
+    const nameErr = validateName(form.fullName, { required: true, label: "Full name" });
+    if (nameErr) {
+      setError(nameErr);
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-      setError("Enter a valid email address.");
+    const emailErr = validateEmail(form.email, { required: true });
+    if (emailErr) {
+      setError(emailErr);
       return;
+    }
+    if (form.phone.trim()) {
+      const phoneErr = validatePhone(form.phone, { label: "Phone number" });
+      if (phoneErr) {
+        setError(phoneErr);
+        return;
+      }
+    }
+    if (form.address.trim()) {
+      const addrErr = validateText(form.address, { label: "Address", max: 300 });
+      if (addrErr) {
+        setError(addrErr);
+        return;
+      }
     }
     const pwCheck = validatePassword(form.password);
     if (!pwCheck.valid) {
@@ -230,7 +253,7 @@ export default function RegisterPage() {
                       type="tel"
                       placeholder="+63 9xx xxx xxxx"
                       value={form.phone}
-                      onChange={set("phone")}
+                      onChange={(e) => setForm((f) => ({ ...f, phone: sanitizePhoneInput(e.target.value) }))}
                       className={inputBase}
                     />
                   </div>

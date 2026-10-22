@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getListing, updateListing, deleteListing } from "@/lib/db";
 import { howaGuard, requestRole } from "@/lib/role";
+import {
+  validatePhone,
+  validateBlockLot,
+  validateAmount,
+  validateNumber,
+  validateText,
+  validateUrl,
+} from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +19,50 @@ export async function GET(
   const { id } = await params;
   const data = await getListing(id);
   if (!data) return NextResponse.json({ error: "Listing not found" }, { status: 404 });
-  return NextResponse.json(data);
+
+  const role = requestRole(req);
+  const isAuthorizedRole = role === "admin" || role === "counselor" || role === "resident";
+  const userId = Number(req.headers.get("x-user-id") || "0");
+  const userEmail = String(req.headers.get("x-user-email") || "").toLowerCase().trim();
+
+  // If resident or HOA admin, return full address
+  if (isAuthorizedRole) {
+    return NextResponse.json(data);
+  }
+
+  // Check if caller is owner
+  const isOwner = Boolean(userId && (data.uploadedBy === userId || data.ownerId === userId));
+  if (isOwner) {
+    return NextResponse.json(data);
+  }
+
+  // Check if non-resident has a confirmed scheduled viewing for this listing
+  let hasScheduledViewing = false;
+  if (userEmail) {
+    try {
+      const { getPropertyViewings } = await import("@/lib/db");
+      const userViewings = await getPropertyViewings({ residentEmail: userEmail, listingId: data.id });
+      hasScheduledViewing = userViewings.some(
+        (v) => v.status === "viewing_scheduled" || v.status === "viewing_completed"
+      );
+    } catch {}
+  }
+
+  if (hasScheduledViewing) {
+    return NextResponse.json(data);
+  }
+
+  // Mask exact block and lot for non-residents without confirmed viewing
+  const isBlockLotName = /^block\s+\w+\s*-\s*lot\s+\w+$/i.test(data.houseName.trim());
+  const maskedListing = {
+    ...data,
+    address: "Mabuhay Homes Phase 5, Dasmariñas, Cavite",
+    blockNo: undefined,
+    lotNo: undefined,
+    houseName: isBlockLotName ? "Phase 5 Residential Property" : data.houseName,
+  };
+
+  return NextResponse.json(maskedListing);
 }
 
 // PATCH /api/listings/[id]
@@ -151,21 +202,74 @@ export async function PATCH(
   }
 
   if (body.ownerContactNumber !== undefined) {
-    patch.ownerContactNumber = String(body.ownerContactNumber || "").trim();
+    const contact = String(body.ownerContactNumber || "").trim();
+    if (contact) {
+      const phoneErr = validatePhone(contact, { label: "Owner contact number" });
+      if (phoneErr) return NextResponse.json({ error: phoneErr }, { status: 400 });
+    }
+    patch.ownerContactNumber = contact;
   }
   if (body.ownerMessengerLink !== undefined) {
-    patch.ownerMessengerLink = String(body.ownerMessengerLink || "").trim();
+    const link = String(body.ownerMessengerLink || "").trim();
+    if (link) {
+      const urlErr = validateUrl(link, { label: "Messenger / Facebook link" });
+      if (urlErr) return NextResponse.json({ error: urlErr }, { status: 400 });
+    }
+    patch.ownerMessengerLink = link;
   }
 
   if (body.siteVisitRecommended !== undefined) {
     patch.siteVisitRecommended = Boolean(body.siteVisitRecommended);
   }
 
-  // General field patches
-  for (const k of ["price", "listingType", "bedrooms", "bathrooms", "sqm", "description", "houseName", "images"] as const) {
-    if (body[k] !== undefined) {
-      patch[k] = k === "listingType" ? (body[k] === "rent" ? "rent" : "sale") : body[k];
+  if (body.price !== undefined) {
+    const priceErr = validateAmount(body.price, { label: "Price", min: 100 });
+    if (priceErr) return NextResponse.json({ error: priceErr }, { status: 400 });
+    patch.price = Number(body.price);
+  }
+
+  if (body.bedrooms !== undefined) {
+    const bedErr = validateNumber(body.bedrooms, { label: "Bedrooms", integer: true, min: 0, max: 50 });
+    if (bedErr) return NextResponse.json({ error: bedErr }, { status: 400 });
+    patch.bedrooms = Number(body.bedrooms);
+  }
+
+  if (body.bathrooms !== undefined) {
+    const bathErr = validateNumber(body.bathrooms, { label: "Bathrooms", integer: true, min: 0, max: 50 });
+    if (bathErr) return NextResponse.json({ error: bathErr }, { status: 400 });
+    patch.bathrooms = Number(body.bathrooms);
+  }
+
+  if (body.sqm !== undefined) {
+    const sqmErr = validateNumber(body.sqm, { label: "Area (sqm)", min: 1, max: 10000 });
+    if (sqmErr) return NextResponse.json({ error: sqmErr }, { status: 400 });
+    patch.sqm = Number(body.sqm);
+  }
+
+  if (body.houseName !== undefined) {
+    const title = String(body.houseName || "").trim();
+    if (title) {
+      const titleErr = validateText(title, { label: "Listing title", max: 120 });
+      if (titleErr) return NextResponse.json({ error: titleErr }, { status: 400 });
     }
+    patch.houseName = title;
+  }
+
+  if (body.description !== undefined) {
+    const desc = String(body.description || "").trim();
+    if (desc) {
+      const descErr = validateText(desc, { label: "Description", max: 3000, multiline: true });
+      if (descErr) return NextResponse.json({ error: descErr }, { status: 400 });
+    }
+    patch.description = desc;
+  }
+
+  if (body.listingType !== undefined) {
+    patch.listingType = body.listingType === "rent" ? "rent" : "sale";
+  }
+
+  if (body.images !== undefined) {
+    patch.images = body.images;
   }
 
   // Re-verification Business Rule for Owners:

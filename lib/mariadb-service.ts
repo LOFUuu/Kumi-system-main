@@ -9,6 +9,7 @@ import type {
   Transaction as TransactionType,
   PropertyViewing as PropertyViewingType,
   PaymentConfig as PaymentConfigType,
+  InAppNotification as NotificationType,
 } from "./mock-data";
 import type { AuthUser } from "./db";
 
@@ -1250,4 +1251,108 @@ export async function updatePropertyViewingMariaDB(id: number | string, data: an
 
   await enqueueSync("property_viewings", Number(id), "UPDATE", updated);
   return updated;
+}
+
+export async function createNotificationMariaDB(data: any): Promise<NotificationType> {
+  const maxRows = await mariaQuery<any[]>("SELECT MAX(id) as maxId FROM notifications");
+  const nextId = (maxRows[0]?.maxId || 0) + 1;
+  const metadataStr = data.metadata ? JSON.stringify(data.metadata) : null;
+
+  await mariaQuery(
+    `INSERT INTO notifications (id, userId, userEmail, title, message, type, referenceId, link, isRead, metadata, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+    [
+      nextId,
+      data.userId ? String(data.userId) : null,
+      data.userEmail ? data.userEmail.toLowerCase().trim() : null,
+      data.title,
+      data.message,
+      data.type || "general",
+      data.referenceId || null,
+      data.link || "",
+      data.isRead ? 1 : 0,
+      metadataStr,
+    ]
+  );
+
+  return {
+    id: nextId,
+    userId: data.userId,
+    userEmail: data.userEmail,
+    title: data.title,
+    message: data.message,
+    type: data.type || "general",
+    referenceId: data.referenceId,
+    link: data.link || "",
+    isRead: Boolean(data.isRead),
+    metadata: data.metadata,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export async function getUserNotificationsMariaDB(userIdentifier: { id?: number | string; email?: string }): Promise<NotificationType[]> {
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (userIdentifier.id !== undefined && userIdentifier.id !== null) {
+    conditions.push("userId = ?");
+    params.push(String(userIdentifier.id));
+  }
+  if (userIdentifier.email) {
+    conditions.push("userEmail = ?");
+    params.push(userIdentifier.email.toLowerCase().trim());
+  }
+
+  if (conditions.length === 0) return [];
+
+  const rows = await mariaQuery<any[]>(
+    `SELECT * FROM notifications WHERE ${conditions.join(" OR ")} ORDER BY id DESC LIMIT 50`,
+    params
+  );
+
+  return rows.map((r) => {
+    let metadata: any = undefined;
+    if (r.metadata) {
+      try {
+        metadata = JSON.parse(r.metadata);
+      } catch {}
+    }
+    return {
+      id: r.id,
+      userId: r.userId,
+      userEmail: r.userEmail,
+      title: r.title,
+      message: r.message,
+      type: r.type,
+      referenceId: r.referenceId,
+      link: r.link,
+      isRead: Boolean(r.isRead),
+      metadata,
+      createdAt: toDateString(r.createdAt),
+    };
+  });
+}
+
+export async function markNotificationReadMariaDB(id: number | string): Promise<boolean> {
+  await mariaQuery(`UPDATE notifications SET isRead = 1 WHERE id = ?`, [Number(id)]);
+  return true;
+}
+
+export async function markAllNotificationsReadMariaDB(userIdentifier: { id?: number | string; email?: string }): Promise<boolean> {
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (userIdentifier.id !== undefined && userIdentifier.id !== null) {
+    conditions.push("userId = ?");
+    params.push(String(userIdentifier.id));
+  }
+  if (userIdentifier.email) {
+    conditions.push("userEmail = ?");
+    params.push(userIdentifier.email.toLowerCase().trim());
+  }
+
+  if (conditions.length === 0) return true;
+
+  await mariaQuery(`UPDATE notifications SET isRead = 1 WHERE ${conditions.join(" OR ")}`, params);
+  return true;
 }

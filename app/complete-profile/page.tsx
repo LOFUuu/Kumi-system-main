@@ -6,6 +6,12 @@ import { CheckCircle2, Upload, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { type User, type Role } from "@/lib/mock-data";
+import {
+  sanitizePhoneInput,
+  validatePhone,
+  sanitizeBlockLotInput,
+  validateBlockLot,
+} from "@/lib/validation";
 
 export default function CompleteProfilePage() {
   const { user } = useAuth();
@@ -53,8 +59,50 @@ export default function CompleteProfilePage() {
     setBusy(true);
     setMsg("");
     setLoadError("");
+
+    if (phone.trim()) {
+      const phoneErr = validatePhone(phone, { label: "Phone number" });
+      if (phoneErr) {
+        setMsg(phoneErr);
+        setBusy(false);
+        return;
+      }
+    }
+
+    if (role === "resident") {
+      const bErr = validateBlockLot(blockNo, { required: true, label: "Block No." });
+      if (bErr) {
+        setMsg(bErr);
+        setBusy(false);
+        return;
+      }
+      const lErr = validateBlockLot(lotNo, { required: true, label: "Lot No." });
+      if (lErr) {
+        setMsg(lErr);
+        setBusy(false);
+        return;
+      }
+    } else {
+      if (blockNo.trim()) {
+        const bErr = validateBlockLot(blockNo, { label: "Block No." });
+        if (bErr) {
+          setMsg(bErr);
+          setBusy(false);
+          return;
+        }
+      }
+      if (lotNo.trim()) {
+        const lErr = validateBlockLot(lotNo, { label: "Lot No." });
+        if (lErr) {
+          setMsg(lErr);
+          setBusy(false);
+          return;
+        }
+      }
+    }
+
     try {
-      await api.updateProfile({ blockNo, lotNo, phone, role, cedula });
+      await api.updateProfile({ blockNo: blockNo.trim() || undefined, lotNo: lotNo.trim() || undefined, phone: phone.trim() || undefined, role, cedula });
       setDone(true);
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Failed to save your profile.");
@@ -85,15 +133,15 @@ export default function CompleteProfilePage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="field-label">Block No.</label>
-                  <input className="field" placeholder="B-12" value={blockNo} onChange={(e) => setBlockNo(e.target.value)} />
+                  <input className="field" placeholder="B-12" value={blockNo} onChange={(e) => setBlockNo(sanitizeBlockLotInput(e.target.value))} />
                 </div>
                 <div>
                   <label className="field-label">Lot No.</label>
-                  <input className="field" placeholder="34" value={lotNo} onChange={(e) => setLotNo(e.target.value)} />
+                  <input className="field" placeholder="34" value={lotNo} onChange={(e) => setLotNo(sanitizeBlockLotInput(e.target.value))} />
                 </div>
                 <div>
                   <label className="field-label">Phone</label>
-                  <input className="field" placeholder="+63 9xx xxx xxxx" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  <input className="field" placeholder="+63 9xx xxx xxxx" value={phone} onChange={(e) => setPhone(sanitizePhoneInput(e.target.value))} />
                 </div>
                 <div>
                   <label className="field-label">Role</label>

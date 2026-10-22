@@ -7,6 +7,7 @@ import {
 } from "@/lib/db";
 import { howaGuard, isHowaRole, requestRole } from "@/lib/role";
 import { getCancellationEligibility } from "@/lib/mock-data";
+import { validateText } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,11 @@ export async function PATCH(
     const cancelledBy = isHowa ? "admin" : (residentEmail || "user");
     const cancelReason = String(body.reason || (isHowa ? "Cancelled by Administrator" : "Cancelled by User")).trim();
 
+    const reasonErr = validateText(cancelReason, "Cancellation reason", { maxLength: 500, required: false });
+    if (reasonErr) {
+      return NextResponse.json({ error: reasonErr }, { status: 400 });
+    }
+
     const updated = await updatePropertyViewing(numericId, {
       status: "viewing_cancelled",
       cancelledAt,
@@ -156,7 +162,14 @@ export async function PATCH(
     if (denied) return NextResponse.json({ error: denied }, { status: 403 });
 
     const patch: Record<string, any> = { status: body.status };
-    if (body.adminNotes !== undefined) patch.adminNotes = String(body.adminNotes).trim();
+    if (body.adminNotes !== undefined) {
+      const notes = String(body.adminNotes).trim();
+      const notesErr = validateText(notes, "Admin notes", { maxLength: 1000, required: false });
+      if (notesErr) {
+        return NextResponse.json({ error: notesErr }, { status: 400 });
+      }
+      patch.adminNotes = notes;
+    }
 
     // Preserve existing schedule unless explicitly provided
     if (body.scheduledAt !== undefined && body.scheduledAt !== "") {
@@ -204,6 +217,20 @@ export async function PATCH(
             date: viewing.preferredDate,
             time: viewing.preferredTime,
             status: "Confirmed",
+          },
+        }).catch(() => {});
+      } else if (body.status === "viewing_completed") {
+        notifyUserByEmail(viewing.residentEmail, {
+          title: "Property Viewing Completed ✅",
+          message: `Your property viewing for ${viewing.listingName} has been marked completed.`,
+          type: "viewing",
+          referenceId: numericId,
+          link: "/history?tab=viewings",
+          metadata: {
+            listingName: viewing.listingName,
+            date: viewing.preferredDate,
+            time: viewing.preferredTime,
+            status: "Completed",
           },
         }).catch(() => {});
       } else if (body.status === "viewing_declined") {

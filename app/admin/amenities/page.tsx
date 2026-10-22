@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatPHP, type Amenity } from "@/lib/mock-data";
+import { validateText, validateAmount, validateNumber, firstError } from "@/lib/validation";
 
 interface AmenityFormState {
   name: string;
@@ -167,8 +168,28 @@ export default function AdminAmenitiesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
-      setError("Please provide an amenity name.");
+
+    const err = firstError(
+      validateText(formData.name, "Amenity name", { minLength: 2, maxLength: 100, required: true }),
+      validateText(formData.description, "Description", { maxLength: 1000, required: false }),
+      validateNumber(formData.maxCapacity, "Max capacity", { min: 1, max: 10000, integer: true }),
+      formData.pricingModel === "base_plus_extra"
+        ? firstError(
+            validateAmount(formData.basePrice, "Base fee"),
+            validateNumber(formData.includedGuests, "Included guests", { min: 1, max: 10000, integer: true }),
+            validateAmount(formData.extraGuestFee, "Extra guest fee")
+          )
+        : formData.pricingModel === "fixed"
+        ? validateAmount(formData.basePrice, "Fixed flat rate")
+        : firstError(
+            validateAmount(formData.pricePerPerson, "Price per person"),
+            validateAmount(formData.rateWhole, "Night session rate")
+          ),
+      validateAmount(formData.downpayment, "Downpayment")
+    );
+
+    if (err) {
+      setError(err);
       return;
     }
 

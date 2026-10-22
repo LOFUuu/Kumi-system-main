@@ -36,6 +36,16 @@ import {
 import { api } from "@/lib/api";
 import { type User, type Role } from "@/lib/mock-data";
 import ResidentMasterListImportModal from "@/components/ResidentMasterListImportModal";
+import {
+  sanitizePhoneInput,
+  validatePhone,
+  sanitizeBlockLotInput,
+  validateBlockLot,
+  validateName,
+  validateEmail,
+  validateNumber,
+  validateText,
+} from "@/lib/validation";
 
 function formatRegisteredDate(createdAt?: string, id?: number): string {
   if (createdAt) {
@@ -177,10 +187,12 @@ export default function AdminResidentsPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Stats calculation — archived users are already excluded by getUsers()
-  const totalResidents = users.length;
-  const activeCount = users.filter((u) => u.isActive && !u.isArchived).length;
-  const inactiveCount = users.filter((u) => !u.isActive && !u.isArchived).length;
+  // Stats calculation — strictly filter for role === "resident" and exclude archived records.
+  // Admins, counselors, and non-residents are completely excluded from resident counts.
+  const residentsList = users.filter((u) => u.role === "resident" && !u.isArchived);
+  const totalResidents = residentsList.length;
+  const activeCount = residentsList.filter((u) => u.isActive).length;
+  const inactiveCount = residentsList.filter((u) => !u.isActive).length;
   const nonResidentsCount = users.filter((u) => u.role === "non_resident" && !u.isArchived).length;
 
   // Unique blocks for dropdown
@@ -378,18 +390,85 @@ export default function AdminResidentsPage() {
     e.preventDefault();
     setBusy(true);
     setError("");
+
+    const nameErr = validateName(fullName, { required: true, label: "Full name" });
+    if (nameErr) {
+      setError(nameErr);
+      setBusy(false);
+      return;
+    }
+
+    const emailErr = validateEmail(email, { required: true });
+    if (emailErr) {
+      setError(emailErr);
+      setBusy(false);
+      return;
+    }
+
+    if (phone.trim()) {
+      const phoneErr = validatePhone(phone, { label: "Phone number" });
+      if (phoneErr) {
+        setError(phoneErr);
+        setBusy(false);
+        return;
+      }
+    }
+
+    if (blockNo.trim()) {
+      const bErr = validateBlockLot(blockNo, { label: "Block No." });
+      if (bErr) {
+        setError(bErr);
+        setBusy(false);
+        return;
+      }
+    }
+
+    if (lotNo.trim()) {
+      const lErr = validateBlockLot(lotNo, { label: "Lot No." });
+      if (lErr) {
+        setError(lErr);
+        setBusy(false);
+        return;
+      }
+    }
+
+    const memberErr = validateNumber(householdMembers, { label: "Household members", integer: true, min: 1, max: 50 });
+    if (memberErr) {
+      setError(memberErr);
+      setBusy(false);
+      return;
+    }
+
+    if (householdHead.trim()) {
+      const headErr = validateName(householdHead, { label: "Household head" });
+      if (headErr) {
+        setError(headErr);
+        setBusy(false);
+        return;
+      }
+    }
+
+    if (address.trim()) {
+      const addrErr = validateText(address, { label: "Address", max: 300 });
+      if (addrErr) {
+        setError(addrErr);
+        setBusy(false);
+        return;
+      }
+    }
+
     try {
       await api.userCreate({
-        fullName,
-        email,
+        fullName: fullName.trim(),
+        email: email.trim().toLowerCase(),
         role,
-        blockNo: blockNo || undefined,
-        lotNo: lotNo || undefined,
-        phone: phone || undefined,
-        address: address || undefined,
+        blockNo: blockNo.trim() || undefined,
+        lotNo: lotNo.trim() || undefined,
+        phone: phone.trim() || undefined,
+        address: address.trim() || undefined,
         gender: gender || undefined,
         householdMembers: Number(householdMembers) || 1,
-        householdHead: householdHead || fullName || undefined,
+        householdHead: householdHead.trim() || fullName.trim() || undefined,
         cedula: cedula || undefined,
       });
       setAdding(false);
@@ -407,18 +486,85 @@ export default function AdminResidentsPage() {
     if (!editing) return;
     setBusy(true);
     setError("");
+
+    const nameErr = validateName(editFullName, { required: true, label: "Full name" });
+    if (nameErr) {
+      setError(nameErr);
+      setBusy(false);
+      return;
+    }
+
+    const emailErr = validateEmail(editEmail, { required: true });
+    if (emailErr) {
+      setError(emailErr);
+      setBusy(false);
+      return;
+    }
+
+    if (editPhone.trim()) {
+      const phoneErr = validatePhone(editPhone, { label: "Phone number" });
+      if (phoneErr) {
+        setError(phoneErr);
+        setBusy(false);
+        return;
+      }
+    }
+
+    if (editBlockNo.trim()) {
+      const bErr = validateBlockLot(editBlockNo, { label: "Block No." });
+      if (bErr) {
+        setError(bErr);
+        setBusy(false);
+        return;
+      }
+    }
+
+    if (editLotNo.trim()) {
+      const lErr = validateBlockLot(editLotNo, { label: "Lot No." });
+      if (lErr) {
+        setError(lErr);
+        setBusy(false);
+        return;
+      }
+    }
+
+    const memberErr = validateNumber(editHouseholdMembers, { label: "Household members", integer: true, min: 1, max: 50 });
+    if (memberErr) {
+      setError(memberErr);
+      setBusy(false);
+      return;
+    }
+
+    if (editHouseholdHead.trim()) {
+      const headErr = validateName(editHouseholdHead, { label: "Household head" });
+      if (headErr) {
+        setError(headErr);
+        setBusy(false);
+        return;
+      }
+    }
+
+    if (editAddress.trim()) {
+      const addrErr = validateText(editAddress, { label: "Address", max: 300 });
+      if (addrErr) {
+        setError(addrErr);
+        setBusy(false);
+        return;
+      }
+    }
+
     try {
       const res = await api.userUpdate(editing.id, {
-        fullName: editFullName,
-        email: editEmail,
+        fullName: editFullName.trim(),
+        email: editEmail.trim().toLowerCase(),
         role: editRole,
-        blockNo: editBlockNo || null,
-        lotNo: editLotNo || null,
-        phone: editPhone || null,
-        address: editAddress || null,
+        blockNo: editBlockNo.trim() || null,
+        lotNo: editLotNo.trim() || null,
+        phone: editPhone.trim() || null,
+        address: editAddress.trim() || null,
         gender: editGender || null,
         householdMembers: Number(editHouseholdMembers) || 1,
-        householdHead: editHouseholdHead || null,
+        householdHead: editHouseholdHead.trim() || null,
         isActive: editIsActive,
         emailVerified: editEmailVerified,
       });
@@ -618,11 +764,7 @@ export default function AdminResidentsPage() {
       {/* MAIN CONTENT AREA: Table + Slide-in / Side Panel */}
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         {/* RESIDENTS TABLE CARD */}
-        <div
-          className={`flex-1 overflow-hidden rounded-2xl border border-cream-2 bg-white shadow-sm transition-all duration-300 ${
-            selectedUser ? "lg:w-[calc(100%-380px)]" : "w-full"
-          }`}
-        >
+        <div className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-cream-2 bg-white shadow-sm transition-all duration-300">
           {/* Compact Name A–Z Filter Bar */}
           <div className="px-5 pt-4 pb-3 flex items-center">
             <div className="flex items-center gap-2">
@@ -1331,7 +1473,7 @@ export default function AdminResidentsPage() {
                     type="text"
                     className="field"
                     value={blockNo}
-                    onChange={(e) => setBlockNo(e.target.value)}
+                    onChange={(e) => setBlockNo(sanitizeBlockLotInput(e.target.value))}
                     placeholder="2"
                   />
                 </div>
@@ -1341,7 +1483,7 @@ export default function AdminResidentsPage() {
                     type="text"
                     className="field"
                     value={lotNo}
-                    onChange={(e) => setLotNo(e.target.value)}
+                    onChange={(e) => setLotNo(sanitizeBlockLotInput(e.target.value))}
                     placeholder="4"
                   />
                 </div>
@@ -1367,7 +1509,7 @@ export default function AdminResidentsPage() {
                     className="field"
                     placeholder="0912 345 6789"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => setPhone(sanitizePhoneInput(e.target.value))}
                   />
                 </div>
                 <div>
@@ -1541,7 +1683,7 @@ export default function AdminResidentsPage() {
                     type="text"
                     className="field"
                     value={editBlockNo}
-                    onChange={(e) => setEditBlockNo(e.target.value)}
+                    onChange={(e) => setEditBlockNo(sanitizeBlockLotInput(e.target.value))}
                   />
                 </div>
                 <div>
@@ -1550,7 +1692,7 @@ export default function AdminResidentsPage() {
                     type="text"
                     className="field"
                     value={editLotNo}
-                    onChange={(e) => setEditLotNo(e.target.value)}
+                    onChange={(e) => setEditLotNo(sanitizeBlockLotInput(e.target.value))}
                   />
                 </div>
                 <div>
@@ -1574,7 +1716,7 @@ export default function AdminResidentsPage() {
                     type="tel"
                     className="field"
                     value={editPhone}
-                    onChange={(e) => setEditPhone(e.target.value)}
+                    onChange={(e) => setEditPhone(sanitizePhoneInput(e.target.value))}
                   />
                 </div>
                 <div>

@@ -188,7 +188,7 @@ export interface InAppNotification {
   userEmail?: string;
   title: string;
   message: string;
-  type: "announcement" | "viewing" | "reservation" | "dues" | "general";
+  type: "announcement" | "viewing" | "reservation" | "dues" | "payment" | "general";
   referenceId?: number | string;
   link?: string;
   isRead: boolean;
@@ -369,6 +369,10 @@ export interface DuesRecord {
   source?: "imported" | "system" | "manual";
   billingMonth?: string;  // e.g. "September" or "2026-09"
   billingYear?: number;   // e.g. 2026
+  isArchived?: boolean;
+  archivedAt?: string;
+  archiveReason?: string;
+  archivedBy?: string;
 }
 
 export const MOCK_DUES: DuesRecord[] = [

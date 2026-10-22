@@ -50,6 +50,7 @@ import {
   type PaymentConfig,
 } from "@/lib/mock-data";
 import { buildPlaceholderQR, HOAGCashNumber } from "@/lib/payment";
+import { sanitizePhoneInput, validatePhone, validateName } from "@/lib/validation";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -513,13 +514,15 @@ function PaymentsContent() {
       const targetCategory = settingsActiveCategory;
       const targetConfig = targetCategory === "amenity" ? amenityConfig : duesConfig;
 
-      if (!targetConfig.accountName.trim()) {
-        showToast("GCash account name cannot be empty.", true);
+      const nameErr = validateName(targetConfig.accountName, { required: true, label: "GCash account name" });
+      if (nameErr) {
+        showToast(nameErr, true);
         setSavingSettings(false);
         return;
       }
-      if (!targetConfig.accountNumber.trim()) {
-        showToast("GCash mobile number cannot be empty.", true);
+      const phoneErr = validatePhone(targetConfig.accountNumber, { required: true, label: "GCash mobile number" });
+      if (phoneErr) {
+        showToast(phoneErr, true);
         setSavingSettings(false);
         return;
       }
@@ -1070,7 +1073,7 @@ function PaymentsContent() {
                   <input
                     type="text"
                     value={activeSettingsConfig.accountNumber}
-                    onChange={(e) => handleSettingsFieldChange("accountNumber", e.target.value)}
+                    onChange={(e) => handleSettingsFieldChange("accountNumber", sanitizePhoneInput(e.target.value))}
                     placeholder="e.g. 0917 123 4567"
                     className="field pl-9 text-xs py-2.5 font-mono font-bold text-blue-900"
                   />

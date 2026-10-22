@@ -3,6 +3,14 @@ import { getListings, getMasterIndex, createListing } from "@/lib/db";
 import { requestRole } from "@/lib/role";
 import { sendAdminListingNotificationEmail } from "@/lib/mailer";
 import type { VerificationStatus } from "@/lib/mock-data";
+import {
+  validatePhone,
+  validateBlockLot,
+  validateAmount,
+  validateNumber,
+  validateText,
+  validateUrl,
+} from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +27,51 @@ export async function GET(req: NextRequest) {
     ...(status ? { status: status as any } : {}),
     ...(verificationStatus ? { verificationStatus } : {}),
   });
-  return NextResponse.json(data);
+
+  const role = requestRole(req);
+  const isAuthorizedRole = role === "admin" || role === "counselor" || role === "resident";
+  const userId = Number(req.headers.get("x-user-id") || "0");
+  const userEmail = String(req.headers.get("x-user-email") || "").toLowerCase().trim();
+
+  // If resident or HOA admin, return full addresses
+  if (isAuthorizedRole) {
+    return NextResponse.json(data);
+  }
+
+  // Non-resident / guest: check if they have scheduled viewings for any listings
+  let scheduledListingIds = new Set<number>();
+  if (userEmail) {
+    try {
+      const { getPropertyViewings } = await import("@/lib/db");
+      const userViewings = await getPropertyViewings({ residentEmail: userEmail });
+      userViewings
+        .filter((v) => v.status === "viewing_scheduled" || v.status === "viewing_completed")
+        .forEach((v) => scheduledListingIds.add(v.listingId));
+    } catch {
+      // Continue with empty scheduled set if query fails
+    }
+  }
+
+  // Mask exact block, lot, and specific address for unauthorized users
+  const maskedData = data.map((l) => {
+    const isOwner = Boolean(userId && (l.uploadedBy === userId || l.ownerId === userId));
+    const hasScheduledViewing = scheduledListingIds.has(l.id);
+
+    if (isOwner || hasScheduledViewing) {
+      return l;
+    }
+
+    const isBlockLotName = /^block\s+\w+\s*-\s*lot\s+\w+$/i.test(l.houseName.trim());
+    return {
+      ...l,
+      address: "Mabuhay Homes Phase 5, Dasmariñas, Cavite",
+      blockNo: undefined,
+      lotNo: undefined,
+      houseName: isBlockLotName ? "Phase 5 Residential Property" : l.houseName,
+    };
+  });
+
+  return NextResponse.json(maskedData);
 }
 
 // POST /api/listings
@@ -48,25 +100,49 @@ export async function POST(req: NextRequest) {
   const ownerContactNumber = String(body.ownerContactNumber || "").trim();
   const ownerMessengerLink = String(body.ownerMessengerLink || "").trim();
 
-  if (
-    !blockNo ||
-    !lotNo ||
-    blockNo.toLowerCase() === "null" ||
-    lotNo.toLowerCase() === "null" ||
-    !Number.isFinite(price) ||
-    price <= 0
-  ) {
-    return NextResponse.json(
-      { error: "A valid Block, Lot, and price are required." },
-      { status: 400 }
-    );
+  const blockErr = validateBlockLot(blockNo, { required: true, label: "Block No." });
+  if (blockErr) return NextResponse.json({ error: blockErr }, { status: 400 });
+
+  const lotErr = validateBlockLot(lotNo, { required: true, label: "Lot No." });
+  if (lotErr) return NextResponse.json({ error: lotErr }, { status: 400 });
+
+  const priceErr = validateAmount(price, { required: true, label: "Price", min: 100 });
+  if (priceErr) return NextResponse.json({ error: priceErr }, { status: 400 });
+
+  const phoneErr = validatePhone(ownerContactNumber, {
+    required: role !== "admin" && role !== "counselor",
+    label: "Owner contact number",
+  });
+  if (phoneErr) return NextResponse.json({ error: phoneErr }, { status: 400 });
+
+  if (ownerMessengerLink) {
+    const urlErr = validateUrl(ownerMessengerLink, { label: "Messenger / Facebook link" });
+    if (urlErr) return NextResponse.json({ error: urlErr }, { status: 400 });
   }
 
-  if (!ownerContactNumber) {
-    return NextResponse.json(
-      { error: "Owner contact number is required." },
-      { status: 400 }
-    );
+  if (body.bedrooms !== undefined) {
+    const bedErr = validateNumber(body.bedrooms, { label: "Bedrooms", integer: true, min: 0, max: 50 });
+    if (bedErr) return NextResponse.json({ error: bedErr }, { status: 400 });
+  }
+
+  if (body.bathrooms !== undefined) {
+    const bathErr = validateNumber(body.bathrooms, { label: "Bathrooms", integer: true, min: 0, max: 50 });
+    if (bathErr) return NextResponse.json({ error: bathErr }, { status: 400 });
+  }
+
+  if (body.sqm !== undefined) {
+    const sqmErr = validateNumber(body.sqm, { label: "Area (sqm)", min: 1, max: 10000 });
+    if (sqmErr) return NextResponse.json({ error: sqmErr }, { status: 400 });
+  }
+
+  if (body.houseName) {
+    const titleErr = validateText(body.houseName, { label: "Listing title", max: 120 });
+    if (titleErr) return NextResponse.json({ error: titleErr }, { status: 400 });
+  }
+
+  if (body.description) {
+    const descErr = validateText(body.description, { label: "Description", max: 3000, multiline: true });
+    if (descErr) return NextResponse.json({ error: descErr }, { status: 400 });
   }
 
   // Require at least one proof document

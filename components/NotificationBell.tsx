@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -16,8 +17,8 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  Info,
   Layers,
+  CreditCard,
 } from "lucide-react";
 
 interface NotificationBellProps {
@@ -25,6 +26,8 @@ interface NotificationBellProps {
   compact?: boolean;
   onNotificationsUpdate?: (notifications: InAppNotification[], unreadCount: number) => void;
 }
+
+const emptySubscribe = () => () => {};
 
 export default function NotificationBell({
   align = "right",
@@ -36,42 +39,45 @@ export default function NotificationBell({
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [selectedNotification, setSelectedNotification] = useState<InAppNotification | null>(null);
+  const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch notifications belonging to current user
-  const fetchNotifications = () => {
+  useEffect(() => {
     if (!user) {
-      setNotifications([]);
-      setUnreadCount(0);
       return;
     }
-    api
-      .notifications()
-      .then((res) => {
-        const notifs = res.notifications || [];
-        const count = res.unreadCount || 0;
-        setNotifications(notifs);
-        setUnreadCount(count);
-        if (onNotificationsUpdate) {
-          onNotificationsUpdate(notifs, count);
-        }
-      })
-      .catch(() => {});
-  };
 
-  // Initial fetch and automatic refresh interval (every 15 seconds)
-  useEffect(() => {
-    fetchNotifications();
+    let active = true;
 
-    const interval = setInterval(fetchNotifications, 15000);
-    const handleFocus = () => fetchNotifications();
+    const loadNotifications = () => {
+      api
+        .notifications()
+        .then((res) => {
+          if (!active) return;
+          const notifs = res.notifications || [];
+          const count = res.unreadCount || 0;
+          setNotifications(notifs);
+          setUnreadCount(count);
+          if (onNotificationsUpdate) {
+            onNotificationsUpdate(notifs, count);
+          }
+        })
+        .catch(() => {});
+    };
+
+    loadNotifications();
+
+    const interval = setInterval(loadNotifications, 15000);
+    const handleFocus = () => loadNotifications();
     window.addEventListener("focus", handleFocus);
 
     return () => {
+      active = false;
       clearInterval(interval);
       window.removeEventListener("focus", handleFocus);
     };
-  }, [user]);
+  }, [user, onNotificationsUpdate]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -118,7 +124,7 @@ export default function NotificationBell({
             newCount
           );
         }
-      } catch (err) {
+      } catch {
         // Fallback optimistic update
         setNotifications((prev) =>
           prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
@@ -137,12 +143,11 @@ export default function NotificationBell({
       if (onNotificationsUpdate) {
         onNotificationsUpdate(updated, 0);
       }
-    } catch (e) {}
+    } catch {}
   };
 
   // Helper to get notification type display properties
-  const getTypeInfo = (type: string, title: string) => {
-    const lowerTitle = title.toLowerCase();
+  const getTypeInfo = (type: string) => {
     if (type === "reservation") {
       return {
         label: "Amenity Booking",
@@ -173,6 +178,14 @@ export default function NotificationBell({
         icon: Coins,
         badgeBg: "bg-purple-50 text-purple-800 border-purple-200",
         iconBg: "bg-purple-100 text-purple-800",
+      };
+    }
+    if (type === "payment") {
+      return {
+        label: "Payment & Verification",
+        icon: CreditCard,
+        badgeBg: "bg-emerald-50 text-emerald-800 border-emerald-200",
+        iconBg: "bg-emerald-100 text-emerald-800",
       };
     }
     return {
@@ -220,16 +233,15 @@ export default function NotificationBell({
   const resolveDetails = (notif: InAppNotification) => {
     const meta = notif.metadata || {};
     const lowerTitle = notif.title.toLowerCase();
-    const lowerMsg = notif.message.toLowerCase();
 
     // Amenity details
     let amenity = meta.amenityName;
     let date = meta.date;
-    let time = meta.time;
+    const time = meta.time;
     let guests = meta.guests;
     let amount = meta.totalAmount;
     let status = meta.status;
-    let reason = meta.reason;
+    const reason = meta.reason;
     let listing = meta.listingName;
 
     // Fallback parsing for notifications without saved metadata
@@ -283,18 +295,23 @@ export default function NotificationBell({
         <button
           type="button"
           onClick={() => setIsOpen((prev) => !prev)}
-          className={`relative flex items-center justify-center rounded-full border border-gray-200 bg-gray-50/80 text-gray-600 hover:bg-[#e8f3ec] hover:text-[#123f2a] hover:border-[#45a057]/40 transition-all shadow-2xs ${
-            compact ? "h-8 w-8" : "h-9 w-9"
-          }`}
+          className={`relative group flex items-center justify-center rounded-full border transition-all duration-200 cursor-pointer shadow-2xs ${
+            isOpen
+              ? "bg-[#e8f3ec] text-[#123f2a] border-[#45a057]/60 ring-2 ring-[#45a057]/20"
+              : "border-gray-200 bg-gray-50/80 text-gray-600 hover:bg-[#e8f3ec] hover:text-[#123f2a] hover:border-[#45a057]/40"
+          } ${compact ? "h-8 w-8" : "h-9 w-9"}`}
           title="Notifications"
           aria-label="Notifications"
           aria-haspopup="true"
           aria-expanded={isOpen}
         >
-          <Bell className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
+          <Bell className={`${compact ? "h-3.5 w-3.5" : "h-4 w-4"} group-hover:rotate-12 transition-transform duration-200`} />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-xs animate-in zoom-in-50">
-              {unreadCount > 9 ? "9+" : unreadCount}
+            <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-60" />
+              <span className="relative flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-xs">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
             </span>
           )}
         </button>
@@ -302,16 +319,19 @@ export default function NotificationBell({
         {/* Dropdown Menu */}
         {isOpen && (
           <div
-            className={`absolute mt-2 w-80 sm:w-96 rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${
-              align === "left" ? "left-0" : "right-0"
+            className={`absolute mt-2.5 w-[calc(100vw-2rem)] sm:w-96 max-w-[390px] rounded-2xl border border-gray-100 bg-white/98 shadow-[0_20px_50px_-10px_rgba(18,63,42,0.18),0_10px_20px_-5px_rgba(0,0,0,0.06)] ring-1 ring-black/5 z-[100] overflow-hidden animate-popup transform ${
+              align === "left" ? "left-0 origin-top-left" : "right-0 origin-top-right"
             }`}
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 bg-gray-50/50">
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3.5 bg-gradient-to-r from-gray-50/90 to-[#e8f3ec]/30">
               <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#123f2a] text-white shadow-2xs">
+                  <Bell className="h-3.5 w-3.5" />
+                </div>
                 <span className="font-serif text-sm font-bold text-[#123f2a]">Notifications</span>
                 {unreadCount > 0 && (
-                  <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                  <span className="rounded-full bg-rose-50 border border-rose-200 px-2 py-0.5 text-[10px] font-bold text-rose-700">
                     {unreadCount} new
                   </span>
                 )}
@@ -320,7 +340,7 @@ export default function NotificationBell({
                 <button
                   type="button"
                   onClick={handleMarkAllRead}
-                  className="text-[11px] font-semibold text-[#1b5338] hover:underline cursor-pointer"
+                  className="text-[11px] font-semibold text-[#1b5338] hover:text-[#123f2a] hover:underline cursor-pointer transition-colors"
                 >
                   Mark all as read
                 </button>
@@ -328,7 +348,7 @@ export default function NotificationBell({
             </div>
 
             {/* Scrollable Notifications List */}
-            <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
+            <div className="max-h-80 overflow-y-auto divide-y divide-gray-50 scroll-thin">
               {notifications.length === 0 ? (
                 <div className="p-8 text-center text-xs text-gray-400 flex flex-col items-center justify-center gap-2">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-400">
@@ -339,19 +359,21 @@ export default function NotificationBell({
                 </div>
               ) : (
                 notifications.map((n) => {
-                  const info = getTypeInfo(n.type, n.title);
+                  const info = getTypeInfo(n.type);
                   const Icon = info.icon;
                   return (
                     <button
                       key={n.id}
                       type="button"
                       onClick={() => handleNotificationClick(n)}
-                      className={`w-full text-left flex items-start gap-3 p-3.5 transition-colors hover:bg-gray-50/90 cursor-pointer ${
-                        !n.isRead ? "bg-emerald-50/40" : "bg-white"
+                      className={`w-full text-left flex items-start gap-3 p-3.5 transition-all duration-150 cursor-pointer border-l-4 ${
+                        !n.isRead
+                          ? "bg-[#e8f3ec]/40 hover:bg-[#e8f3ec]/70 border-[#45a057]"
+                          : "bg-white hover:bg-gray-50/90 border-transparent"
                       }`}
                     >
                       <div
-                        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
                           !n.isRead ? info.iconBg : "bg-gray-100 text-gray-500"
                         }`}
                       >
@@ -368,7 +390,7 @@ export default function NotificationBell({
                           </p>
                           {!n.isRead && (
                             <span
-                              className="h-2 w-2 rounded-full bg-emerald-500 shrink-0"
+                              className="h-2 w-2 rounded-full bg-emerald-500 shrink-0 ring-2 ring-emerald-200"
                               title="Unread notification"
                             />
                           )}
@@ -377,7 +399,8 @@ export default function NotificationBell({
                           {n.message}
                         </p>
                         {n.createdAt && (
-                          <p className="mt-1 text-[10px] text-gray-400">
+                          <p className="mt-1 flex items-center gap-1 text-[10px] text-gray-400">
+                            <Clock className="h-3 w-3" />
                             {getRelativeTime(n.createdAt)}
                           </p>
                         )}
@@ -394,19 +417,19 @@ export default function NotificationBell({
       </div>
 
       {/* ── NOTIFICATION DETAIL MODAL ────────────────────────────────────── */}
-      {selectedNotification && (
+      {selectedNotification && isClient && createPortal(
         <div
-          className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+          className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs transition-opacity duration-200 animate-fade-in"
           onClick={() => setSelectedNotification(null)}
         >
           <div
-            className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-7 text-[#123f2a] shadow-2xl animate-in zoom-in-95 duration-200 border border-gray-100 relative max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-7 text-[#123f2a] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.3)] animate-modal-popup border border-gray-100 relative max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Top Bar: Category Pill & Close 'X' Button */}
             <div className="flex items-center justify-between gap-2">
               {(() => {
-                const info = getTypeInfo(selectedNotification.type, selectedNotification.title);
+                const info = getTypeInfo(selectedNotification.type);
                 const Icon = info.icon;
                 return (
                   <span
@@ -421,7 +444,7 @@ export default function NotificationBell({
               <button
                 type="button"
                 onClick={() => setSelectedNotification(null)}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
                 title="Close notification"
                 aria-label="Close"
               >
@@ -572,13 +595,14 @@ export default function NotificationBell({
               <button
                 type="button"
                 onClick={() => setSelectedNotification(null)}
-                className="rounded-full bg-[#123f2a] px-6 py-2 text-xs font-bold text-white hover:bg-[#1b5338] transition-colors shadow-xs"
+                className="rounded-full bg-[#123f2a] px-6 py-2 text-xs font-bold text-white hover:bg-[#1b5338] transition-colors shadow-xs cursor-pointer"
               >
                 Close
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getListing, getPropertyViewings, createPropertyViewing, notifyAdmins, notifyUserByEmail } from "@/lib/db";
 import { isHowaRole, requestRole } from "@/lib/role";
+import { validateEmail, validateName, validateText } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -62,8 +63,19 @@ export async function POST(req: NextRequest) {
   const residentEmail = String(req.headers.get("x-user-email") || body.residentEmail || "").trim();
   const residentName = String(req.headers.get("x-user-name") || body.residentName || "").trim();
 
-  if (!residentEmail) {
-    return NextResponse.json({ error: "Resident email is required." }, { status: 400 });
+  const emailErr = validateEmail(residentEmail, "Resident email");
+  if (emailErr) {
+    return NextResponse.json({ error: emailErr }, { status: 400 });
+  }
+
+  const nameErr = validateName(residentName, "Resident name", { required: false });
+  if (nameErr) {
+    return NextResponse.json({ error: nameErr }, { status: 400 });
+  }
+
+  const msgErr = validateText(body.message, "Message", { maxLength: 1000, required: false });
+  if (msgErr) {
+    return NextResponse.json({ error: msgErr }, { status: 400 });
   }
 
   const preferredDate = String(body.preferredDate || "").trim();
@@ -149,6 +161,31 @@ export async function POST(req: NextRequest) {
           status: "Pending",
         },
       }).catch(() => {});
+    }
+
+    // Notify listing owner if this property is listed by a resident
+    const ownerUserId = listing.uploadedBy || listing.ownerId;
+    if (ownerUserId) {
+      try {
+        const { getUserById } = await import("@/lib/db");
+        const ownerUser = await getUserById(ownerUserId);
+        if (ownerUser && ownerUser.email && ownerUser.email.toLowerCase() !== residentEmail.toLowerCase()) {
+          notifyUserByEmail(ownerUser.email, {
+            title: "New Viewing Request for Your Property",
+            message: `${residentName || "A prospective buyer/tenant"} requested a viewing for ${listing.houseName} on ${preferredDate} at ${preferredTime}. Please review in your listings tab.`,
+            type: "viewing",
+            referenceId: viewing.id,
+            link: `/my-listings?tab=viewings&listingId=${listing.id}`,
+            metadata: {
+              listingName: listing.houseName,
+              date: preferredDate,
+              time: preferredTime,
+              residentName: residentName || "Prospective Client",
+              status: "Requested",
+            },
+          }).catch(() => {});
+        }
+      } catch {}
     }
 
     return NextResponse.json({ viewing }, { status: 201 });

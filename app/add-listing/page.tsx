@@ -26,6 +26,16 @@ import {
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import {
+  sanitizePhoneInput,
+  validatePhone,
+  sanitizeBlockLotInput,
+  validateBlockLot,
+  validateAmount,
+  validateNumber,
+  validateText,
+  validateUrl,
+} from "@/lib/validation";
 
 const ACCEPTED_DOCS = ".pdf,.jpg,.jpeg,.png";
 const ACCEPTED_IMGS = "image/jpeg,image/jpg,image/png,image/webp";
@@ -206,14 +216,73 @@ export default function AddListingPage() {
     e.preventDefault();
     setError("");
 
-    if (
-      !blockNo.trim() ||
-      !lotNo.trim() ||
-      blockNo.trim().toLowerCase() === "null" ||
-      lotNo.trim().toLowerCase() === "null"
-    ) {
-      setError("Please enter a valid Block and Lot number.");
+    const blockErr = validateBlockLot(blockNo, { required: true, label: "Block No." });
+    if (blockErr) {
+      setError(blockErr);
       return;
+    }
+
+    const lotErr = validateBlockLot(lotNo, { required: true, label: "Lot No." });
+    if (lotErr) {
+      setError(lotErr);
+      return;
+    }
+
+    const priceErr = validateAmount(price, { required: true, label: "Price", min: 100 });
+    if (priceErr) {
+      setError(priceErr);
+      return;
+    }
+
+    const bedErr = validateNumber(bedrooms, { required: true, label: "Bedrooms", integer: true, min: 0, max: 50 });
+    if (bedErr) {
+      setError(bedErr);
+      return;
+    }
+
+    const bathErr = validateNumber(bathrooms, { required: true, label: "Bathrooms", integer: true, min: 0, max: 50 });
+    if (bathErr) {
+      setError(bathErr);
+      return;
+    }
+
+    const sqmErr = validateNumber(sqm, { required: true, label: "Area (sqm)", min: 1, max: 10000 });
+    if (sqmErr) {
+      setError(sqmErr);
+      return;
+    }
+
+    const phoneErr = validatePhone(ownerContactNumber, {
+      required: !isHowa,
+      label: "Contact number",
+    });
+    if (phoneErr) {
+      setError(phoneErr);
+      return;
+    }
+
+    if (ownerMessengerLink.trim()) {
+      const urlErr = validateUrl(ownerMessengerLink, { label: "Messenger / Facebook link" });
+      if (urlErr) {
+        setError(urlErr);
+        return;
+      }
+    }
+
+    if (houseName.trim()) {
+      const titleErr = validateText(houseName, { label: "Listing title", max: 120 });
+      if (titleErr) {
+        setError(titleErr);
+        return;
+      }
+    }
+
+    if (description.trim()) {
+      const descErr = validateText(description, { label: "Description", max: 3000, multiline: true });
+      if (descErr) {
+        setError(descErr);
+        return;
+      }
     }
 
     if (!isHowa && selectedFiles.length === 0) {
@@ -254,11 +323,6 @@ export default function AddListingPage() {
       const title =
         houseName.trim() ||
         `${bedrooms}BR ${propertyType} for ${listingType === "rent" ? "Rent" : "Sale"}`;
-
-      if (!isHowa && !ownerContactNumber.trim()) {
-        setError("Please provide your contact number so interested buyers/renters can reach you.");
-        return;
-      }
 
       await api.listingCreate({
         blockNo: blockNo.trim(),
@@ -404,7 +468,7 @@ export default function AddListingPage() {
                   placeholder="e.g. 5 or B-12"
                   className="w-full rounded-xl border border-[#dde5de] bg-[#f5f8f5] px-3.5 py-2.5 text-sm text-[#143424] outline-none transition focus:border-[#2d6a4f] focus:bg-white focus:ring-2 focus:ring-[#2d6a4f]/10"
                   value={blockNo}
-                  onChange={(e) => setBlockNo(e.target.value)}
+                  onChange={(e) => setBlockNo(sanitizeBlockLotInput(e.target.value))}
                   required
                 />
               </div>
@@ -417,7 +481,7 @@ export default function AddListingPage() {
                   placeholder="e.g. 12 or 34"
                   className="w-full rounded-xl border border-[#dde5de] bg-[#f5f8f5] px-3.5 py-2.5 text-sm text-[#143424] outline-none transition focus:border-[#2d6a4f] focus:bg-white focus:ring-2 focus:ring-[#2d6a4f]/10"
                   value={lotNo}
-                  onChange={(e) => setLotNo(e.target.value)}
+                  onChange={(e) => setLotNo(sanitizeBlockLotInput(e.target.value))}
                   required
                 />
               </div>
@@ -559,7 +623,7 @@ export default function AddListingPage() {
                       className="w-full rounded-xl border border-[#dde5de] bg-white px-3.5 py-2.5 text-sm text-[#143424] outline-none transition focus:border-[#2d6a4f] focus:bg-white focus:ring-2 focus:ring-[#2d6a4f]/10"
                       placeholder="e.g. 09171234567"
                       value={ownerContactNumber}
-                      onChange={(e) => setOwnerContactNumber(e.target.value)}
+                      onChange={(e) => setOwnerContactNumber(sanitizePhoneInput(e.target.value))}
                     />
                   </div>
                   <div>

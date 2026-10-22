@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAmenities, createAmenity } from "@/lib/db";
+import { validateText, validateAmount, validateNumber, firstError } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,21 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    if (!body.name) {
-      return NextResponse.json({ error: "Amenity name is required" }, { status: 400 });
+
+    const err = firstError(
+      validateText(body.name, "Amenity name", { minLength: 2, maxLength: 100, required: true }),
+      validateText(body.description, "Description", { maxLength: 1000, required: false }),
+      body.maxCapacity !== undefined ? validateNumber(body.maxCapacity, "Max capacity", { min: 1, max: 10000, integer: true }) : null,
+      body.basePrice !== undefined ? validateAmount(body.basePrice, "Base fee") : null,
+      body.pricePerPerson !== undefined ? validateAmount(body.pricePerPerson, "Price per person") : null,
+      body.extraGuestFee !== undefined ? validateAmount(body.extraGuestFee, "Extra guest fee") : null,
+      body.downpayment !== undefined ? validateAmount(body.downpayment, "Downpayment") : null,
+      body.downpaymentPrivate !== undefined ? validateAmount(body.downpaymentPrivate, "Downpayment (private)") : null,
+      body.includedGuests !== undefined ? validateNumber(body.includedGuests, "Included guests", { min: 1, max: 10000, integer: true }) : null
+    );
+
+    if (err) {
+      return NextResponse.json({ error: err }, { status: 400 });
     }
 
     const amenity = await createAmenity(body);

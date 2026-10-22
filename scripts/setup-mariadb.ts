@@ -210,6 +210,23 @@ const SCHEMAS = [
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     syncedAt DATETIME NULL,
     INDEX idx_sync_status (status)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
+  `CREATE TABLE IF NOT EXISTS notifications (
+    id INT PRIMARY KEY,
+    userId VARCHAR(255),
+    userEmail VARCHAR(255),
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(50) DEFAULT 'general',
+    referenceId INT,
+    link VARCHAR(255),
+    isRead TINYINT(1) DEFAULT 0,
+    metadata LONGTEXT,
+    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_notif_user (userId),
+    INDEX idx_notif_email (userEmail),
+    INDEX idx_notif_type (type)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
 ];
 

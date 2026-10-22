@@ -37,6 +37,42 @@ export async function PATCH(
 
     const updated = await updateTransactionById(numId, allowed as any);
     if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Notify user of payment verification status update
+    if (body.status && updated.userEmail) {
+      const { notifyUserByEmail } = await import("@/lib/db");
+      const amountStr = updated.amount ? `₱${updated.amount}` : "payment";
+      const purpose = updated.refType === "amenity" ? "Amenity Reservation" : "HOA Dues";
+
+      if (body.status === "completed") {
+        notifyUserByEmail(updated.userEmail, {
+          title: "Payment Verified & Approved! 💳",
+          message: `Your ${purpose} payment of ${amountStr} has been verified and approved by HOA Administration.`,
+          type: "payment",
+          referenceId: updated.id,
+          link: "/history?tab=payments",
+          metadata: {
+            amount: updated.amount,
+            refType: updated.refType,
+            status: "Completed",
+          },
+        }).catch(() => {});
+      } else if (body.status === "void" || body.status === "voided") {
+        notifyUserByEmail(updated.userEmail, {
+          title: "Payment Verification Notice",
+          message: `Your ${purpose} payment of ${amountStr} could not be verified by HOA Administration. Please coordinate with the HOA office.`,
+          type: "payment",
+          referenceId: updated.id,
+          link: "/history?tab=payments",
+          metadata: {
+            amount: updated.amount,
+            refType: updated.refType,
+            status: "Voided",
+          },
+        }).catch(() => {});
+      }
+    }
+
     return NextResponse.json({ transaction: updated });
   } catch (err: any) {
     return NextResponse.json(

@@ -33,7 +33,7 @@ export default function AdminReportsPage() {
     api.reservations().then(setReservations).catch(() => setReservations([]));
   }, []);
 
-  const residents = users.filter((u) => u.role === "resident").length;
+  const residents = users.filter((u) => u.role === "resident" && !u.isArchived).length;
   const revenue = txns.filter((t) => t.status === "approved").reduce((s, t) => s + t.amount, 0);
   const paid = dues.filter((d) => d.status === "paid" || d.status === "advance").length;
   const delayed = dues.filter((d) => d.status === "delayed" || d.status === "unpaid").length;

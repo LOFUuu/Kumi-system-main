@@ -26,6 +26,8 @@ import {
   UserCheck,
   Users,
   X,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
@@ -363,6 +365,7 @@ interface ExcelImportModalProps {
 }
 
 function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) {
+  const [step, setStep] = useState<"upload" | "preview" | "success">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ParsedExcelDuesRow[]>([]);
   const [parsing, setParsing] = useState(false);
@@ -401,10 +404,12 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
 
       const rows = rawJson.map((row) => parseDuesRow(row, users));
       setParsedRows(rows);
+      setStep("preview"); // Move strictly to Preview screen
     } catch (err: any) {
       console.error(err);
       setErrorMsg(err?.message || "Failed to parse the Excel file. Please ensure it is a valid .xlsx, .xls, or .csv file.");
       setParsedRows([]);
+      setStep("upload");
     } finally {
       setParsing(false);
     }
@@ -421,6 +426,15 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
     if (e.target.files && e.target.files[0]) {
       processFile(e.target.files[0]);
     }
+  };
+
+  const handleResetFile = () => {
+    setFile(null);
+    setParsedRows([]);
+    setErrorMsg("");
+    setResultSummary(null);
+    setStep("upload");
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleImport = async () => {
@@ -453,7 +467,8 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
         duplicates: res.summary.duplicates,
         message: res.message,
       });
-      onSuccess();
+      // Transition strictly to success state after database write
+      setStep("success");
     } catch (err: any) {
       console.error(err);
       setErrorMsg(err?.message || "Import failed. Please check your data and try again.");
@@ -479,8 +494,7 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
       {
         "Resident ID": "RES-004",
         "Resident Name": "Jose Reyes",
-        "Block": "C-03",
-        "Lot": "11",
+        "Unit/Block Code": "C-03 / 11",
         "Month": "January",
         "Year": 2025,
         "Due Amount": 100,
@@ -542,20 +556,28 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
         <div className="flex items-center justify-between border-b border-cream-2 px-6 py-4 bg-cream/40">
           <div className="flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-green-light/20 text-green-mid">
-              <FileSpreadsheet className="h-5 w-5" />
+              {step === "success" ? (
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              ) : (
+                <FileSpreadsheet className="h-5 w-5" />
+              )}
             </span>
             <div>
               <h3 className="font-serif text-lg font-bold text-green-dark leading-none">
-                Import Historical Dues Database
+                {step === "upload" && "Import Historical Dues Database"}
+                {step === "preview" && "Preview Parsed Records"}
+                {step === "success" && "Import Completed Successfully!"}
               </h3>
               <p className="mt-1 text-xs text-muted">
-                Upload your Excel or CSV file to import past and present dues records.
+                {step === "upload" && "Upload your Excel or CSV file to import past and present dues records."}
+                {step === "preview" && "Review resident entity matching and dues data before committing to the database."}
+                {step === "success" && "Your monthly dues records have been committed to the database ledger."}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-cream text-muted hover:text-green-dark transition"
+            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-cream text-muted hover:text-green-dark transition cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
@@ -563,42 +585,15 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
 
         {/* Body Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
-          {resultSummary ? (
-            /* Success Summary View */
+          {/* ── STEP 1: FILE UPLOAD ─────────────────────────────────── */}
+          {step === "upload" && (
             <div className="space-y-4">
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-3">
-                  <CheckCircle2 className="h-8 w-8" />
-                </div>
-                <h4 className="font-serif text-xl font-bold text-emerald-900">
-                  Import Completed Successfully!
-                </h4>
-                <p className="mt-1 text-sm text-emerald-700">
-                  {resultSummary.message}
-                </p>
-                <div className="mt-4 grid grid-cols-3 gap-3 max-w-md mx-auto">
-                  <div className="rounded-xl bg-white p-3 border border-emerald-200 shadow-sm">
-                    <div className="text-[10px] uppercase font-bold text-muted">Total Processed</div>
-                    <div className="text-xl font-bold text-green-dark">{resultSummary.total}</div>
-                  </div>
-                  <div className="rounded-xl bg-white p-3 border border-emerald-200 shadow-sm">
-                    <div className="text-[10px] uppercase font-bold text-emerald-600">{resultSummary.imported}</div>
-                  </div>
-                  <div className="rounded-xl bg-white p-3 border border-emerald-200 shadow-sm">
-                    <div className="text-[10px] uppercase font-bold text-amber-600">{resultSummary.updated}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Upload & Preview Step */
-            <>
               {/* Dropzone */}
               <div
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className="group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-cream-2 bg-cream/20 p-6 text-center cursor-pointer hover:border-green-mid hover:bg-green-light/5 transition"
+                className="group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-cream-2 bg-cream/20 p-8 text-center cursor-pointer hover:border-green-mid hover:bg-green-light/5 transition"
               >
                 <input
                   ref={fileInputRef}
@@ -611,7 +606,7 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
                   <Upload className="h-6 w-6" />
                 </span>
                 <p className="mt-3 text-sm font-bold text-green-dark">
-                  {file ? file.name : "Drop Excel file here or Browse"}
+                  Drop Excel file here or Browse
                 </p>
                 <p className="mt-0.5 text-xs text-muted">
                   Supports .xlsx, .xls, and .csv formats
@@ -623,20 +618,20 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
                 <div className="space-y-0.5">
                   <span className="font-bold text-green-dark">Supported Column Names:</span>
                   <p className="text-[11px] text-muted">
-                    Resident ID (optional), Resident Name, Month, Year, Due Amount, Paid Amount, Payment Date, Status
+                    Resident ID (optional), Resident Name, Block, Lot (or Unit/Block Code), Month, Year, Due Amount, Paid Amount, Payment Date, Status
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={downloadSampleTemplate}
-                  className="flex items-center gap-1.5 rounded-lg border border-green-mid/30 bg-white px-3 py-1.5 text-xs font-bold text-green-mid hover:bg-green-mid hover:text-white transition"
+                  className="flex items-center gap-1.5 rounded-lg border border-green-mid/30 bg-white px-3 py-1.5 text-xs font-bold text-green-mid hover:bg-green-mid hover:text-white transition cursor-pointer"
                 >
                   <Download className="h-3.5 w-3.5" />
                   Download Sample Template
                 </button>
               </div>
 
-              {/* Parsing Indicator / Error */}
+              {/* Parsing Indicator */}
               {parsing && (
                 <div className="flex items-center justify-center gap-2 py-4 text-xs font-semibold text-muted">
                   <RefreshCw className="h-4 w-4 animate-spin text-green-mid" />
@@ -650,126 +645,218 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
                   <span>{errorMsg}</span>
                 </div>
               )}
+            </div>
+          )}
 
-              {/* Parsed Rows Preview Table */}
-              {parsedRows.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-green-dark">
-                        Preview Parsed Records ({parsedRows.length} rows)
-                      </span>
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                        {matchedCount} Matched
-                      </span>
-                      {unmatchedCount > 0 && (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                          {unmatchedCount} Unmatched / New
-                        </span>
-                      )}
-                    </div>
-                  </div>
+          {/* ── STEP 2: PREVIEW PARSED RECORDS ───────────────────────── */}
+          {step === "preview" && (
+            <div className="space-y-4">
+              {/* File Info Strip */}
+              <div className="flex items-center justify-between rounded-xl border border-cream-2 bg-cream/30 px-3.5 py-2.5 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileSpreadsheet className="h-4 w-4 text-green-mid flex-shrink-0" />
+                  <span className="font-semibold text-green-dark truncate">
+                    {file?.name || "Uploaded Spreadsheet"}
+                  </span>
+                  <span className="text-muted">
+                    ({parsedRows.length} rows parsed)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleResetFile}
+                  className="text-xs font-bold text-muted hover:text-green-dark underline transition cursor-pointer"
+                >
+                  Choose Another File
+                </button>
+              </div>
 
-                  <div className="max-h-60 overflow-y-auto rounded-xl border border-cream-2">
-                    <table className="w-full text-left text-xs">
-                      <thead className="sticky top-0 bg-cream text-[10px] uppercase font-bold text-muted">
-                        <tr>
-                          <th className="p-2.5">Resident</th>
-                          <th className="p-2.5">Match Status</th>
-                          <th className="p-2.5">Period</th>
-                          <th className="p-2.5">Due</th>
-                          <th className="p-2.5">Paid</th>
-                          <th className="p-2.5">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-cream-2">
-                        {parsedRows.slice(0, 30).map((r, idx) => (
-                          <tr key={idx} className="hover:bg-cream/40">
-                            <td className="p-2.5 font-semibold text-green-dark">
-                              {r.residentName}
-                              {r.blockNo && (
-                                <span className="block text-[10px] font-normal text-muted">
-                                  {r.blockNo} / {r.lotNo}
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-2.5">
-                              {r.matchStatus === "matched" ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
-                                  <UserCheck className="h-3 w-3" /> Matched
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
-                                  <Info className="h-3 w-3" /> New / Unmatched
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-2.5 whitespace-nowrap font-medium text-green-dark">
-                              {r.billingMonth} {r.billingYear}
-                            </td>
-                            <td className="p-2.5 whitespace-nowrap font-bold text-green-dark">
-                              {formatPHP(r.amountDue)}
-                            </td>
-                            <td className="p-2.5 whitespace-nowrap font-bold text-green-mid">
-                              {formatPHP(r.amountPaid)}
-                            </td>
-                            <td className="p-2.5">
-                              <StatusBadge status={r.status} />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+              {/* Matching Summary Metrics */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-xl border border-cream-2 bg-white p-3 text-center shadow-2xs">
+                  <div className="text-[10px] uppercase font-bold text-muted">Total Rows</div>
+                  <div className="text-lg font-bold text-green-dark">{parsedRows.length}</div>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-center shadow-2xs">
+                  <div className="text-[10px] uppercase font-bold text-emerald-700">Matched / Existing</div>
+                  <div className="text-lg font-bold text-emerald-700 flex items-center justify-center gap-1">
+                    <UserCheck className="h-4 w-4" /> {matchedCount}
                   </div>
-                  {parsedRows.length > 30 && (
-                    <p className="text-[10px] text-muted text-center italic">
-                      Showing first 30 of {parsedRows.length} rows. All {parsedRows.length} rows will be imported.
-                    </p>
-                  )}
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-center shadow-2xs">
+                  <div className="text-[10px] uppercase font-bold text-amber-700">New / Unmatched</div>
+                  <div className="text-lg font-bold text-amber-700 flex items-center justify-center gap-1">
+                    <Info className="h-4 w-4" /> {unmatchedCount}
+                  </div>
+                </div>
+              </div>
+
+              {errorMsg && (
+                <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{errorMsg}</span>
                 </div>
               )}
-            </>
+
+              {/* Interactive Read-Only Preview Table */}
+              <div className="rounded-xl border border-cream-2 overflow-hidden shadow-2xs">
+                <div className="max-h-64 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-cream text-[10px] uppercase font-bold text-muted z-10">
+                      <tr>
+                        <th className="p-2.5">Resident</th>
+                        <th className="p-2.5">Match Status</th>
+                        <th className="p-2.5">Period</th>
+                        <th className="p-2.5">Due</th>
+                        <th className="p-2.5">Paid</th>
+                        <th className="p-2.5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-cream-2 bg-white">
+                      {parsedRows.slice(0, 50).map((r, idx) => (
+                        <tr key={idx} className="hover:bg-cream/40 transition">
+                          <td className="p-2.5 font-semibold text-green-dark">
+                            {r.residentName}
+                            {(r.blockNo || r.lotNo) && (
+                              <span className="block text-[10px] font-normal text-muted">
+                                {r.blockNo ? `Block ${r.blockNo}` : ""} {r.lotNo ? `/ Lot ${r.lotNo}` : ""}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2.5">
+                            {r.matchStatus === "matched" ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                                <UserCheck className="h-3 w-3" /> Matched / Existing
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
+                                <Info className="h-3 w-3" /> New / Unmatched
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap font-medium text-green-dark">
+                            {r.billingMonth} {r.billingYear}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap font-bold text-green-dark">
+                            {formatPHP(r.amountDue)}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap font-bold text-green-mid">
+                            {formatPHP(r.amountPaid)}
+                          </td>
+                          <td className="p-2.5">
+                            <StatusBadge status={r.status} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {parsedRows.length > 50 && (
+                <p className="text-[10px] text-muted text-center italic">
+                  Showing first 50 of {parsedRows.length} rows. All {parsedRows.length} rows will be committed to the database.
+                </p>
+              )}
+
+              <p className="text-[11px] text-muted text-center bg-cream/20 py-2 rounded-lg border border-cream-2">
+                💡 Review the entity matches above. Click <strong>&quot;Confirm & Save to Ledger&quot;</strong> below to commit all valid rows into the database.
+              </p>
+            </div>
+          )}
+
+          {/* ── STEP 3: SUCCESS SUMMARY ──────────────────────────────── */}
+          {step === "success" && resultSummary && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-3 shadow-xs">
+                  <CheckCircle2 className="h-8 w-8" />
+                </div>
+                <h4 className="font-serif text-xl font-bold text-emerald-900">
+                  Import Completed Successfully!
+                </h4>
+                <p className="mt-1 text-sm text-emerald-700">
+                  {resultSummary.message}
+                </p>
+                <div className="mt-4 grid grid-cols-3 gap-3 max-w-md mx-auto">
+                  <div className="rounded-xl bg-white p-3 border border-emerald-200 shadow-2xs">
+                    <div className="text-[10px] uppercase font-bold text-muted">Total Processed</div>
+                    <div className="text-xl font-bold text-green-dark">{resultSummary.total}</div>
+                  </div>
+                  <div className="rounded-xl bg-white p-3 border border-emerald-200 shadow-2xs">
+                    <div className="text-[10px] uppercase font-bold text-emerald-600">New Added</div>
+                    <div className="text-xl font-bold text-emerald-600">{resultSummary.imported}</div>
+                  </div>
+                  <div className="rounded-xl bg-white p-3 border border-emerald-200 shadow-2xs">
+                    <div className="text-[10px] uppercase font-bold text-amber-600">Updated / Synced</div>
+                    <div className="text-xl font-bold text-amber-600">{resultSummary.updated}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2 border-t border-cream-2 px-6 py-4 bg-cream/20">
-          {resultSummary ? (
+          {step === "upload" && (
             <button
               type="button"
               onClick={onClose}
-              className="btn-green !px-6 !py-2 text-xs font-bold"
+              className="rounded-xl border border-cream-2 bg-white px-4 py-2 text-xs font-semibold text-muted hover:bg-cream transition cursor-pointer"
             >
-              Done & View Ledger
+              Cancel
             </button>
-          ) : (
+          )}
+
+          {step === "preview" && (
             <>
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-xl border border-cream-2 bg-white px-4 py-2 text-xs font-semibold text-muted hover:bg-cream transition"
+                className="rounded-xl border border-cream-2 bg-white px-4 py-2 text-xs font-semibold text-muted hover:bg-cream transition cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={parsedRows.length === 0 || importing || parsing}
+                onClick={() => setStep("upload")}
+                className="rounded-xl border border-cream-2 bg-white px-4 py-2 text-xs font-semibold text-green-dark hover:bg-cream transition cursor-pointer"
+              >
+                Back to Upload
+              </button>
+              <button
+                type="button"
+                disabled={parsedRows.length === 0 || importing}
                 onClick={handleImport}
-                className="btn-green flex items-center gap-2 !px-5 !py-2 text-xs font-bold disabled:opacity-50"
+                className="btn-green flex items-center gap-2 !px-5 !py-2 text-xs font-bold disabled:opacity-50 cursor-pointer shadow-sm"
               >
                 {importing ? (
                   <>
                     <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    Importing Records…
+                    Saving to Ledger…
                   </>
                 ) : (
                   <>
-                    <Upload className="h-3.5 w-3.5" />
-                    Import {parsedRows.length > 0 ? `${parsedRows.length} Records` : "Excel"}
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Confirm &amp; Save to Ledger ({parsedRows.length} Records)
                   </>
                 )}
               </button>
             </>
+          )}
+
+          {step === "success" && (
+            <button
+              type="button"
+              onClick={() => {
+                onSuccess();
+                onClose();
+              }}
+              className="btn-green !px-6 !py-2 text-xs font-bold cursor-pointer shadow-sm"
+            >
+              Done &amp; View Ledger
+            </button>
           )}
         </div>
       </div>
@@ -957,9 +1044,22 @@ function ResidentHistoryModal({
 // ── Admin Dues Page Component ────────────────────────────────────────────────
 export default function AdminDuesPage() {
   const [dues, setDues] = useState<DuesRecord[]>([]);
+  const [archivedDues, setArchivedDues] = useState<DuesRecord[]>([]);
+  const [activeTab, setActiveTab] = useState<"active" | "archived">("active");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [animIn, setAnimIn] = useState(false);
+
+  // Archive modal & actions state
+  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
+  const [targetDuesToArchive, setTargetDuesToArchive] = useState<DuesRecord[]>([]);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   // Filters — monthFilter: "" = All Time, "YYYY" = Year, "YYYY-MM" = Specific Month
   const [monthFilter, setMonthFilter] = useState<string>("");
@@ -972,11 +1072,13 @@ export default function AdminDuesPage() {
 
   const loadData = async () => {
     try {
-      const [duesData, usersData] = await Promise.all([
+      const [duesData, archivedData, usersData] = await Promise.all([
         api.dues(),
+        api.archivedDues().catch(() => []),
         api.users().catch(() => []),
       ]);
       setDues(duesData);
+      setArchivedDues(archivedData);
       setUsers(usersData);
 
       // Default to the latest month with records if available, otherwise show all time
@@ -993,6 +1095,7 @@ export default function AdminDuesPage() {
     } catch (err) {
       console.error(err);
       setDues([]);
+      setArchivedDues([]);
     } finally {
       setLoading(false);
       setTimeout(() => setAnimIn(true), 50);
@@ -1003,6 +1106,19 @@ export default function AdminDuesPage() {
     setLoading(true);
     loadData();
   }, []);
+
+  // Clear selections on tab switch
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [activeTab]);
+
+  // Auto-dismiss action feedback
+  useEffect(() => {
+    if (actionFeedback) {
+      const timer = setTimeout(() => setActionFeedback(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [actionFeedback]);
 
   // Recorded months for badges
   const recordedMonths = useMemo(() => {
@@ -1015,9 +1131,11 @@ export default function AdminDuesPage() {
     setSearchQuery("");
   };
 
+  const currentRecords = activeTab === "active" ? dues : archivedDues;
+
   // Filtered list
   const filtered = useMemo(() => {
-    return dues.filter((d) => {
+    return currentRecords.filter((d) => {
       let matchMonth = true;
       if (monthFilter && monthFilter !== "all") {
         if (monthFilter.length === 4) {
@@ -1045,9 +1163,109 @@ export default function AdminDuesPage() {
 
       return matchMonth && matchStatus && matchSearch;
     });
-  }, [dues, monthFilter, statusFilter, searchQuery]);
+  }, [currentRecords, monthFilter, statusFilter, searchQuery]);
 
-  // Scope for summary statistics
+  // Multi-select controls
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((d) => selectedIds.includes(d.id));
+  const someFilteredSelected =
+    filtered.some((d) => selectedIds.includes(d.id)) && !allFilteredSelected;
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      const filteredIdSet = new Set(filtered.map((d) => d.id));
+      setSelectedIds((prev) => prev.filter((id) => !filteredIdSet.has(id)));
+    } else {
+      const combined = new Set([...selectedIds, ...filtered.map((d) => d.id)]);
+      setSelectedIds(Array.from(combined));
+    }
+  };
+
+  const toggleSelectOne = (id: number) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  // Open single item archive modal
+  const handleOpenSingleArchive = (record: DuesRecord) => {
+    setTargetDuesToArchive([record]);
+    setArchiveReason("");
+    setArchiveModalOpen(true);
+  };
+
+  // Open bulk archive modal
+  const handleOpenBulkArchive = () => {
+    const targets = filtered.filter((d) => selectedIds.includes(d.id));
+    if (targets.length === 0) return;
+    setTargetDuesToArchive(targets);
+    setArchiveReason("");
+    setArchiveModalOpen(true);
+  };
+
+  // Commit Archive action
+  const handleConfirmArchive = async () => {
+    if (targetDuesToArchive.length === 0) return;
+    setActionLoading(true);
+    setActionFeedback(null);
+    try {
+      const ids = targetDuesToArchive.map((d) => d.id);
+      const res = await api.archiveDues(ids, archiveReason.trim() || "Archived by Administrator");
+      if (res.ok) {
+        setActionFeedback({
+          type: "success",
+          message: res.message || `Successfully archived ${res.count ?? ids.length} dues record(s).`,
+        });
+        setArchiveModalOpen(false);
+        setSelectedIds([]);
+        await loadData();
+      } else {
+        setActionFeedback({
+          type: "error",
+          message: res.message || "Failed to archive selected records.",
+        });
+      }
+    } catch (err: any) {
+      setActionFeedback({
+        type: "error",
+        message: err?.message || "An unexpected error occurred while archiving.",
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Restore 1 or multiple records
+  const handleRestoreRecords = async (ids: number[]) => {
+    if (ids.length === 0) return;
+    setActionLoading(true);
+    setActionFeedback(null);
+    try {
+      const res = await api.unarchiveDues(ids);
+      if (res.ok) {
+        setActionFeedback({
+          type: "success",
+          message: res.message || `Successfully restored ${res.count ?? ids.length} dues record(s) to active ledger.`,
+        });
+        setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+        await loadData();
+      } else {
+        setActionFeedback({
+          type: "error",
+          message: res.message || "Failed to restore records.",
+        });
+      }
+    } catch (err: any) {
+      setActionFeedback({
+        type: "error",
+        message: err?.message || "An error occurred while restoring records.",
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Scope for summary statistics (calculated on ACTIVE dues only)
   const scope = useMemo(() => {
     if (!monthFilter || monthFilter === "all") return dues;
     if (monthFilter.length === 4) {
@@ -1087,6 +1305,32 @@ export default function AdminDuesPage() {
         animIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
       }`}
     >
+      {/* ── Action Feedback Toast/Banner ── */}
+      {actionFeedback && (
+        <div
+          className={`mb-4 flex items-center justify-between rounded-2xl border px-4 py-3 text-xs font-semibold shadow-sm animate-fadeIn ${
+            actionFeedback.type === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-rose-200 bg-rose-50 text-rose-800"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {actionFeedback.type === "success" ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            ) : (
+              <AlertCircle className="h-4 w-4 text-rose-600" />
+            )}
+            <span>{actionFeedback.message}</span>
+          </div>
+          <button
+            onClick={() => setActionFeedback(null)}
+            className="text-muted hover:text-green-dark"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* ── Header ── */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -1099,14 +1343,23 @@ export default function AdminDuesPage() {
         </div>
 
         {/* Action Header Button */}
-        <button
-          type="button"
-          onClick={() => setShowImportModal(true)}
-          className="btn-green flex items-center gap-2 !px-4 !py-2.5 text-xs font-bold shadow-md hover:scale-105 transition"
-        >
-          <FileSpreadsheet className="h-4 w-4" />
-          Import Excel Database
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href="/admin/amenities/archive"
+            className="flex items-center gap-1.5 rounded-xl border border-cream-2 bg-white px-3.5 py-2.5 text-xs font-bold text-muted hover:text-green-dark hover:bg-cream transition shadow-xs"
+          >
+            <Archive className="h-4 w-4 text-amber-600" />
+            Archive Center
+          </a>
+          <button
+            type="button"
+            onClick={() => setShowImportModal(true)}
+            className="btn-green flex items-center gap-2 !px-4 !py-2.5 text-xs font-bold shadow-md hover:scale-105 transition"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Import Excel Database
+          </button>
+        </div>
       </div>
 
       {/* ── Layout: left (stats + table) + right (insights) ── */}
@@ -1187,6 +1440,104 @@ export default function AdminDuesPage() {
             ))}
           </div>
 
+          {/* ── Sub-tabs: Active Dues vs Archived Dues ── */}
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div className="inline-flex rounded-2xl border border-cream-2 bg-white p-1 shadow-xs">
+              <button
+                type="button"
+                onClick={() => setActiveTab("active")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                  activeTab === "active"
+                    ? "bg-green-dark text-white shadow-xs"
+                    : "text-muted hover:text-green-dark"
+                }`}
+              >
+                <span>Active Dues</span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    activeTab === "active"
+                      ? "bg-green-mid/40 text-cream"
+                      : "bg-cream-2 text-muted"
+                  }`}
+                >
+                  {dues.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("archived")}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                  activeTab === "archived"
+                    ? "bg-amber-600 text-white shadow-xs"
+                    : "text-muted hover:text-amber-700"
+                }`}
+              >
+                <Archive className="h-3.5 w-3.5" />
+                <span>Archived Dues</span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    activeTab === "archived"
+                      ? "bg-amber-500/40 text-white"
+                      : "bg-cream-2 text-muted"
+                  }`}
+                >
+                  {archivedDues.length}
+                </span>
+              </button>
+            </div>
+
+            {activeTab === "archived" && (
+              <span className="text-xs text-amber-700 font-medium hidden sm:inline-block">
+                Archived records are hidden from active ledger and summaries.
+              </span>
+            )}
+          </div>
+
+          {/* ── Bulk Action Context Bar (Appears when >= 1 item is selected) ── */}
+          {selectedIds.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-green-dark/20 bg-green-dark px-4 py-2.5 text-white shadow-md animate-fadeIn">
+              <div className="flex items-center gap-3 text-xs">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-green-light text-green-dark font-bold text-[10px]">
+                  {selectedIds.length}
+                </span>
+                <span className="font-semibold text-cream">
+                  {selectedIds.length} record{selectedIds.length > 1 ? "s" : ""} selected
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds([])}
+                  className="text-[11px] text-cream/70 underline hover:text-white transition cursor-pointer"
+                >
+                  Clear Selection
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {activeTab === "active" ? (
+                  <button
+                    type="button"
+                    onClick={handleOpenBulkArchive}
+                    disabled={actionLoading}
+                    className="flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm transition cursor-pointer disabled:opacity-50"
+                  >
+                    <Archive className="h-3.5 w-3.5" />
+                    Archive Selected ({selectedIds.length})
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleRestoreRecords(selectedIds)}
+                    disabled={actionLoading}
+                    className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm transition cursor-pointer disabled:opacity-50"
+                  >
+                    <ArchiveRestore className="h-3.5 w-3.5" />
+                    Restore Selected ({selectedIds.length})
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Filter Bar: [ Import Excel ] [ Billing Period ▼ ] [ Status ▼ ] [ Reset Filters ] */}
           <div className="mb-4 flex flex-wrap items-center gap-2">
             {/* Import Excel Shortcut */}
@@ -1256,6 +1607,17 @@ export default function AdminDuesPage() {
               <table className="w-full text-sm">
                 <thead className="bg-cream text-left text-[11px] uppercase tracking-wider text-muted">
                   <tr>
+                    <th className="p-4 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={allFilteredSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = someFilteredSelected;
+                        }}
+                        onChange={toggleSelectAll}
+                        className="h-4 w-4 rounded border-cream-2 text-green-mid focus:ring-green-mid cursor-pointer"
+                      />
+                    </th>
                     <th className="p-4">Resident (Click for History)</th>
                     <th className="p-4">Due Date</th>
                     <th className="p-4">Month</th>
@@ -1269,7 +1631,7 @@ export default function AdminDuesPage() {
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={8} className="py-16 text-center text-muted">
+                      <td colSpan={9} className="py-16 text-center text-muted">
                         <Coins className="mx-auto mb-2 h-6 w-6 animate-pulse text-green-mid/40" />
                         Loading dues records…
                       </td>
@@ -1277,10 +1639,10 @@ export default function AdminDuesPage() {
                   ) : filtered.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={8}
+                        colSpan={9}
                         className="py-12 text-center text-sm text-muted"
                       >
-                        No dues records found for {fmtMonth(monthFilter)}.
+                        No {activeTab === "archived" ? "archived" : ""} dues records found for {fmtMonth(monthFilter)}.
                         <div className="mt-2 flex items-center justify-center gap-3">
                           <button
                             onClick={() => setMonthFilter("")}
@@ -1288,12 +1650,14 @@ export default function AdminDuesPage() {
                           >
                             View All Time Records →
                           </button>
-                          <button
-                            onClick={() => setShowImportModal(true)}
-                            className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1"
-                          >
-                            <FileSpreadsheet className="h-3.5 w-3.5" /> Import Excel Database
-                          </button>
+                          {activeTab === "active" && (
+                            <button
+                              onClick={() => setShowImportModal(true)}
+                              className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1"
+                            >
+                              <FileSpreadsheet className="h-3.5 w-3.5" /> Import Excel Database
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1301,11 +1665,14 @@ export default function AdminDuesPage() {
                     filtered.map((d, idx) => {
                       const status = computeDuesStatusForRecord(d);
                       const credit = creditFor(d.amountDue, d.amountPaid);
+                      const isSelected = selectedIds.includes(d.id);
                       return (
                         <tr
                           key={d.id}
                           onClick={() => setSelectedResidentHistory(d.residentName)}
-                          className="group border-t border-cream-2 transition-colors duration-150 hover:bg-cream/50 cursor-pointer"
+                          className={`group border-t border-cream-2 transition-colors duration-150 cursor-pointer ${
+                            isSelected ? "bg-green-light/15" : "hover:bg-cream/50"
+                          }`}
                           style={{
                             opacity: animIn ? 1 : 0,
                             transform: animIn
@@ -1314,6 +1681,18 @@ export default function AdminDuesPage() {
                             transition: `opacity 0.3s ease ${idx * 30}ms, transform 0.3s ease ${idx * 30}ms`,
                           }}
                         >
+                          {/* Checkbox column */}
+                          <td
+                            className="p-4 w-10 text-center"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectOne(d.id)}
+                              className="h-4 w-4 rounded border-cream-2 text-green-mid focus:ring-green-mid cursor-pointer"
+                            />
+                          </td>
                           <td className="p-4">
                             <div className="flex items-center gap-2">
                               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-green-light/20 text-green-dark font-bold text-xs group-hover:bg-green-mid group-hover:text-white transition-colors">
@@ -1326,6 +1705,11 @@ export default function AdminDuesPage() {
                                 </div>
                                 <div className="text-[10px] text-muted">
                                   {d.blockNo || "—"} / {d.lotNo || "—"}
+                                  {d.archiveReason && (
+                                    <span className="ml-2 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 border border-amber-200">
+                                      {d.archiveReason}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1356,17 +1740,38 @@ export default function AdminDuesPage() {
                           <td className="p-4 whitespace-nowrap">
                             <StatusBadge status={status} />
                           </td>
-                          <td className="p-4 text-center">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedResidentHistory(d.residentName);
-                              }}
-                              className="rounded-lg border border-cream-2 bg-white px-2.5 py-1 text-[11px] font-semibold text-green-dark hover:bg-green-mid hover:text-white hover:border-green-mid transition shadow-2xs"
-                            >
-                              History →
-                            </button>
+                          <td
+                            className="p-4 text-center whitespace-nowrap"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedResidentHistory(d.residentName)}
+                                className="rounded-lg border border-cream-2 bg-white px-2.5 py-1 text-[11px] font-semibold text-green-dark hover:bg-green-mid hover:text-white hover:border-green-mid transition shadow-2xs"
+                              >
+                                History →
+                              </button>
+                              {activeTab === "active" ? (
+                                <button
+                                  type="button"
+                                  title="Archive this dues record"
+                                  onClick={() => handleOpenSingleArchive(d)}
+                                  className="rounded-lg border border-cream-2 bg-white p-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-50 hover:border-amber-200 transition shadow-2xs cursor-pointer"
+                                >
+                                  <Archive className="h-3.5 w-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  title="Restore this record to active dues"
+                                  onClick={() => handleRestoreRecords([d.id])}
+                                  className="rounded-lg border border-cream-2 bg-white p-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200 transition shadow-2xs cursor-pointer"
+                                >
+                                  <ArchiveRestore className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1378,8 +1783,12 @@ export default function AdminDuesPage() {
             {/* Footer row count */}
             {!loading && filtered.length > 0 && (
               <div className="border-t border-cream-2 px-5 py-3 text-xs text-muted flex items-center justify-between">
-                <span>Showing 1–{filtered.length} of {filtered.length} dues records</span>
-                <span className="text-[11px] text-muted/70">Tip: Click on any resident to inspect their full payment history</span>
+                <span>
+                  Showing {filtered.length} {activeTab === "archived" ? "archived" : "active"} dues record{filtered.length > 1 ? "s" : ""}
+                </span>
+                <span className="text-[11px] text-muted/70">
+                  Tip: Multi-select rows using checkboxes for bulk archive or restore operations
+                </span>
               </div>
             )}
           </div>
@@ -1537,10 +1946,89 @@ export default function AdminDuesPage() {
       {selectedResidentHistory && (
         <ResidentHistoryModal
           residentName={selectedResidentHistory}
-          dues={dues}
+          dues={[...dues, ...archivedDues]}
           onClose={() => setSelectedResidentHistory(null)}
           onRefresh={loadData}
         />
+      )}
+
+      {/* ── Archive Confirmation Modal ── */}
+      {archiveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-md rounded-3xl border border-cream-2 bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                <Archive className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="font-serif text-lg font-bold text-green-dark">
+                  Archive Dues Records
+                </h3>
+                <p className="text-xs text-muted">
+                  {targetDuesToArchive.length === 1
+                    ? `Archiving record for ${targetDuesToArchive[0].residentName} (${fmtMonth(targetDuesToArchive[0].dueMonth)})`
+                    : `Archiving ${targetDuesToArchive.length} selected dues records`}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted leading-relaxed mb-4">
+              Archived dues are safely hidden from active financial calculations and insights, but can be reviewed or restored at any time.
+            </p>
+
+            <div className="mb-4">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-green-dark mb-1.5">
+                Archive Reason (Optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g., Moved Out, Paid in Advance, Duplicate..."
+                value={archiveReason}
+                onChange={(e) => setArchiveReason(e.target.value)}
+                className="w-full rounded-xl border border-cream-2 bg-cream/40 px-3 py-2 text-xs text-green-dark outline-none focus:border-green-mid"
+              />
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {["Moved Out", "Paid in Advance", "Duplicate Entry", "Record Correction"].map((pill) => (
+                  <button
+                    key={pill}
+                    type="button"
+                    onClick={() => setArchiveReason(pill)}
+                    className="rounded-full border border-cream-2 bg-cream/60 px-2 py-0.5 text-[10px] text-muted hover:border-green-mid hover:text-green-dark transition cursor-pointer"
+                  >
+                    {pill}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-cream-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setArchiveModalOpen(false);
+                  setArchiveReason("");
+                }}
+                disabled={actionLoading}
+                className="rounded-xl border border-cream-2 bg-white px-4 py-2 text-xs font-semibold text-muted hover:bg-cream transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmArchive}
+                disabled={actionLoading}
+                className="flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {actionLoading ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Archive className="h-3.5 w-3.5" />
+                )}
+                Confirm Archive
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

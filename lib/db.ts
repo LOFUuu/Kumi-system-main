@@ -824,7 +824,7 @@ export async function createNotification(data: {
   userEmail?: string;
   title: string;
   message: string;
-  type?: "announcement" | "viewing" | "reservation" | "dues" | "general";
+  type?: "announcement" | "viewing" | "reservation" | "dues" | "payment" | "general";
   referenceId?: number | string;
   link?: string;
   metadata?: Record<string, any>;
@@ -865,6 +865,9 @@ export async function createNotification(data: {
       return serialize<NotificationType>(plain);
     } catch (e) {}
   }
+  try {
+    return await maria.createNotificationMariaDB(payload);
+  } catch {}
   return { id: Date.now(), ...payload, isRead: false, createdAt: new Date().toISOString() };
 }
 
@@ -966,7 +969,7 @@ export async function syncUserAnnouncements(user: { id?: number | string; email?
 export async function notifyAdmins(data: {
   title: string;
   message: string;
-  type?: "viewing" | "reservation" | "general";
+  type?: "announcement" | "viewing" | "reservation" | "dues" | "payment" | "general";
   referenceId?: number | string;
   link?: string;
   metadata?: Record<string, any>;
@@ -997,12 +1000,17 @@ export async function notifyAdmins(data: {
   }
 }
 
+export async function getUserById(id: number | string): Promise<UserType | null> {
+  const users = await getUsers();
+  return users.find((u) => String(u.id) === String(id)) || null;
+}
+
 export async function notifyUserByEmail(
   email: string,
   data: {
     title: string;
     message: string;
-    type?: "viewing" | "reservation" | "general";
+    type?: "announcement" | "viewing" | "reservation" | "dues" | "payment" | "general";
     referenceId?: number | string;
     link?: string;
     metadata?: Record<string, any>;
@@ -1061,10 +1069,14 @@ export async function getUserNotifications(userIdentifier: { id?: number | strin
         createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
       }));
     } catch (e) {
-      return [];
+      // fallback to MariaDB
     }
   }
-  return [];
+  try {
+    return await maria.getUserNotificationsMariaDB(userIdentifier);
+  } catch {
+    return [];
+  }
 }
 
 export async function markNotificationRead(notificationId: number | string, userId?: number | string): Promise<boolean> {
@@ -1090,10 +1102,14 @@ export async function markNotificationRead(notificationId: number | string, user
       const res = await (Notification as any).updateOne(filter, { $set: { isRead: true } });
       return res.modifiedCount > 0 || res.matchedCount > 0;
     } catch (e) {
-      return false;
+      // fallback to MariaDB
     }
   }
-  return true;
+  try {
+    return await maria.markNotificationReadMariaDB(notificationId);
+  } catch {
+    return true;
+  }
 }
 
 export async function markAllNotificationsRead(userIdentifier: { id?: number | string; email?: string }): Promise<boolean> {
@@ -1114,10 +1130,14 @@ export async function markAllNotificationsRead(userIdentifier: { id?: number | s
       const res = await (Notification as any).updateMany({ $or: orClauses, isRead: false }, { $set: { isRead: true } });
       return Boolean(res.acknowledged);
     } catch (e) {
-      return false;
+      // fallback to MariaDB
     }
   }
-  return true;
+  try {
+    return await maria.markAllNotificationsReadMariaDB(userIdentifier);
+  } catch {
+    return true;
+  }
 }
 
 function userFilter(id: number | string) {
@@ -1880,7 +1900,7 @@ export async function generateMonthlyDues(targetMonth?: string): Promise<{ creat
   return { createdCount };
 }
 
-export async function getDues(): Promise<DuesType[]> {
+export async function getDues(includeArchived = false): Promise<DuesType[]> {
   const online = await isOnlineMode();
   if (online) {
     try {
@@ -1890,15 +1910,101 @@ export async function getDues(): Promise<DuesType[]> {
       } catch (err) {
         console.error("Error auto-generating monthly dues:", err);
       }
-      const docs = await DuesRecord.find().sort({ dueMonth: -1, residentName: 1 }).lean();
+      const query = includeArchived
+        ? {}
+        : { $or: [{ isArchived: false }, { isArchived: { $exists: false } }, { isArchived: null }] };
+      const docs = await DuesRecord.find(query as any).sort({ dueMonth: -1, residentName: 1 }).lean();
       return docs.map((d) => serialize<DuesType>(d));
     } catch (e) {}
   }
   try {
-    return await maria.getDuesMariaDB();
+    const all = await maria.getDuesMariaDB();
+    if (includeArchived) return all;
+    return all.filter((d) => !d.isArchived);
   } catch {
     return [];
   }
+}
+
+export async function getArchivedDues(): Promise<DuesType[]> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const docs = await DuesRecord.find({ isArchived: true } as any).sort({ dueMonth: -1, residentName: 1 }).lean();
+      return docs.map((d) => serialize<DuesType>(d));
+    } catch (e) {}
+  }
+  try {
+    const all = await maria.getDuesMariaDB();
+    return all.filter((d) => Boolean(d.isArchived));
+  } catch {
+    return [];
+  }
+}
+
+export async function archiveDuesRecords(
+  ids: number[],
+  reason?: string,
+  by?: string
+): Promise<{ success: boolean; count: number }> {
+  if (!ids || ids.length === 0) return { success: true, count: 0 };
+  const numIds = ids.map(Number).filter((n) => !isNaN(n));
+  if (numIds.length === 0) return { success: true, count: 0 };
+
+  const now = new Date().toISOString();
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      await DuesRecord.updateMany(
+        { _id: { $in: numIds } } as any,
+        {
+          $set: {
+            isArchived: true,
+            archivedAt: now,
+            archiveReason: reason || "Archived by admin",
+            archivedBy: by || "Admin",
+          },
+        } as any
+      );
+    } catch (e) {}
+  }
+  try {
+    const placeholders = numIds.map(() => "?").join(",");
+    await mariaQuery(
+      `UPDATE dues SET status = 'paid' WHERE id IN (${placeholders})`,
+      numIds
+    ).catch(() => {});
+  } catch {}
+
+  return { success: true, count: numIds.length };
+}
+
+export async function unarchiveDuesRecords(ids: number[]): Promise<{ success: boolean; count: number }> {
+  if (!ids || ids.length === 0) return { success: true, count: 0 };
+  const numIds = ids.map(Number).filter((n) => !isNaN(n));
+  if (numIds.length === 0) return { success: true, count: 0 };
+
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      await DuesRecord.updateMany(
+        { _id: { $in: numIds } } as any,
+        {
+          $set: {
+            isArchived: false,
+            archivedAt: null,
+            archiveReason: null,
+            archivedBy: null,
+          },
+        } as any
+      );
+    } catch (e) {}
+  }
+
+  return { success: true, count: numIds.length };
 }
 
 export async function importDuesRecords(
@@ -1924,14 +2030,22 @@ export async function importDuesRecords(
   skipped: number;
   duplicates: number;
 }> {
-  await dbConnect();
   let imported = 0;
   let updated = 0;
   let skipped = 0;
   let duplicates = 0;
 
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+    } catch {}
+  }
+
   for (const row of records) {
-    if (!row.residentName || !row.dueMonth) {
+    const rawName = String(row.residentName || "").trim();
+    const rawDueMonth = String(row.dueMonth || "").trim();
+    if (!rawName || !rawDueMonth) {
       skipped++;
       continue;
     }
@@ -1939,63 +2053,138 @@ export async function importDuesRecords(
     const amountDue = row.amountDue !== undefined ? Number(row.amountDue) : DEFAULT_MONTHLY_DUE;
     const amountPaid = row.amountPaid !== undefined ? Number(row.amountPaid) : 0;
     const creditBalance = row.creditBalance !== undefined ? Number(row.creditBalance) : creditFor(amountDue, amountPaid);
-    const dueDate = row.dueDate || getCycleDueDate(row.dueMonth);
+    const dueDate = row.dueDate || getCycleDueDate(rawDueMonth);
     const paidAt = row.paidAt || undefined;
-    const status = (row.status as any) || computeDuesStatus({ dueMonth: row.dueMonth, dueDate, amountDue, amountPaid, paidAt });
+    const status = (row.status as any) || computeDuesStatus({ dueMonth: rawDueMonth, dueDate, amountDue, amountPaid, paidAt });
 
-    // Check if record exists
+    const escapedName = rawName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const query: any = {
-      dueMonth: row.dueMonth,
+      dueMonth: rawDueMonth,
       $or: [
-        { residentName: row.residentName },
-        ...(row.residentId ? [{ residentId: row.residentId }] : []),
+        { residentName: { $regex: new RegExp(`^${escapedName}$`, "i") } },
+        ...(row.residentId ? [{ residentId: Number(row.residentId) }] : []),
       ],
     };
 
-    const existing = await DuesRecord.findOne(query).lean() as any;
+    let saved = false;
 
-    if (existing) {
-      duplicates++;
-      await DuesRecord.updateOne(
-        { _id: existing._id } as any,
-        {
-          $set: {
-            residentId: row.residentId || existing.residentId,
-            residentName: row.residentName,
-            blockNo: row.blockNo ?? existing.blockNo,
-            lotNo: row.lotNo ?? existing.lotNo,
+    if (online) {
+      try {
+        const existing = await DuesRecord.findOne(query).lean() as any;
+        if (existing) {
+          duplicates++;
+          await DuesRecord.updateOne(
+            { _id: existing._id } as any,
+            {
+              $set: {
+                residentId: row.residentId || existing.residentId,
+                residentName: rawName,
+                blockNo: row.blockNo ?? existing.blockNo,
+                lotNo: row.lotNo ?? existing.lotNo,
+                amountDue,
+                amountPaid,
+                creditBalance,
+                paidAt,
+                status,
+                source: "imported",
+                billingMonth: row.billingMonth || existing.billingMonth,
+                billingYear: row.billingYear || existing.billingYear,
+                isArchived: false,
+              },
+            } as any
+          );
+          updated++;
+          maria.updateDuesRecordMariaDB(existing._id, {
+            amountPaid,
+            paidAt,
+            creditBalance,
+            status,
+          }).catch(() => {});
+          saved = true;
+        } else {
+          const newId = await getNextId(DuesRecord);
+          await DuesRecord.create({
+            _id: newId,
+            residentId: row.residentId,
+            residentName: rawName,
+            blockNo: row.blockNo || "",
+            lotNo: row.lotNo || "",
+            dueMonth: rawDueMonth,
+            dueDate,
             amountDue,
             amountPaid,
-            creditBalance,
             paidAt,
+            creditBalance,
             status,
             source: "imported",
-            billingMonth: row.billingMonth || existing.billingMonth,
-            billingYear: row.billingYear || existing.billingYear,
-          },
-        } as any
-      );
-      updated++;
-    } else {
-      const newId = await getNextId(DuesRecord);
-      await DuesRecord.create({
-        _id: newId,
-        residentId: row.residentId,
-        residentName: row.residentName,
-        blockNo: row.blockNo || "",
-        lotNo: row.lotNo || "",
-        dueMonth: row.dueMonth,
-        dueDate,
-        amountDue,
-        amountPaid,
-        paidAt,
-        creditBalance,
-        status,
-        source: "imported",
-        billingMonth: row.billingMonth,
-        billingYear: row.billingYear,
-      } as any);
-      imported++;
+            billingMonth: row.billingMonth,
+            billingYear: row.billingYear,
+            isArchived: false,
+          } as any);
+          imported++;
+          maria.createDuesRecordMariaDB({
+            id: newId,
+            residentId: row.residentId,
+            residentName: rawName,
+            blockNo: row.blockNo,
+            lotNo: row.lotNo,
+            dueMonth: rawDueMonth,
+            dueDate,
+            amountDue,
+            amountPaid,
+            paidAt,
+            creditBalance,
+            status,
+            source: "imported",
+            billingMonth: row.billingMonth,
+            billingYear: row.billingYear,
+          }).catch(() => {});
+          saved = true;
+        }
+      } catch (err) {
+        console.error("Error saving due in Mongo:", err);
+      }
+    }
+
+    if (!saved) {
+      try {
+        const mariaRows = await mariaQuery<any[]>(
+          `SELECT id FROM dues WHERE dueMonth = ? AND (LOWER(residentName) = LOWER(?) OR residentId = ?) LIMIT 1`,
+          [rawDueMonth, rawName, row.residentId || -1]
+        );
+        if (mariaRows && mariaRows.length > 0) {
+          const existingId = mariaRows[0].id;
+          duplicates++;
+          await maria.updateDuesRecordMariaDB(existingId, {
+            amountPaid,
+            paidAt,
+            creditBalance,
+            status,
+          });
+          updated++;
+        } else {
+          await maria.createDuesRecordMariaDB({
+            residentId: row.residentId,
+            residentName: rawName,
+            blockNo: row.blockNo || "",
+            lotNo: row.lotNo || "",
+            dueMonth: rawDueMonth,
+            dueDate,
+            amountDue,
+            amountPaid,
+            paidAt,
+            creditBalance,
+            status,
+            source: "imported",
+            billingMonth: row.billingMonth,
+            billingYear: row.billingYear,
+          });
+          imported++;
+        }
+      } catch (err) {
+        console.error("Error saving due in MariaDB:", err);
+        skipped++;
+      }
     }
   }
 

@@ -14,6 +14,7 @@ import {
 import { formatPHP, type DuesRecord, type PaymentConfig } from "@/lib/mock-data";
 import QRCode from "react-qr-code";
 import { buildPlaceholderQR, HOAGCashNumber } from "@/lib/payment";
+import { sanitizeReferenceInput, validateReferenceNumber, validateAmount } from "@/lib/validation";
 import {
   Upload,
   X,
@@ -142,12 +143,18 @@ export default function MyDuesPage() {
   const handleProceedToReview = (e: React.FormEvent) => {
     e.preventDefault();
     if (!payId) return;
-    if (amount <= 0) {
-      setMsg("Please enter a valid payment amount.");
+    const amtErr = validateAmount(amount, { required: true, label: "Payment amount", min: 1 });
+    if (amtErr) {
+      setMsg(amtErr);
       return;
     }
-    if (!gcashRef.trim() && !receiptFile) {
-      setMsg("Please enter a GCash Reference Number or upload a receipt screenshot.");
+    const refErr = validateReferenceNumber(gcashRef, { required: true, label: "GCash Reference Number" });
+    if (refErr) {
+      setMsg(refErr);
+      return;
+    }
+    if (!receiptFile) {
+      setMsg("Please attach a screenshot of your payment receipt (proof of payment).");
       return;
     }
     setMsg("");
@@ -157,6 +164,15 @@ export default function MyDuesPage() {
   /** Step 2: User clicks "Confirm & Submit Payment" on the review step */
   const confirmPaymentSubmission = async () => {
     if (!payId || busy) return;
+    const refErr = validateReferenceNumber(gcashRef, { required: true, label: "GCash Reference Number" });
+    if (refErr) {
+      setMsg(refErr);
+      return;
+    }
+    if (!receiptFile) {
+      setMsg("Please attach a screenshot of your payment receipt (proof of payment).");
+      return;
+    }
     setBusy(true);
     setMsg("");
     try {
@@ -561,7 +577,7 @@ export default function MyDuesPage() {
                         type="text"
                         className="field pl-9"
                         value={gcashRef}
-                        onChange={(e) => setGcashRef(e.target.value)}
+                        onChange={(e) => setGcashRef(sanitizeReferenceInput(e.target.value))}
                         placeholder="e.g. 1002 9384 7561"
                       />
                     </div>
@@ -686,17 +702,41 @@ export default function MyDuesPage() {
                         Pending Verification
                       </span>
                     </div>
-                    <div className="col-span-2 rounded-lg bg-white p-2.5 border border-cream-2">
-                      <span className="text-muted block text-[10px]">GCash Reference Number</span>
-                      <strong className="font-mono text-green-dark text-xs mt-0.5 block">
-                        {gcashRef.trim() || "(No reference number provided)"}
-                      </strong>
+                    <div className="col-span-2 rounded-lg bg-white p-2.5 border border-cream-2 space-y-1">
+                      <span className="text-muted block text-[10px] font-bold">
+                        GCash Reference Number <span className="text-rose-500">*</span>
+                      </span>
+                      <input
+                        type="text"
+                        className="w-full rounded-lg border border-cream-2 bg-cream/30 px-2.5 py-1.5 font-mono text-xs font-bold text-green-dark outline-none focus:border-green-mid"
+                        value={gcashRef}
+                        onChange={(e) => {
+                          setGcashRef(sanitizeReferenceInput(e.target.value));
+                          if (msg) setMsg("");
+                        }}
+                        placeholder="e.g. 1002 9384 7561"
+                      />
                     </div>
                   </div>
 
-                  {/* Receipt Preview */}
+                  {/* Receipt Preview & Direct Upload on Review Step */}
                   <div className="pt-1">
-                    <span className="text-[11px] font-bold text-green-dark block mb-1">Proof of Payment Preview:</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-bold text-green-dark">
+                        Proof of Payment <span className="text-rose-500">*</span>
+                      </span>
+                      {receiptPreview && (
+                        <label className="text-[10px] font-semibold text-blue-600 hover:underline cursor-pointer flex items-center gap-1">
+                          <Upload className="h-3 w-3" /> Change Receipt
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={handleReceiptChange}
+                            className="hidden"
+                          />
+                        </label>
+                      )}
+                    </div>
                     {receiptPreview ? (
                       <div className="rounded-xl border border-cream-2 bg-white p-2 flex items-center justify-center">
                         <img
@@ -711,9 +751,17 @@ export default function MyDuesPage() {
                         <span className="text-xs font-bold text-green-dark truncate">{receiptFile.name}</span>
                       </div>
                     ) : (
-                      <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-2.5 text-center text-xs text-amber-800">
-                        No receipt screenshot attached.
-                      </div>
+                      <label className="flex flex-col items-center justify-center rounded-xl border border-dashed border-amber-300 bg-amber-50 p-3 text-center cursor-pointer hover:bg-amber-100/50 transition">
+                        <Upload className="h-4 w-4 text-amber-700" />
+                        <span className="text-xs font-bold text-amber-900 mt-1">Upload Receipt Screenshot</span>
+                        <span className="text-[10px] text-amber-700">Proof of payment is required</span>
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          onChange={handleReceiptChange}
+                          className="hidden"
+                        />
+                      </label>
                     )}
                   </div>
                 </div>

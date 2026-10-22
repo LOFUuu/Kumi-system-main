@@ -188,11 +188,17 @@ const duesSchema = new Schema<DuesType>(
     source: { type: String, enum: ["imported", "system", "manual"], default: "system" },
     billingMonth: String,
     billingYear: Number,
+    // ── Archiving ───────────────────────────────────────────────────────────
+    isArchived: { type: Boolean, default: false },
+    archivedAt: { type: String, default: null },
+    archiveReason: { type: String, default: null },
+    archivedBy: { type: String, default: null },
   } as any,
   { timestamps: true }
 );
 
 duesSchema.index({ residentName: 1, dueMonth: 1 }, { unique: false });
+duesSchema.index({ isArchived: 1, dueMonth: -1 });
 
 const transactionSchema = new Schema<TransactionType>(
   {

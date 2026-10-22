@@ -61,5 +61,102 @@ export async function PATCH(
   if (body.scheduledAt !== undefined) patch.scheduledAt = body.scheduledAt;
 
   const updated = await updatePropertyViewing(numericId, patch);
+
+  // Notify requester and admins
+  const { notifyUserByEmail, notifyAdmins } = await import("@/lib/db");
+  const listingName = viewing.listingName || listing?.houseName || "Property";
+
+  if (viewing.residentEmail) {
+    if (body.status === "viewing_scheduled") {
+      notifyUserByEmail(viewing.residentEmail, {
+        title: "Property Viewing Confirmed! 📅",
+        message: `Your viewing appointment for ${listingName} is confirmed for ${viewing.preferredDate} at ${viewing.preferredTime}.`,
+        type: "viewing",
+        referenceId: numericId,
+        link: "/history?tab=viewings",
+        metadata: {
+          listingName,
+          date: viewing.preferredDate,
+          time: viewing.preferredTime,
+          status: "Confirmed",
+        },
+      }).catch(() => {});
+
+      notifyAdmins({
+        title: "Property Viewing Scheduled by Owner",
+        message: `Owner confirmed the viewing appointment for ${listingName} with ${viewing.residentName} on ${viewing.preferredDate} at ${viewing.preferredTime}.`,
+        type: "viewing",
+        referenceId: numericId,
+        link: "/admin/viewings",
+        metadata: {
+          listingName,
+          date: viewing.preferredDate,
+          time: viewing.preferredTime,
+          status: "Confirmed",
+          residentName: viewing.residentName,
+        },
+      }).catch(() => {});
+    } else if (body.status === "viewing_completed") {
+      notifyUserByEmail(viewing.residentEmail, {
+        title: "Property Viewing Completed ✅",
+        message: `Your property viewing for ${listingName} has been marked completed by the property owner.`,
+        type: "viewing",
+        referenceId: numericId,
+        link: "/history?tab=viewings",
+        metadata: {
+          listingName,
+          date: viewing.preferredDate,
+          time: viewing.preferredTime,
+          status: "Completed",
+        },
+      }).catch(() => {});
+
+      notifyAdmins({
+        title: "Property Viewing Completed",
+        message: `Viewing for ${listingName} with ${viewing.residentName} on ${viewing.preferredDate} was marked completed.`,
+        type: "viewing",
+        referenceId: numericId,
+        link: "/admin/viewings",
+        metadata: {
+          listingName,
+          date: viewing.preferredDate,
+          time: viewing.preferredTime,
+          status: "Completed",
+          residentName: viewing.residentName,
+        },
+      }).catch(() => {});
+    } else if (body.status === "viewing_declined") {
+      notifyUserByEmail(viewing.residentEmail, {
+        title: "Property Viewing Declined",
+        message: `Your viewing request for ${listingName} on ${viewing.preferredDate} was declined by the property owner.${patch.adminNotes ? ` Reason: "${patch.adminNotes}".` : ""}`,
+        type: "viewing",
+        referenceId: numericId,
+        link: "/history?tab=viewings",
+        metadata: {
+          listingName,
+          date: viewing.preferredDate,
+          time: viewing.preferredTime,
+          status: "Declined",
+          reason: patch.adminNotes,
+        },
+      }).catch(() => {});
+
+      notifyAdmins({
+        title: "Property Viewing Declined by Owner",
+        message: `Owner declined viewing request for ${listingName} by ${viewing.residentName}.${patch.adminNotes ? ` Reason: "${patch.adminNotes}"` : ""}`,
+        type: "viewing",
+        referenceId: numericId,
+        link: "/admin/viewings",
+        metadata: {
+          listingName,
+          date: viewing.preferredDate,
+          time: viewing.preferredTime,
+          status: "Declined",
+          residentName: viewing.residentName,
+        },
+      }).catch(() => {});
+    }
+  }
+
   return NextResponse.json({ viewing: updated });
 }

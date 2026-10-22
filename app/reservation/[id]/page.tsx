@@ -24,6 +24,12 @@ import { useAuth } from "@/lib/auth";
 import { buildPlaceholderQR, HOAGCashNumber } from "@/lib/payment";
 import AvailabilityCalendar, { CalendarDateStatus } from "@/components/AvailabilityCalendar";
 import {
+  sanitizePhoneInput,
+  validatePhone,
+  validateName,
+  validateText,
+} from "@/lib/validation";
+import {
   formatPHP,
   getBookingBreakdown,
   getBookingTotal,
@@ -241,6 +247,30 @@ function BookingForm() {
       return;
     }
 
+    const effectiveName = (name || user?.fullName || "").trim();
+    const nameErr = validateName(effectiveName, { required: true, label: "Full name" });
+    if (nameErr) {
+      setError(nameErr);
+      return;
+    }
+
+    const effectivePhone = (phone || user?.phone || "").trim();
+    if (effectivePhone) {
+      const phoneErr = validatePhone(effectivePhone, { label: "Phone number" });
+      if (phoneErr) {
+        setError(phoneErr);
+        return;
+      }
+    }
+
+    if (notes.trim()) {
+      const notesErr = validateText(notes, { label: "Special requests", max: 1000, multiline: true });
+      if (notesErr) {
+        setError(notesErr);
+        return;
+      }
+    }
+
     // Strict revalidation before submitting
     setSubmitting(true);
     try {
@@ -363,7 +393,7 @@ function BookingForm() {
               </div>
               <div>
                 <label className="field-label">Phone</label>
-                <input className="field" value={phone || user?.phone || ""} onChange={(e) => setPhone(e.target.value)} placeholder="09XX XXX XXXX" />
+                <input className="field" value={phone || user?.phone || ""} onChange={(e) => setPhone(sanitizePhoneInput(e.target.value))} placeholder="09XX XXX XXXX" />
               </div>
             </div>
           </div>

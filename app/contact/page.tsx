@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { MapPin, Phone, Mail, CheckCircle2, TriangleAlert, Loader2 } from "lucide-react";
+import { validateName, validateEmail, validateText } from "@/lib/validation";
 
 export default function ContactPage() {
   const [fullName, setFullName] = useState("");
@@ -14,8 +15,29 @@ export default function ContactPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || !email.trim() || !message.trim()) {
-      setError("Please fill in all required fields.");
+    const nameErr = validateName(fullName, { required: true, label: "Full name" });
+    if (nameErr) {
+      setError(nameErr);
+      return;
+    }
+
+    const emailErr = validateEmail(email, { required: true });
+    if (emailErr) {
+      setError(emailErr);
+      return;
+    }
+
+    if (subject.trim()) {
+      const subErr = validateText(subject, { label: "Subject", max: 150 });
+      if (subErr) {
+        setError(subErr);
+        return;
+      }
+    }
+
+    const msgErr = validateText(message, { required: true, label: "Message", max: 3000, multiline: true });
+    if (msgErr) {
+      setError(msgErr);
       return;
     }
 

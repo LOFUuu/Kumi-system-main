@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUsers, createUser } from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/server-auth";
 import { isHowaRole } from "@/lib/role";
+import {
+  validateName,
+  validateEmail,
+  validatePhone,
+  validateBlockLot,
+} from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -27,11 +33,35 @@ export async function POST(req: NextRequest) {
   const email = String(body.email ?? "").trim();
   const role = String(body.role ?? "").trim();
 
-  if (!fullName || !email || !["resident", "non_resident", "counselor"].includes(role)) {
+  const nameErr = validateName(fullName, { required: true, label: "Full name" });
+  if (nameErr) return NextResponse.json({ error: nameErr }, { status: 400 });
+
+  const emailErr = validateEmail(email, { required: true });
+  if (emailErr) return NextResponse.json({ error: emailErr }, { status: 400 });
+
+  if (!["resident", "non_resident", "counselor"].includes(role)) {
     return NextResponse.json(
-      { error: "fullName, a valid email, and role are required" },
+      { error: "Role must be resident, non_resident, or counselor." },
       { status: 400 }
     );
+  }
+
+  const phone = body.phone !== undefined ? String(body.phone).trim() : undefined;
+  if (phone) {
+    const phoneErr = validatePhone(phone, { label: "Phone number" });
+    if (phoneErr) return NextResponse.json({ error: phoneErr }, { status: 400 });
+  }
+
+  const blockNo = body.blockNo !== undefined ? String(body.blockNo).trim() : undefined;
+  if (blockNo) {
+    const bErr = validateBlockLot(blockNo, { label: "Block No." });
+    if (bErr) return NextResponse.json({ error: bErr }, { status: 400 });
+  }
+
+  const lotNo = body.lotNo !== undefined ? String(body.lotNo).trim() : undefined;
+  if (lotNo) {
+    const lErr = validateBlockLot(lotNo, { label: "Lot No." });
+    if (lErr) return NextResponse.json({ error: lErr }, { status: 400 });
   }
 
   const existing = await getUsers();
@@ -43,9 +73,9 @@ export async function POST(req: NextRequest) {
     fullName,
     email,
     role: role as "resident" | "non_resident" | "counselor",
-    blockNo: body.blockNo ? String(body.blockNo) : undefined,
-    lotNo: body.lotNo ? String(body.lotNo) : undefined,
-    phone: body.phone ? String(body.phone) : undefined,
+    blockNo: blockNo || undefined,
+    lotNo: lotNo || undefined,
+    phone: phone || undefined,
     cedula: typeof body.cedula === "string" && body.cedula ? String(body.cedula).slice(0, 4_000_000) : undefined,
   });
 

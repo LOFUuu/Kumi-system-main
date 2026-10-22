@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnnouncements, createAnnouncement } from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/server-auth";
+import { validateText, firstError } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -30,11 +31,14 @@ export async function POST(req: NextRequest) {
   const category = String(body.category || "Community").trim();
   const poster = String(body.poster || user.fullName || "HOA Admin").trim();
 
-  if (!title) {
-    return NextResponse.json({ error: "Announcement title is required." }, { status: 400 });
-  }
-  if (!content) {
-    return NextResponse.json({ error: "Announcement content is required." }, { status: 400 });
+  const err = firstError(
+    validateText(title, "Announcement title", { minLength: 3, maxLength: 200, required: true }),
+    validateText(content, "Announcement content", { minLength: 5, maxLength: 10000, required: true }),
+    validateText(category, "Category", { maxLength: 50, required: false }),
+    validateText(poster, "Poster", { maxLength: 100, required: false })
+  );
+  if (err) {
+    return NextResponse.json({ error: err }, { status: 400 });
   }
 
   try {

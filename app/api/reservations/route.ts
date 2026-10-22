@@ -18,6 +18,12 @@ import {
   getBookingBreakdown,
   type Reservation as ReservationType,
 } from "@/lib/mock-data";
+import {
+  validatePhone,
+  validateName,
+  validateText,
+  validateReferenceNumber,
+} from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -59,8 +65,28 @@ export async function POST(req: NextRequest) {
   const receiptPath = body.receiptPath ? String(body.receiptPath).trim() : undefined;
   const phone = String(body.phone || "").trim();
 
-  if (!residentName || !date) {
-    return NextResponse.json({ error: "Please fill in all required fields." }, { status: 400 });
+  const nameErr = validateName(residentName, { required: true, label: "Resident name" });
+  if (nameErr) {
+    return NextResponse.json({ error: nameErr }, { status: 400 });
+  }
+
+  if (!date) {
+    return NextResponse.json({ error: "Booking date is required." }, { status: 400 });
+  }
+
+  if (phone) {
+    const phoneErr = validatePhone(phone, { label: "Phone number" });
+    if (phoneErr) return NextResponse.json({ error: phoneErr }, { status: 400 });
+  }
+
+  if (notes) {
+    const notesErr = validateText(notes, { label: "Notes", max: 1000, multiline: true });
+    if (notesErr) return NextResponse.json({ error: notesErr }, { status: 400 });
+  }
+
+  if (gcashRef) {
+    const refErr = validateReferenceNumber(gcashRef, { label: "GCash reference number" });
+    if (refErr) return NextResponse.json({ error: refErr }, { status: 400 });
   }
 
   const today = new Date();

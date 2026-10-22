@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createUser, getUserByEmailForAuth, saveVerificationToken, updateUserById, setUserPassword } from "@/lib/db";
 import { createVerificationToken, hashPassword } from "@/lib/password";
 import { validatePassword } from "@/lib/password-validation";
+import {
+  validateName,
+  validateEmail,
+  validatePhone,
+  validateText,
+  validateBlockLot,
+} from "@/lib/validation";
 import { sendVerificationEmail } from "@/lib/mailer";
 import { createSessionCookieValue } from "@/lib/server-auth";
 import { getBaseUrl } from "@/lib/url";
@@ -28,11 +35,34 @@ export async function POST(req: NextRequest) {
     // Promotion to "resident" only happens if their name matches an unclaimed master-list record
     const role: Role = "non_resident";
 
-    if (!fullName) {
-      return NextResponse.json({ error: "Full name is required." }, { status: 400 });
+    const nameErr = validateName(fullName, { required: true, label: "Full name" });
+    if (nameErr) {
+      return NextResponse.json({ error: nameErr }, { status: 400 });
     }
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
+
+    const emailErr = validateEmail(email, { required: true });
+    if (emailErr) {
+      return NextResponse.json({ error: emailErr }, { status: 400 });
+    }
+
+    if (body.phone) {
+      const phoneErr = validatePhone(body.phone, { label: "Phone number" });
+      if (phoneErr) return NextResponse.json({ error: phoneErr }, { status: 400 });
+    }
+
+    if (body.address) {
+      const addrErr = validateText(body.address, { label: "Address", max: 300 });
+      if (addrErr) return NextResponse.json({ error: addrErr }, { status: 400 });
+    }
+
+    if (body.blockNo) {
+      const bErr = validateBlockLot(body.blockNo, { label: "Block No." });
+      if (bErr) return NextResponse.json({ error: bErr }, { status: 400 });
+    }
+
+    if (body.lotNo) {
+      const lErr = validateBlockLot(body.lotNo, { label: "Lot No." });
+      if (lErr) return NextResponse.json({ error: lErr }, { status: 400 });
     }
 
     // Validate password confirmation if provided

@@ -359,6 +359,11 @@ export default function HouseDetailPage() {
   const isSoldRented = txStatus === "sold_rented";
   const viewingsBlocked = isReserved || isSoldRented;
 
+  // Authorization for viewing complete property address
+  const isResidentOrHowa = user && (user.role === "resident" || user.role === "admin" || user.role === "counselor");
+  const isListingOwner = Boolean(user?.id && (listing.uploadedBy === user.id || listing.ownerId === user.id));
+  const canViewFullAddress = Boolean(isResidentOrHowa || isListingOwner || isViewingScheduled || isViewingCompleted);
+
   // Today's date as min for date picker
   const today = new Date().toISOString().split("T")[0];
 
@@ -416,10 +421,22 @@ export default function HouseDetailPage() {
           </div>
 
           <h1 className="mt-3 font-serif text-4xl font-bold text-green-dark">
-            {listing.houseName}
+            {canViewFullAddress
+              ? listing.houseName
+              : /^block\s+\w+\s*-\s*lot\s+\w+$/i.test(listing.houseName.trim())
+              ? "Phase 5 Residential Property"
+              : listing.houseName}
           </h1>
-          <div className="mt-2 flex items-center gap-1.5 text-muted">
-            <MapPin className="h-4 w-4 text-green-mid" /> {listing.address}
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-muted">
+            <div className="flex items-center gap-1.5">
+              <MapPin className="h-4 w-4 text-green-mid" />
+              <span>{canViewFullAddress ? listing.address : "Mabuhay Homes Phase 5, Dasmariñas, Cavite"}</span>
+            </div>
+            {!canViewFullAddress && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200/80 px-2.5 py-0.5 text-[10px] font-medium text-amber-800">
+                Unit address revealed once viewing is scheduled
+              </span>
+            )}
           </div>
 
           <div className="mt-5 font-serif text-3xl font-bold text-green-mid">

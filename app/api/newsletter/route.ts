@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendNewsletterWelcomeEmail } from "@/lib/mailer";
+import { validateEmail } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,9 @@ export async function POST(req: NextRequest) {
 
   const email = String(body.email || "").trim().toLowerCase();
 
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
+  const emailErr = validateEmail(email, "Email address");
+  if (emailErr) {
+    return NextResponse.json({ error: emailErr }, { status: 400 });
   }
 
   if (subscribers.has(email)) {

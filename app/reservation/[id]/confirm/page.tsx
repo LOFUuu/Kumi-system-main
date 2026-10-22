@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatPHP, type GcashPayment, type Reservation, type PaymentConfig } from "@/lib/mock-data";
+import { sanitizeReferenceInput, validateReferenceNumber } from "@/lib/validation";
 
 function ConfirmBody() {
   const searchParams = useSearchParams();
@@ -108,8 +109,13 @@ function ConfirmBody() {
   const handleProceedToReview = (e: React.FormEvent) => {
     e.preventDefault();
     if (!intent) return;
-    if (!gcashRef.trim() && !receiptFile && !reservation?.receiptPath) {
-      setAction("Please provide a GCash Reference Number or upload a receipt before proceeding.");
+    const refErr = validateReferenceNumber(gcashRef, { required: true, label: "GCash Reference Number" });
+    if (refErr) {
+      setAction(refErr);
+      return;
+    }
+    if (!receiptFile && !reservation?.receiptPath) {
+      setAction("Please attach a screenshot of your payment receipt (proof of payment) before proceeding.");
       return;
     }
     setAction("");
@@ -119,6 +125,17 @@ function ConfirmBody() {
   /** Step 2: user clicks "Confirm & Submit Payment →" on the review page */
   const confirmPayment = async () => {
     if (!intent || !reservation || isSubmitting) return;
+
+    const refErr = validateReferenceNumber(gcashRef, { required: true, label: "GCash Reference Number" });
+    if (refErr) {
+      setAction(refErr);
+      return;
+    }
+    if (!receiptFile && !reservation.receiptPath) {
+      setAction("Please attach a screenshot of your payment receipt (proof of payment) before confirming.");
+      return;
+    }
+
     setIsSubmitting(true);
     setAction("");
 
@@ -126,8 +143,7 @@ function ConfirmBody() {
       let uploadedReceiptPath: string | undefined = reservation.receiptPath;
 
       if (receiptFile) {
-        // Pass intentId so the upload route saves the receipt directly to MongoDB.
-        // This avoids re-sending the large base64 string in the confirm step's JSON body.
+        // Upload the receipt directly to persist it
         const fd = new FormData();
         fd.append("file", receiptFile);
         fd.append("intentId", intent);
@@ -143,14 +159,13 @@ function ConfirmBody() {
         uploadedReceiptPath = (uploadJson as any).path;
       }
 
-      // Confirm the payment — only send gcashRef (short string), NOT the base64 data URL,
-      // to avoid hitting the JSON body size limit.
+      // Confirm the payment with reference number and receipt path
       const res = await fetch(`/api/payments/${intent}/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gcashRef: gcashRef.trim(),
-          receiptPath: receiptFile ? undefined : uploadedReceiptPath,
+          receiptPath: uploadedReceiptPath || reservation.receiptPath,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -160,7 +175,7 @@ function ConfirmBody() {
 
       setPayment(json.payment);
       if (uploadedReceiptPath) {
-        setReservation((prev) => (prev ? { ...prev, receiptPath: uploadedReceiptPath, gcashRef } : null));
+        setReservation((prev) => (prev ? { ...prev, receiptPath: uploadedReceiptPath, gcashRef: gcashRef.trim() } : null));
       }
     } catch (err: unknown) {
       setAction(err instanceof Error ? err.message : "Could not confirm payment. Try again.");
@@ -393,7 +408,7 @@ function ConfirmBody() {
                     <input
                       className="field"
                       value={gcashRef}
-                      onChange={(e) => setGcashRef(e.target.value)}
+                      onChange={(e) => setGcashRef(sanitizeReferenceInput(e.target.value))}
                       placeholder="e.g. 1002 9384 7561"
                     />
                   </div>
@@ -500,30 +515,56 @@ function ConfirmBody() {
                     <span className="text-muted block text-[11px]">Downpayment Amount</span>
                     <span className="font-bold text-green-mid text-sm mt-0.5 block">{formatPHP(reservation.downpayment)}</span>
                   </div>
-                  <div className="col-span-2 rounded-xl bg-cream/50 p-3 flex justify-between items-center">
-                    <div>
-                      <span className="text-muted block text-[11px]">GCash Reference Number</span>
-                      <span className="font-mono font-bold text-green-dark text-sm mt-0.5 block">
-                        {gcashRef.trim() || "(No reference number typed)"}
+                  <div className="col-span-2 rounded-xl bg-cream/50 p-3 space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <label className="text-muted block text-[11px] font-bold">
+                        GCash Reference Number <span className="text-rose-500">*</span>
+                      </label>
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold text-[10px]">
+                        Pending Verification
                       </span>
                     </div>
-                    <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 font-semibold text-[10px]">
-                      Pending Verification
-                    </span>
+                    <input
+                      type="text"
+                      className="field font-mono font-bold text-green-dark text-sm !bg-white !py-2"
+                      value={gcashRef}
+                      onChange={(e) => {
+                        setGcashRef(sanitizeReferenceInput(e.target.value));
+                        if (action) setAction("");
+                      }}
+                      placeholder="e.g. 1002 9384 7561"
+                    />
+                    <p className="text-[10px] text-muted">
+                      Verify or edit your GCash reference number before submitting.
+                    </p>
                   </div>
                 </div>
 
-                {/* Receipt Preview */}
+                {/* Receipt Preview & Direct Upload on Step 2 */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-green-dark">Proof of Payment Preview:</span>
+                    <span className="text-xs font-bold text-green-dark">
+                      Proof of Payment (Receipt Screenshot) <span className="text-rose-500">*</span>
+                    </span>
                     {(receiptPreview || reservation.receiptPath) && (
-                      <button
-                        onClick={() => setShowFullReceipt(true)}
-                        className="text-[11px] font-semibold text-green-mid hover:underline flex items-center gap-1"
-                      >
-                        <Eye className="h-3 w-3" /> Click to enlarge
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setShowFullReceipt(true)}
+                          className="text-[11px] font-semibold text-green-mid hover:underline flex items-center gap-1"
+                        >
+                          <Eye className="h-3 w-3" /> Click to enlarge
+                        </button>
+                        <label className="text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer flex items-center gap-1">
+                          <Upload className="h-3 w-3" /> Change Receipt
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={handleReceiptChange}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
                     )}
                   </div>
                   {receiptPreview || reservation.receiptPath ? (
@@ -538,9 +579,17 @@ function ConfirmBody() {
                       />
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50/50 p-3 text-center text-xs text-amber-800">
-                      No receipt screenshot attached.
-                    </div>
+                    <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/50 p-4 cursor-pointer hover:border-amber-400 hover:bg-amber-50 transition group">
+                      <Upload className="h-5 w-5 text-amber-600 group-hover:scale-110 transition" />
+                      <span className="mt-1 text-xs font-bold text-amber-900">Upload Receipt Screenshot</span>
+                      <span className="text-[10px] text-amber-700">Proof of payment is required to confirm booking</span>
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        onChange={handleReceiptChange}
+                        className="hidden"
+                      />
+                    </label>
                   )}
                 </div>
               </div>

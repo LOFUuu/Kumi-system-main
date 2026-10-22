@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { MapPin, Phone, Mail, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { validateEmail } from "@/lib/validation";
 
 function SocialIcon({ href = "#", label, children }: { href?: string; label: string; children: React.ReactNode }) {
   return (
@@ -42,9 +43,10 @@ export default function Footer() {
 
   const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) {
+    const emailErr = validateEmail(email, "Email address");
+    if (emailErr) {
       setIsSuccess(false);
-      setMessage("Please enter an email address.");
+      setMessage(emailErr);
       return;
     }
 

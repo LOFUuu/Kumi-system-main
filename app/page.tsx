@@ -74,8 +74,8 @@ export default function HomePage() {
   }, [user]);
 
   const featured = listings.filter((l) => l.status === "available").slice(0, 3);
-  const totalResidents = users.filter((u) => u.role === "resident").length || 7;
-  const totalHouses = listings.filter((l) => l.status === "available").length || 4;
+  const totalResidents = users.filter((u) => u.role === "resident" && !u.isArchived).length;
+  const totalHouses = listings.filter((l) => l.status === "available").length;
 
   return (
     <div className="min-h-screen bg-[#f8faf7] text-[#123f2a]">

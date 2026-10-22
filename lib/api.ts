@@ -203,7 +203,18 @@ export const api = {
       { ids },
       howaHeaders()
     ),
-  dues: () => getJSON<DuesRecord[]>("/api/dues"),
+  dues: (filter?: { isArchived?: boolean; includeArchived?: boolean }) => {
+    const q = new URLSearchParams();
+    if (filter?.isArchived !== undefined) q.set("archived", String(filter.isArchived));
+    if (filter?.includeArchived) q.set("includeArchived", "true");
+    const qs = q.toString();
+    return getJSON<DuesRecord[]>(`/api/dues${qs ? `?${qs}` : ""}`);
+  },
+  archivedDues: () => getJSON<DuesRecord[]>("/api/dues?tab=archive"),
+  archiveDues: (ids: number[], reason?: string) =>
+    send<{ ok: boolean; count: number; message: string }>("/api/dues", "POST", { action: "bulk-archive", ids, reason }, howaHeaders()),
+  unarchiveDues: (ids: number[]) =>
+    send<{ ok: boolean; count: number; message: string }>("/api/dues", "POST", { action: "bulk-unarchive", ids }, howaHeaders()),
   transactions: (filter?: { isArchived?: boolean; includeArchived?: boolean; refType?: string; status?: string }) => {
     const q = new URLSearchParams();
     if (filter?.isArchived !== undefined) q.set("isArchived", String(filter.isArchived));
