@@ -62,7 +62,7 @@ export default function SyncStatusBadge({ compact = false }: { compact?: boolean
 
   if (compact) {
     return (
-      <div className="flex items-center gap-1.5" title={isOnline ? "Online: MongoDB Atlas connected" : "Offline Mode: XAMPP MariaDB active"}>
+      <div className="flex items-center gap-1.5" title={isOnline ? "Online" : "Offline"}>
         <span className={`h-2 w-2 rounded-full ${isOnline ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
         <span className="text-[11px] font-medium text-gray-500">
           {isOnline ? (pending > 0 ? `${pending} pending` : "Online") : `Offline (${pending})`}
@@ -81,7 +81,7 @@ export default function SyncStatusBadge({ compact = false }: { compact?: boolean
             <WifiOff className="h-3.5 w-3.5 text-amber-600" />
           )}
           <span className="font-semibold text-gray-700">
-            {isOnline ? "Online (Atlas)" : "Offline (Local MariaDB)"}
+            {isOnline ? "Online" : "Offline"}
           </span>
         </div>
 

@@ -22,7 +22,6 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import SyncStatusBadge from "./SyncStatusBadge";
 import { useAdminNav } from "./AdminNavContext";
 
 const LINKS: { href: string; label: string; icon: LucideIcon; sub?: boolean; amber?: boolean }[] = [
@@ -183,13 +182,6 @@ export default function AdminSidebar() {
               );
             })}
           </nav>
-
-        {/* Sync Status Badge */}
-        {!collapsed && (
-          <div className="mb-2">
-            <SyncStatusBadge />
-          </div>
-        )}
 
         {/* Logout at bottom */}
         <div className="pt-3 border-t border-gray-100 mt-2">
