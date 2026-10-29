@@ -22,9 +22,9 @@ async function dbConnect(): Promise<typeof mongoose> {
   if (!global._mongooseConn) {
     global._mongooseConn = mongoose.connect(uri, {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 10000,
-      connectTimeoutMS: 10000,
-      socketTimeoutMS: 20000,
+      serverSelectionTimeoutMS: 2500,
+      connectTimeoutMS: 2500,
+      socketTimeoutMS: 15000,
     });
   }
 

@@ -17,13 +17,19 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const ADMIN_EMAIL = "mabuhay2000phase5@gmail.com";
+  const DEFAULT_ADMIN_EMAIL = "mabuhay2000phase5@gmail.com";
   let targetRole: "admin" | "counselor" | "resident" | "non_resident" | undefined = undefined;
 
   const role = String(body.role ?? "").trim();
   if (role) {
-    if (email === ADMIN_EMAIL) {
-      targetRole = "admin";
+    const { getUserByEmailForAuth } = await import("@/lib/db");
+    const existingUser = await getUserByEmailForAuth(email);
+    const isCurrentAdmin = existingUser?.role === "admin" || email === DEFAULT_ADMIN_EMAIL;
+
+    if (isCurrentAdmin) {
+      if (role === "admin" || role === "counselor" || role === "resident" || role === "non_resident") {
+        targetRole = role as any;
+      }
     } else if (role === "admin" || role === "counselor") {
       return NextResponse.json(
         { error: "Administrative roles cannot be self-assigned." },

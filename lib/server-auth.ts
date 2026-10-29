@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import dbConnect from "./mongoose";
 import { User } from "../models";
-import type { AuthUser } from "./db";
+import { userFilter, type AuthUser } from "./db";
 import type { User as PublicUser } from "./mock-data";
 import { isOnlineMode } from "./db-router";
 import { getUserByIdMariaDB, getUserByEmailForAuthMariaDB } from "./mariadb-service";
 
-export function createSessionCookieValue(user: { id: number; email: string; role: string }): string {
-  return Buffer.from(JSON.stringify({ id: user.id, email: user.email, role: user.role, time: Date.now() })).toString("base64");
+export function createSessionCookieValue(user: { id: number | string; email: string; role: string }): string {
+  return Buffer.from(JSON.stringify({ id: String(user.id), email: user.email, role: user.role, time: Date.now() })).toString("base64");
 }
 
 export async function getAuthenticatedUser(req: NextRequest): Promise<AuthUser | null> {
@@ -20,16 +20,17 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<AuthUser |
     }
   }
 
-  const findUser = async (filter: { id?: number; email?: string }): Promise<AuthUser | null> => {
+  const findUser = async (filter: { id?: number | string; email?: string }): Promise<AuthUser | null> => {
     if (online || process.env.MONGODB_URI) {
       try {
         await dbConnect();
-        const query: any = {};
-        if (filter.id) {
-          query.$or = [{ _id: Number(filter.id) }, { _id: String(filter.id) }];
+        let query: any = {};
+        if (filter.id != null) {
+          query = userFilter(filter.id);
         }
         if (filter.email) {
-          query.email = { $regex: new RegExp(`^${filter.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") };
+          const escaped = filter.email.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          query.email = { $regex: new RegExp(`^\\s*${escaped}\\s*$`, "i") };
         }
         const doc = await User.findOne(query).lean();
         if (doc && doc.isActive !== false && !(doc as any).isArchived) {
@@ -43,7 +44,7 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<AuthUser |
     // Offline local database lookup (only if not in cloud serverless environment)
     if (!process.env.VERCEL) {
       try {
-        if (filter.id) {
+        if (filter.id != null) {
           const u = await getUserByIdMariaDB(filter.id);
           if (u && u.isActive !== false && !u.isArchived) {
             return u as AuthUser;
@@ -67,8 +68,8 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<AuthUser |
   if (sessionCookie) {
     try {
       const parsed = JSON.parse(Buffer.from(sessionCookie, "base64").toString("utf-8"));
-      if (parsed?.id) {
-        const u = await findUser({ id: Number(parsed.id) });
+      if (parsed?.id != null) {
+        const u = await findUser({ id: parsed.id });
         if (u) return u;
       }
       if (parsed?.email) {
@@ -84,12 +85,12 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<AuthUser |
   const headerId = req.headers.get("x-user-id");
   const headerEmail = req.headers.get("x-user-email");
 
-  if (headerId && Number.isFinite(Number(headerId))) {
-    const u = await findUser({ id: Number(headerId) });
+  if (headerId && headerId.trim()) {
+    const u = await findUser({ id: headerId.trim() });
     if (u) return u;
   }
 
-  if (headerEmail) {
+  if (headerEmail && headerEmail.trim()) {
     const u = await findUser({ email: headerEmail.trim().toLowerCase() });
     if (u) return u;
   }

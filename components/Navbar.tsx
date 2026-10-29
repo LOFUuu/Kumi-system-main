@@ -107,13 +107,13 @@ export default function Navbar() {
   const isSecondaryActive = secondaryNav.some((item) => pathname === item.href);
 
   return (
-    <header className="sticky top-0 z-[2000] w-full bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-[0_2px_15px_-3px_rgba(18,63,42,0.04)]">
+    <header className="sticky top-0 z-[2000] w-full bg-white/85 backdrop-blur-md border-b border-slate-200/70 shadow-[0_4px_20px_-4px_rgba(18,63,42,0.05)] transition-all">
       <div className="mx-auto flex max-w-[1440px] items-center justify-between px-3 sm:px-6 py-2.5 gap-2 sm:gap-4">
         
         {/* ── BRAND LOGO ────────────────────────────────── */}
         <div className="flex items-center shrink-0">
           <Link href="/" className="flex items-center gap-2 group">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#123f2a] text-white shadow-xs group-hover:bg-[#1b5338] transition-colors shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#123f2a] to-[#0a2619] text-white shadow-xs group-hover:from-[#1b5338] group-hover:to-[#123f2a] transition-all shrink-0">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 11l9-8 9 8" />
                 <path d="M5 10v10h14V10" />
@@ -128,7 +128,7 @@ export default function Navbar() {
 
 
         {/* ── DESKTOP NAV LINKS ─────────────────────────── */}
-        <nav className="hidden lg:flex items-center justify-center gap-1 shrink min-w-0">
+        <nav className="hidden lg:flex items-center justify-center gap-1.5 shrink min-w-0">
           {/* Primary Nav Links (Always visible on lg+) */}
           {primaryNav.map((item) => {
             const active = pathname === item.href;
@@ -136,20 +136,17 @@ export default function Navbar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`relative inline-flex items-center justify-center h-9 whitespace-nowrap px-3 text-[13px] font-semibold tracking-wide transition-all duration-200 rounded-full ${
+                className={`relative inline-flex items-center justify-center h-9 whitespace-nowrap px-3.5 text-[13px] tracking-wide transition-all duration-200 rounded-full ${
                   active
-                    ? "text-[#123f2a] bg-[#e8f3ec]"
-                    : "text-gray-600 hover:text-[#123f2a] hover:bg-[#e8f3ec]/60"
+                    ? "text-[#0d3b22] bg-emerald-100/90 font-bold shadow-xs ring-1 ring-emerald-500/25"
+                    : "text-gray-600 hover:text-[#0d3b22] hover:bg-[#e8f3ec]/70 font-semibold"
                 }`}
               >
                 <span>{item.label}</span>
                 {typeof item.badge === "number" && item.badge > 0 && (
-                  <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
+                  <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none shadow-xs">
                     {item.badge}
                   </span>
-                )}
-                {active && (
-                  <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-[#45a057]" />
                 )}
               </Link>
             );
@@ -162,20 +159,17 @@ export default function Navbar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`hidden 2xl:inline-flex relative items-center justify-center h-9 whitespace-nowrap px-3 text-[13px] font-semibold tracking-wide transition-all duration-200 rounded-full ${
+                className={`hidden 2xl:inline-flex relative items-center justify-center h-9 whitespace-nowrap px-3.5 text-[13px] tracking-wide transition-all duration-200 rounded-full ${
                   active
-                    ? "text-[#123f2a] bg-[#e8f3ec]"
-                    : "text-gray-600 hover:text-[#123f2a] hover:bg-[#e8f3ec]/60"
+                    ? "text-[#0d3b22] bg-emerald-100/90 font-bold shadow-xs ring-1 ring-emerald-500/25"
+                    : "text-gray-600 hover:text-[#0d3b22] hover:bg-[#e8f3ec]/70 font-semibold"
                 }`}
               >
                 <span>{item.label}</span>
                 {typeof item.badge === "number" && item.badge > 0 && (
-                  <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
+                  <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none shadow-xs">
                     {item.badge}
                   </span>
-                )}
-                {active && (
-                  <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-[#45a057]" />
                 )}
               </Link>
             );
@@ -186,10 +180,10 @@ export default function Navbar() {
             <div className="relative 2xl:hidden" ref={moreRef}>
               <button
                 onClick={() => setShowMoreMenu((prev) => !prev)}
-                className={`relative inline-flex items-center justify-center h-9 whitespace-nowrap px-3 text-[13px] font-semibold tracking-wide transition-all duration-200 rounded-full gap-1 ${
+                className={`relative inline-flex items-center justify-center h-9 whitespace-nowrap px-3.5 text-[13px] tracking-wide transition-all duration-200 rounded-full gap-1 ${
                   isSecondaryActive
-                    ? "text-[#123f2a] bg-[#e8f3ec]"
-                    : "text-gray-600 hover:text-[#123f2a] hover:bg-[#e8f3ec]/60"
+                    ? "text-[#0d3b22] bg-emerald-100/90 font-bold shadow-xs ring-1 ring-emerald-500/25"
+                    : "text-gray-600 hover:text-[#0d3b22] hover:bg-[#e8f3ec]/70 font-semibold"
                 }`}
                 aria-haspopup="true"
                 aria-expanded={showMoreMenu}
@@ -201,9 +195,6 @@ export default function Navbar() {
                   </span>
                 )}
                 <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${showMoreMenu ? "rotate-180" : ""}`} />
-                {isSecondaryActive && (
-                  <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-[#45a057]" />
-                )}
               </button>
 
               {showMoreMenu && (

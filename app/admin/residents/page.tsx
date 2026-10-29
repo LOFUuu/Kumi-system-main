@@ -124,6 +124,15 @@ export default function AdminResidentsPage() {
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Succession / Presidential Handover modal state
+  const [successionModalOpen, setSuccessionModalOpen] = useState(false);
+  const [successorUserId, setSuccessorUserId] = useState<number | string>("");
+  const [outgoingRole, setOutgoingRole] = useState<"resident" | "counselor" | "admin">("resident");
+  const [successionReason, setSuccessionReason] = useState("");
+  const [successionConfirmed, setSuccessionConfirmed] = useState(false);
+  const [successionBusy, setSuccessionBusy] = useState(false);
+  const [successionError, setSuccessionError] = useState("");
+
   // Add Form State
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -581,6 +590,40 @@ export default function AdminResidentsPage() {
     }
   };
 
+  const handleSuccessionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!successorUserId) {
+      setSuccessionError("Please select an authorized successor.");
+      return;
+    }
+    if (!successionConfirmed) {
+      setSuccessionError("Please confirm the handover by checking the box.");
+      return;
+    }
+    setSuccessionBusy(true);
+    setSuccessionError("");
+    try {
+      const res = await api.transferSuccession({
+        successorUserId,
+        outgoingAdminRole: outgoingRole,
+        outgoingNewRole: outgoingRole,
+        reason: successionReason.trim() || "Association President / Leadership Term Succession",
+      });
+      showSuccess(res.message || "Leadership succession executed successfully!");
+      setSuccessionModalOpen(false);
+      setSuccessorUserId("");
+      setSuccessionReason("");
+      setSuccessionConfirmed(false);
+      refresh();
+    } catch (err) {
+      setSuccessionError(
+        err instanceof Error ? err.message : "Failed to execute leadership succession."
+      );
+    } finally {
+      setSuccessionBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Toast Notifications */}
@@ -686,6 +729,19 @@ export default function AdminResidentsPage() {
           >
             <FileSpreadsheet className="h-4 w-4" />
             <span>Import Excel Database</span>
+          </button>
+
+          {/* Transfer Leadership / Succession Button */}
+          <button
+            onClick={() => {
+              setSuccessionError("");
+              setSuccessionModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 px-3.5 py-2 text-xs font-bold shadow-sm transition-colors cursor-pointer"
+            title="Safely transfer HOA administrative privileges when Association President or Officers change"
+          >
+            <ShieldCheck className="h-4 w-4 text-emerald-700" />
+            <span>Transfer Leadership</span>
           </button>
 
           {/* Add Resident Button */}
@@ -1404,12 +1460,18 @@ export default function AdminResidentsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
           <form
             onSubmit={submitAdd}
-            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-lg rounded-2xl bg-white shadow-2xl animate-fade-in max-h-[90vh] flex flex-col overflow-hidden"
           >
-            <div className="flex items-center justify-between border-b border-cream-2 pb-3">
-              <h3 className="font-serif text-xl font-bold text-green-dark">
-                Add Resident
-              </h3>
+            {/* Pinned Header */}
+            <div className="flex items-center justify-between border-b border-cream-2 px-6 py-4 shrink-0 bg-white">
+              <div>
+                <h3 className="font-serif text-xl font-bold text-green-dark">
+                  Add Resident
+                </h3>
+                <p className="mt-0.5 text-xs text-muted">
+                  Register a new homeowner or resident into the system database.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setAdding(false)}
@@ -1418,11 +1480,9 @@ export default function AdminResidentsPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-1 text-xs text-muted">
-              Register a new homeowner or resident into the system database.
-            </p>
 
-            <div className="mt-4 space-y-3">
+            {/* Scrollable Form Body */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-3">
               <div>
                 <label className="field-label">Full Name</label>
                 <input
@@ -1591,10 +1651,11 @@ export default function AdminResidentsPage() {
             </div>
 
             {error && (
-              <p className="mt-3 text-xs font-semibold text-rose-600">{error}</p>
+              <p className="px-6 py-2 text-xs font-semibold text-rose-600 bg-rose-50 border-t border-rose-100">{error}</p>
             )}
 
-            <div className="mt-5 flex gap-3">
+            {/* Pinned Footer */}
+            <div className="flex gap-3 border-t border-cream-2 px-6 py-4 shrink-0 bg-cream/30">
               <button
                 type="submit"
                 disabled={busy}
@@ -1620,12 +1681,18 @@ export default function AdminResidentsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
           <form
             onSubmit={submitEdit}
-            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-lg rounded-2xl bg-white shadow-2xl animate-fade-in max-h-[90vh] flex flex-col overflow-hidden"
           >
-            <div className="flex items-center justify-between border-b border-cream-2 pb-3">
-              <h3 className="font-serif text-xl font-bold text-green-dark">
-                Edit Resident Details
-              </h3>
+            {/* Pinned Header */}
+            <div className="flex items-center justify-between border-b border-cream-2 px-6 py-4 shrink-0 bg-white">
+              <div>
+                <h3 className="font-serif text-xl font-bold text-green-dark">
+                  Edit Resident Details
+                </h3>
+                <p className="mt-0.5 text-xs text-muted">
+                  Update resident records in the database.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setEditing(null)}
@@ -1634,11 +1701,9 @@ export default function AdminResidentsPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-1 text-xs text-muted">
-              Update resident records in the database.
-            </p>
 
-            <div className="mt-4 space-y-3">
+            {/* Scrollable Form Body */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-3">
               <div>
                 <label className="field-label">Full Name</label>
                 <input
@@ -1777,10 +1842,11 @@ export default function AdminResidentsPage() {
             </div>
 
             {error && (
-              <p className="mt-3 text-xs font-semibold text-rose-600">{error}</p>
+              <p className="px-6 py-2 text-xs font-semibold text-rose-600 bg-rose-50 border-t border-rose-100">{error}</p>
             )}
 
-            <div className="mt-5 flex gap-3">
+            {/* Pinned Footer */}
+            <div className="flex gap-3 border-t border-cream-2 px-6 py-4 shrink-0 bg-cream/30">
               <button
                 type="submit"
                 disabled={busy}
@@ -1896,6 +1962,140 @@ export default function AdminResidentsPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* MODAL: Leadership Succession / President Handover */}
+      {successionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleSuccessionSubmit}
+            className="w-full max-w-lg rounded-2xl bg-white shadow-2xl animate-fade-in max-h-[90vh] flex flex-col overflow-hidden"
+          >
+            {/* Pinned Header */}
+            <div className="flex items-center justify-between border-b border-cream-2 px-6 py-4 shrink-0 bg-[#133E2B] text-white">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white shadow-inner">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold">
+                    HOA Leadership Handover
+                  </h3>
+                  <p className="text-xs text-white/80">
+                    Transfer administrative responsibilities to an incoming President
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSuccessionModalOpen(false)}
+                className="rounded-full p-1 text-white/70 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-900 leading-relaxed">
+                🛡️ <strong>Preserve All Historical Records:</strong> Handing over leadership promotes the chosen successor to <strong>Admin</strong> using their own authorized account. Existing resident records, dues, payments, and audit histories remain 100% intact. Password sharing is not required.
+              </div>
+
+              {/* Successor User Selection */}
+              <div>
+                <label className="field-label">Select Authorized Successor <span className="text-rose-500">*</span></label>
+                <select
+                  className="field"
+                  value={successorUserId}
+                  onChange={(e) => setSuccessorUserId(e.target.value)}
+                  required
+                >
+                  <option value="">-- Choose incoming President / Officer --</option>
+                  {users
+                    .filter((u) => !u.isArchived)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.fullName} ({u.email}) — Currently {u.role.toUpperCase()}
+                      </option>
+                    ))}
+                </select>
+                <p className="mt-1 text-[11px] text-muted">
+                  The selected individual will immediately receive full administrative privileges.
+                </p>
+              </div>
+
+              {/* Outgoing Admin New Role */}
+              <div>
+                <label className="field-label">Outgoing Administrator New Role</label>
+                <select
+                  className="field"
+                  value={outgoingRole}
+                  onChange={(e) => setOutgoingRole(e.target.value as any)}
+                >
+                  <option value="resident">Resident (Homeowner)</option>
+                  <option value="counselor">Counselor (Advisory Officer)</option>
+                  <option value="admin">Co-Administrator (Retain Admin)</option>
+                </select>
+                <p className="mt-1 text-[11px] text-muted">
+                  Choose your role once administrative succession is completed.
+                </p>
+              </div>
+
+              {/* Reason / Meeting Reference */}
+              <div>
+                <label className="field-label">Succession Reason / Election Reference</label>
+                <input
+                  type="text"
+                  className="field"
+                  placeholder="e.g. 2026 HOA General Election / Term Handover"
+                  value={successionReason}
+                  onChange={(e) => setSuccessionReason(e.target.value)}
+                />
+              </div>
+
+              {/* Handover Confirmation Checkbox */}
+              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                <label className="flex items-start gap-2.5 text-xs text-amber-950 font-semibold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={successionConfirmed}
+                    onChange={(e) => setSuccessionConfirmed(e.target.checked)}
+                    className="mt-0.5 rounded text-emerald-700 focus:ring-emerald-700"
+                    required
+                  />
+                  <span>
+                    I confirm the official handover of HOA administrative privileges to the selected successor. This action is permanently recorded in the Role Audit Log.
+                  </span>
+                </label>
+              </div>
+
+              {successionError && (
+                <p className="text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded-lg p-2.5">
+                  {successionError}
+                </p>
+              )}
+            </div>
+
+            {/* Pinned Footer */}
+            <div className="flex gap-3 border-t border-cream-2 px-6 py-4 shrink-0 bg-cream/30">
+              <button
+                type="submit"
+                disabled={successionBusy || !successorUserId || !successionConfirmed}
+                className="flex-1 rounded-xl bg-[#133E2B] hover:bg-[#0E2F20] text-white font-bold py-2.5 text-xs shadow-md transition disabled:opacity-50 cursor-pointer"
+              >
+                {successionBusy ? "Executing Succession…" : "Execute Leadership Handover"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSuccessionModalOpen(false)}
+                disabled={successionBusy}
+                className="btn-ghost flex-1 !py-2.5 text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

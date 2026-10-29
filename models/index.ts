@@ -184,8 +184,9 @@ const duesSchema = new Schema<DuesType>(
     amountPaid: { type: Number, default: 0 },
     paidAt: String,
     creditBalance: { type: Number, default: 0 },
+    appliedCredit: { type: Number, default: 0 },
     status: { type: String, enum: ["paid", "unpaid", "delayed", "advance", "on_time"], required: true },
-    source: { type: String, enum: ["imported", "system", "manual"], default: "system" },
+    source: { type: String, enum: ["imported", "system", "manual", "advance_payment"], default: "system" },
     billingMonth: String,
     billingYear: Number,
     // ── Archiving ───────────────────────────────────────────────────────────
@@ -211,6 +212,7 @@ const transactionSchema = new Schema<TransactionType>(
     paymentMethod: { type: String, enum: ["cash", "gcash"], default: "gcash" },
     gcashRef: String,
     receiptPath: String,
+    advanceForMonth: String,
     status: { type: String, enum: ["approved", "pending", "voided"], required: true },
     createdAt: String,
     payment: {
@@ -233,6 +235,7 @@ const transactionSchema = new Schema<TransactionType>(
 const paymentConfigSchema = new Schema<PaymentConfigType>(
   {
     category: { type: String, enum: ["amenity", "dues"], required: true, unique: true },
+    monthlyDue: { type: Number, default: 100 },
     accountName: { type: String, default: "MABUHAY HOMES HOA" },
     accountNumber: { type: String, default: "0917 123 4567" },
     qrCodeUrl: { type: String, default: "" },

@@ -458,9 +458,15 @@ export async function createAmenity(data: Partial<AmenityType>): Promise<Amenity
     downpayment: Number(data.downpayment) || 200,
     downpaymentPrivate: Number(data.downpaymentPrivate) || 500,
     isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
+    isArchived: Boolean(data.isArchived),
     image: data.image || "https://picsum.photos/seed/amenity/800/600",
     lat: Number(data.lat) || 14.3430,
     lng: Number(data.lng) || 120.9807,
+    pricingModel: data.pricingModel || "per_head",
+    basePrice: data.basePrice !== undefined ? Number(data.basePrice) : 0,
+    pricePerPerson: data.pricePerPerson !== undefined ? Number(data.pricePerPerson) : 0,
+    includedGuests: data.includedGuests !== undefined ? Number(data.includedGuests) : 1,
+    extraGuestFee: data.extraGuestFee !== undefined ? Number(data.extraGuestFee) : 0,
   };
 
   let created: AmenityType;
@@ -493,9 +499,15 @@ export async function updateAmenity(
   if (data.downpayment !== undefined) update.downpayment = Number(data.downpayment);
   if (data.downpaymentPrivate !== undefined) update.downpaymentPrivate = Number(data.downpaymentPrivate);
   if (data.isActive !== undefined) update.isActive = Boolean(data.isActive);
+  if (data.isArchived !== undefined) update.isArchived = Boolean(data.isArchived);
   if (data.image !== undefined) update.image = data.image;
   if (data.lat !== undefined) update.lat = Number(data.lat);
   if (data.lng !== undefined) update.lng = Number(data.lng);
+  if (data.pricingModel !== undefined) update.pricingModel = data.pricingModel;
+  if (data.basePrice !== undefined) update.basePrice = Number(data.basePrice);
+  if (data.pricePerPerson !== undefined) update.pricePerPerson = Number(data.pricePerPerson);
+  if (data.includedGuests !== undefined) update.includedGuests = Number(data.includedGuests);
+  if (data.extraGuestFee !== undefined) update.extraGuestFee = Number(data.extraGuestFee);
 
   const online = await isOnlineMode();
   if (online) {
@@ -1000,11 +1012,6 @@ export async function notifyAdmins(data: {
   }
 }
 
-export async function getUserById(id: number | string): Promise<UserType | null> {
-  const users = await getUsers();
-  return users.find((u) => String(u.id) === String(id)) || null;
-}
-
 export async function notifyUserByEmail(
   email: string,
   data: {
@@ -1140,7 +1147,7 @@ export async function markAllNotificationsRead(userIdentifier: { id?: number | s
   }
 }
 
-function userFilter(id: number | string) {
+export function userFilter(id: number | string) {
   const numId = Number(id);
   const conditions: any[] = [];
   if (Number.isFinite(numId)) {
@@ -1157,6 +1164,44 @@ function userFilter(id: number | string) {
     }
   }
   return { $or: conditions };
+}
+
+export async function getUserById(id: number | string): Promise<UserType | null> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const filter = userFilter(id);
+      const doc = await User.findOne(filter as any).lean();
+      if (doc) return serialize<UserType>(doc);
+    } catch (e) {
+      console.warn("[DB] MongoDB getUserById error:", (e as Error)?.message);
+    }
+  }
+  try {
+    return await maria.getUserByIdMariaDB(id);
+  } catch {
+    return null;
+  }
+}
+
+export async function getUserByIdForAuth(id: number | string): Promise<AuthUser | null> {
+  const online = await isOnlineMode();
+  if (online) {
+    try {
+      await dbConnect();
+      const filter = userFilter(id);
+      const doc = await User.findOne(filter as any).lean();
+      if (doc) return serializeAuth(doc);
+    } catch (e) {
+      console.warn("[DB] MongoDB getUserByIdForAuth error:", (e as Error)?.message);
+    }
+  }
+  try {
+    return (await maria.getUserByIdMariaDB(id)) as AuthUser | null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getUsers(): Promise<UserType[]> {
@@ -1274,12 +1319,23 @@ export async function unarchiveUser(id: number | string): Promise<boolean> {
 
 // Full user lookup (incl. password/reset fields) for server-side auth only.
 export async function getUserByEmailForAuth(email: string): Promise<AuthUser | null> {
+  if (!email || typeof email !== "string") return null;
   const normalizedEmail = email.toLowerCase().trim();
+  if (!normalizedEmail) return null;
+
   const online = await isOnlineMode();
   if (online) {
     try {
       await dbConnect();
-      const doc = await User.findOne({ email: normalizedEmail }).lean();
+      // Try fast exact match first
+      let doc = await User.findOne({ email: normalizedEmail }).lean();
+      if (!doc) {
+        // Fall back to whitespace-trimmed case-insensitive regex
+        const escaped = normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        doc = await User.findOne({
+          email: { $regex: new RegExp(`^\\s*${escaped}\\s*$`, "i") },
+        }).lean();
+      }
       if (doc) return serializeAuth(doc);
     } catch (e) {
       console.warn("[DB] MongoDB getUserByEmailForAuth error:", (e as Error)?.message);
@@ -1813,7 +1869,10 @@ export async function deleteReservation(
   return maria.deleteReservationMariaDB(id);
 }
 
-export async function generateMonthlyDues(targetMonth?: string): Promise<{ createdCount: number }> {
+export async function generateMonthlyDues(
+  targetMonth?: string,
+  customAmount?: number
+): Promise<{ createdCount: number; message: string }> {
   await dbConnect();
   const currentMonth = targetMonth || getCurrentDueMonth();
   const [yStr, mStr] = currentMonth.split("-");
@@ -1822,22 +1881,57 @@ export async function generateMonthlyDues(targetMonth?: string): Promise<{ creat
   const billingMonth = MONTH_NAMES[monthNum - 1] || "Current Month";
   const dueDate = getCycleDueDate(currentMonth);
 
-  // Find all active, non-archived residents
+  // 1. Fetch configured monthly due
+  const duesConfig = await getPaymentConfig("dues");
+  const defaultDue = customAmount && customAmount > 0 ? customAmount : (duesConfig.monthlyDue || DEFAULT_MONTHLY_DUE);
+
+  // 2. Find active residents from User collection
   const activeResidents = await User.find({
     role: { $in: ["resident", "counselor", "admin"] },
     isActive: { $ne: false },
     $or: [{ isArchived: false }, { isArchived: { $exists: false } }],
   } as any).lean();
 
+  // 3. Also include distinct past residents from DuesRecord (who may have been imported or created previously)
+  const pastDues = await DuesRecord.find({
+    $or: [{ isArchived: false }, { isArchived: { $exists: false } }, { isArchived: null }]
+  } as any).lean();
+
+  const residentMap = new Map<string, { id?: number; name: string; blockNo?: string; lotNo?: string }>();
+  for (const u of activeResidents as any[]) {
+    const key = (u.fullName || "").trim().toLowerCase();
+    if (key) {
+      residentMap.set(key, {
+        id: u._id,
+        name: u.fullName,
+        blockNo: u.blockNo || "",
+        lotNo: u.lotNo || "",
+      });
+    }
+  }
+
+  for (const d of pastDues as any[]) {
+    const key = (d.residentName || "").trim().toLowerCase();
+    if (key && !residentMap.has(key)) {
+      residentMap.set(key, {
+        id: d.residentId,
+        name: d.residentName,
+        blockNo: d.blockNo || "",
+        lotNo: d.lotNo || "",
+      });
+    }
+  }
+
   let createdCount = 0;
   const previousMonth = prevDueMonth(currentMonth);
 
-  for (const res of activeResidents as any[]) {
+  for (const [, res] of residentMap) {
     // 1. Protection against duplicates: check if record already exists for this resident and month
+    const monthRegex = new RegExp(`^${currentMonth}`);
     const existing = await DuesRecord.findOne({
       $or: [
-        { residentId: res._id, dueMonth: currentMonth },
-        { residentName: res.fullName, dueMonth: currentMonth },
+        ...(res.id ? [{ residentId: res.id, dueMonth: { $regex: monthRegex } }] : []),
+        { residentName: { $regex: new RegExp(`^${res.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }, dueMonth: { $regex: monthRegex } },
       ],
     } as any).lean();
 
@@ -1846,25 +1940,33 @@ export async function generateMonthlyDues(targetMonth?: string): Promise<{ creat
     }
 
     // 2. Check previous month for any carried credit
+    const prevMonthRegex = new RegExp(`^${previousMonth}`);
     const prevRecord = await DuesRecord.findOne({
       $or: [
-        { residentId: res._id, dueMonth: previousMonth },
-        { residentName: res.fullName, dueMonth: previousMonth },
+        ...(res.id ? [{ residentId: res.id, dueMonth: { $regex: prevMonthRegex } }] : []),
+        { residentName: { $regex: new RegExp(`^${res.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }, dueMonth: { $regex: prevMonthRegex } },
       ],
     } as any)
       .sort({ _id: -1 })
       .lean();
 
     const carriedCredit = (prevRecord as any)?.creditBalance || 0;
-    const amountDue = DEFAULT_MONTHLY_DUE;
+    const amountDue = defaultDue;
     let amountPaid = 0;
+    let appliedCredit = 0;
     let paidAt: string | undefined = undefined;
     let creditBalance = 0;
 
     if (carriedCredit > 0) {
-      amountPaid = Math.min(carriedCredit, amountDue);
+      appliedCredit = Math.min(carriedCredit, amountDue);
+      amountPaid = appliedCredit;
       creditBalance = creditFor(amountDue, carriedCredit);
-      paidAt = (prevRecord as any)?.paidAt || new Date().toISOString().slice(0, 10);
+      paidAt = new Date().toISOString().slice(0, 10);
+      // Consume the credit from previous record
+      await DuesRecord.updateOne(
+        { _id: (prevRecord as any)._id } as any,
+        { $set: { creditBalance: 0 } }
+      );
     }
 
     const status = computeDuesStatus({
@@ -1878,26 +1980,149 @@ export async function generateMonthlyDues(targetMonth?: string): Promise<{ creat
     const newId = await getNextId(DuesRecord);
     await DuesRecord.create({
       _id: newId,
-      residentId: res._id,
-      residentName: res.fullName,
+      residentId: res.id,
+      residentName: res.name,
       blockNo: res.blockNo || "",
       lotNo: res.lotNo || "",
       dueMonth: currentMonth,
       dueDate,
       amountDue,
       amountPaid,
+      appliedCredit,
       paidAt,
       creditBalance,
       status,
       source: "system",
       billingMonth,
       billingYear,
+      isArchived: false,
     } as any);
+
+    maria.createDuesRecordMariaDB({
+      id: newId,
+      residentId: res.id,
+      residentName: res.name,
+      blockNo: res.blockNo || "",
+      lotNo: res.lotNo || "",
+      dueMonth: currentMonth,
+      dueDate,
+      amountDue,
+      amountPaid,
+      creditBalance,
+      status,
+      source: "system",
+      billingMonth,
+      billingYear,
+    }).catch(() => {});
 
     createdCount++;
   }
 
-  return { createdCount };
+  return {
+    createdCount,
+    message: createdCount > 0
+      ? `Generated ${createdCount} new billing period record(s) for ${billingMonth} ${billingYear}.`
+      : `Billing cycle for ${billingMonth} ${billingYear} is already up to date for all active residents.`,
+  };
+}
+
+/**
+ * Safely resets or initializes a fresh demonstration billing period for a test resident,
+ * resetting payment to ₱0.00, balance to configured monthly due, and carried credit to ₱0.00.
+ */
+export async function resetResidentDemoCycle(
+  residentIdentifier: string | number,
+  targetMonth?: string,
+  newAmount?: number
+): Promise<{ ok: boolean; record: DuesType | null; message: string }> {
+  await dbConnect();
+  const currentMonth = targetMonth || getCurrentDueMonth();
+  const duesConfig = await getPaymentConfig("dues");
+  const amountDue = newAmount && newAmount > 0 ? newAmount : (duesConfig.monthlyDue || DEFAULT_MONTHLY_DUE);
+  const dueDate = getCycleDueDate(currentMonth);
+  const [yStr, mStr] = currentMonth.split("-");
+  const billingYear = parseInt(yStr, 10);
+  const monthNum = parseInt(mStr, 10);
+  const billingMonth = MONTH_NAMES[monthNum - 1] || "Current Month";
+
+  // Match resident
+  const numId = Number(residentIdentifier);
+  const query: any = !isNaN(numId) && numId > 0
+    ? { _id: numId }
+    : {
+        $or: [
+          { email: String(residentIdentifier).trim().toLowerCase() },
+          { fullName: { $regex: new RegExp(`^${String(residentIdentifier).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") } },
+        ],
+      };
+
+  const user = await User.findOne(query).lean() as any;
+  const resName = user?.fullName || String(residentIdentifier);
+  const resId = user?._id || (!isNaN(numId) ? numId : undefined);
+  const blockNo = user?.blockNo || "";
+  const lotNo = user?.lotNo || "";
+
+  const monthRegex = new RegExp(`^${currentMonth}`);
+  const existingRecord = await DuesRecord.findOne({
+    $or: [
+      ...(resId ? [{ residentId: resId, dueMonth: { $regex: monthRegex } }] : []),
+      { residentName: { $regex: new RegExp(`^${resName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }, dueMonth: { $regex: monthRegex } },
+    ],
+  } as any);
+
+  let docRecord: any;
+  if (existingRecord) {
+    // Reset existing record for this month to clean unpaid state
+    await DuesRecord.updateOne(
+      { _id: existingRecord._id } as any,
+      {
+        $set: {
+          amountDue,
+          amountPaid: 0,
+          appliedCredit: 0,
+          creditBalance: 0,
+          paidAt: null,
+          status: "unpaid",
+          dueDate,
+          isArchived: false,
+        },
+      }
+    );
+    // Void or clean any pending test transactions linked to this dues record
+    await Transaction.updateMany(
+      { refType: "dues", refId: existingRecord._id, status: "pending" } as any,
+      { $set: { status: "voided", archiveReason: "Demo reset by admin" } }
+    );
+    docRecord = await DuesRecord.findById(existingRecord._id).lean();
+  } else {
+    // Create fresh record for this month
+    const newId = await getNextId(DuesRecord);
+    docRecord = await DuesRecord.create({
+      _id: newId,
+      residentId: resId,
+      residentName: resName,
+      blockNo,
+      lotNo,
+      dueMonth: currentMonth,
+      dueDate,
+      amountDue,
+      amountPaid: 0,
+      appliedCredit: 0,
+      creditBalance: 0,
+      paidAt: null,
+      status: "unpaid",
+      source: "system",
+      billingMonth,
+      billingYear,
+      isArchived: false,
+    } as any);
+  }
+
+  return {
+    ok: true,
+    record: serialize<DuesType>(docRecord),
+    message: `Fresh billing cycle initialized for ${resName} (${billingMonth} ${billingYear}): ₱${amountDue.toFixed(2)} Due, ₱0.00 Paid, Unpaid.`,
+  };
 }
 
 let lastAutoGenerateTime = 0;
@@ -2011,6 +2236,41 @@ export async function unarchiveDuesRecords(ids: number[]): Promise<{ success: bo
   }
 
   return { success: true, count: numIds.length };
+}
+
+export async function deleteDuesRecords(ids: number[]): Promise<{ success: boolean; count: number }> {
+  if (!ids || ids.length === 0) return { success: true, count: 0 };
+  const numIds = ids.map(Number).filter((n) => !isNaN(n));
+  if (numIds.length === 0) return { success: true, count: 0 };
+
+  const online = await isOnlineMode();
+  let deletedCount = 0;
+  if (online) {
+    try {
+      await dbConnect();
+      const res = await DuesRecord.deleteMany({ _id: { $in: numIds } } as any);
+      deletedCount = res.deletedCount || 0;
+    } catch (e) {
+      console.error("Error deleting dues records in MongoDB:", e);
+    }
+  }
+
+  try {
+    const mariaCount = await maria.deleteDuesRecordsMariaDB(numIds);
+    if (!deletedCount) deletedCount = mariaCount;
+  } catch (e) {
+    try {
+      const placeholders = numIds.map(() => "?").join(",");
+      await mariaQuery(`DELETE FROM dues WHERE id IN (${placeholders})`, numIds).catch(() => {});
+    } catch {}
+  }
+
+  return { success: true, count: deletedCount || numIds.length };
+}
+
+export async function deleteDuesRecord(id: number): Promise<{ success: boolean }> {
+  const res = await deleteDuesRecords([id]);
+  return { success: res.count > 0 };
 }
 
 export async function importDuesRecords(
@@ -2246,6 +2506,7 @@ export const DEFAULT_PAYMENT_CONFIGS: Record<"amenity" | "dues", Omit<PaymentCon
   },
   dues: {
     category: "dues",
+    monthlyDue: 100,
     accountName: "MABUHAY HOMES HOA",
     accountNumber: "0917 123 4567",
     qrCodeUrl: "",
@@ -2267,6 +2528,7 @@ export async function getPaymentConfigs(): Promise<Record<"amenity" | "dues", Pa
           map[(d as any).category] = {
             id: String((d as any)._id),
             category: (d as any).category,
+            monthlyDue: Number((d as any).monthlyDue || 100),
             accountName: (d as any).accountName || "MABUHAY HOMES HOA",
             accountNumber: (d as any).accountNumber || "0917 123 4567",
             qrCodeUrl: (d as any).qrCodeUrl || "",
@@ -2292,6 +2554,7 @@ export async function getPaymentConfigs(): Promise<Record<"amenity" | "dues", Pa
         map[r.category] = {
           id: String(r.id),
           category: r.category,
+          monthlyDue: Number(r.monthlyDue || 100),
           accountName: r.accountName || "MABUHAY HOMES HOA",
           accountNumber: r.accountNumber || "0917 123 4567",
           qrCodeUrl: r.qrCodeUrl || "",
@@ -2324,6 +2587,7 @@ export async function getPaymentConfig(category: "amenity" | "dues"): Promise<Pa
         return {
           id: String(doc._id),
           category: doc.category,
+          monthlyDue: Number(doc.monthlyDue || 100),
           accountName: doc.accountName || "MABUHAY HOMES HOA",
           accountNumber: doc.accountNumber || "0917 123 4567",
           qrCodeUrl: doc.qrCodeUrl || "",
@@ -2343,6 +2607,7 @@ export async function getPaymentConfig(category: "amenity" | "dues"): Promise<Pa
       return {
         id: String(r.id),
         category: r.category,
+        monthlyDue: Number(r.monthlyDue || 100),
         accountName: r.accountName || "MABUHAY HOMES HOA",
         accountNumber: r.accountNumber || "0917 123 4567",
         qrCodeUrl: r.qrCodeUrl || "",
@@ -2381,6 +2646,7 @@ export async function upsertPaymentConfig(
       return {
         id: String(doc._id),
         category: doc.category,
+        monthlyDue: Number(doc.monthlyDue || 100),
         accountName: doc.accountName,
         accountNumber: doc.accountNumber,
         qrCodeUrl: doc.qrCodeUrl || "",
@@ -2558,20 +2824,112 @@ export async function updateTransactionById(
               }
             );
           } else if (doc.refType === "dues" && doc.refId) {
-            const dueRecord = await DuesRecord.findOne({ _id: doc.refId } as any).lean() as any;
+            const dueRecord = (await DuesRecord.findOne({ _id: doc.refId } as any).lean()) as any;
             if (dueRecord) {
               if (patch.status === "approved") {
                 const paidAt = doc.createdAt || new Date().toISOString().slice(0, 10);
+                // Authoritative sum of all approved transactions for this dues record
+                const approvedTxns = await Transaction.find({
+                  refType: "dues",
+                  refId: doc.refId,
+                  status: "approved",
+                }).lean();
+
+                const totalCashPaid = approvedTxns.reduce((sum, t: any) => sum + (Number(t.amount) || 0), 0);
+                const appliedCredit = Number(dueRecord.appliedCredit) || 0;
+                const newAmountPaid = totalCashPaid + appliedCredit;
+                const creditBalance = Math.max(0, newAmountPaid - dueRecord.amountDue);
                 const status = computeDuesStatus({
                   dueMonth: dueRecord.dueMonth,
                   dueDate: dueRecord.dueDate,
                   amountDue: dueRecord.amountDue,
-                  amountPaid: dueRecord.amountPaid,
+                  amountPaid: newAmountPaid,
                   paidAt,
                 });
                 await DuesRecord.updateOne(
                   { _id: doc.refId } as any,
-                  { $set: { status, paidAt } }
+                  { $set: { amountPaid: newAmountPaid, creditBalance, status, paidAt } }
+                );
+
+                // Handle advance months if specified on the transaction
+                if (doc.advanceForMonth) {
+                  const advanceMonths = String(doc.advanceForMonth)
+                    .split(",")
+                    .map((s: string) => s.trim())
+                    .filter(Boolean);
+                  for (const advMonth of advanceMonths) {
+                    const existingAdv = (await DuesRecord.findOne({
+                      $or: [
+                        { residentId: dueRecord.residentId, dueMonth: { $regex: new RegExp(`^${advMonth}`) } },
+                        { residentName: dueRecord.residentName, dueMonth: { $regex: new RegExp(`^${advMonth}`) } },
+                      ],
+                    }).lean()) as any;
+
+                    if (existingAdv) {
+                      await DuesRecord.updateOne(
+                        { _id: existingAdv._id } as any,
+                        {
+                          $set: {
+                            amountPaid: existingAdv.amountDue,
+                            status: "paid",
+                            paidAt,
+                          },
+                        }
+                      );
+                    } else {
+                      const cfg = await getPaymentConfig("dues").catch(() => null);
+                      const confMonthly = cfg?.monthlyDue || DEFAULT_MONTHLY_DUE;
+                      const [y, m] = advMonth.split("-").map(Number);
+                      const lastDay = new Date(y, m, 0).getDate();
+                      await createDuesRecord({
+                        residentId: dueRecord.residentId,
+                        residentName: dueRecord.residentName,
+                        blockNo: dueRecord.blockNo || "",
+                        lotNo: dueRecord.lotNo || "",
+                        dueMonth: advMonth,
+                        dueDate: `${advMonth}-${String(lastDay).padStart(2, "0")}`,
+                        amountDue: confMonthly,
+                        amountPaid: confMonthly,
+                        creditBalance: 0,
+                        paidAt,
+                        status: "paid",
+                        source: "advance_payment",
+                        billingMonth: String(m),
+                        billingYear: String(y),
+                        isArchived: false,
+                      });
+                    }
+                  }
+                }
+              } else if (patch.status === "voided" || patch.status === "declined") {
+                // When transaction is voided, find remaining approved transactions
+                const approvedTxns = await Transaction.find({
+                  refType: "dues",
+                  refId: doc.refId,
+                  status: "approved",
+                }).lean();
+
+                const totalCashPaid = approvedTxns.reduce((sum, t: any) => sum + (Number(t.amount) || 0), 0);
+                const appliedCredit = Number(dueRecord.appliedCredit) || 0;
+                const newAmountPaid = totalCashPaid + appliedCredit;
+                const creditBalance = Math.max(0, newAmountPaid - dueRecord.amountDue);
+                const status = computeDuesStatus({
+                  dueMonth: dueRecord.dueMonth,
+                  dueDate: dueRecord.dueDate,
+                  amountDue: dueRecord.amountDue,
+                  amountPaid: newAmountPaid,
+                  paidAt: newAmountPaid > 0 ? dueRecord.paidAt : undefined,
+                });
+                await DuesRecord.updateOne(
+                  { _id: doc.refId } as any,
+                  {
+                    $set: {
+                      amountPaid: newAmountPaid,
+                      creditBalance,
+                      status,
+                      ...(newAmountPaid === 0 ? { paidAt: undefined } : {}),
+                    },
+                  }
                 );
               }
             }

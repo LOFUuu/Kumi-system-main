@@ -65,6 +65,9 @@ export default function AdminArchivePage() {
   const [loadingDues, setLoadingDues] = useState(true);
   const [restoreDueTarget, setRestoreDueTarget] = useState<DuesRecord | null>(null);
   const [restoringDue, setRestoringDue] = useState(false);
+  const [deleteDueTarget, setDeleteDueTarget] = useState<DuesRecord | null>(null);
+  const [deletingDue, setDeletingDue] = useState(false);
+  const [deleteBulkDuesModalOpen, setDeleteBulkDuesModalOpen] = useState(false);
   const [selectedDueIds, setSelectedDueIds] = useState<number[]>([]);
   const [duesSearch, setDuesSearch] = useState("");
 
@@ -248,6 +251,38 @@ export default function AdminArchivePage() {
       notify("err", err instanceof Error ? err.message : "Failed to restore dues records.");
     } finally {
       setRestoringDue(false);
+    }
+  };
+
+  const handleDeleteDue = async (target: DuesRecord) => {
+    setDeletingDue(true);
+    try {
+      await api.deleteDues([target.id]);
+      notify("ok", `Dues record for "${target.residentName}" (${target.dueMonth}) has been permanently deleted.`);
+      setDeleteDueTarget(null);
+      setDues((prev) => prev.filter((d) => d.id !== target.id));
+      setSelectedDueIds((prev) => prev.filter((id) => id !== target.id));
+    } catch (err: unknown) {
+      notify("err", err instanceof Error ? err.message : "Failed to delete dues record.");
+    } finally {
+      setDeletingDue(false);
+    }
+  };
+
+  const handleBulkDeleteDues = async () => {
+    if (selectedDueIds.length === 0) return;
+    setDeletingDue(true);
+    try {
+      const res = await api.deleteDues(selectedDueIds);
+      notify("ok", res.message || `Permanently deleted ${selectedDueIds.length} dues records.`);
+      const removedSet = new Set(selectedDueIds);
+      setDues((prev) => prev.filter((d) => !removedSet.has(d.id)));
+      setSelectedDueIds([]);
+      setDeleteBulkDuesModalOpen(false);
+    } catch (err: unknown) {
+      notify("err", err instanceof Error ? err.message : "Failed to delete dues records.");
+    } finally {
+      setDeletingDue(false);
     }
   };
 
@@ -873,15 +908,26 @@ export default function AdminArchivePage() {
 
                 <div className="flex flex-wrap items-center gap-2">
                   {selectedDueIds.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleBulkRestoreDues}
-                      disabled={restoringDue}
-                      className="flex items-center gap-1.5 rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-amber-700 transition cursor-pointer"
-                    >
-                      <ArchiveRestore className="h-3.5 w-3.5" />
-                      {restoringDue ? "Restoring..." : `Restore Selected (${selectedDueIds.length})`}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleBulkRestoreDues}
+                        disabled={restoringDue || deletingDue}
+                        className="flex items-center gap-1.5 rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-amber-700 transition cursor-pointer disabled:opacity-60"
+                      >
+                        <ArchiveRestore className="h-3.5 w-3.5" />
+                        {restoringDue ? "Restoring..." : `Restore Selected (${selectedDueIds.length})`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteBulkDuesModalOpen(true)}
+                        disabled={restoringDue || deletingDue}
+                        className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-rose-700 transition cursor-pointer disabled:opacity-60"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {deletingDue ? "Deleting..." : `Delete Selected (${selectedDueIds.length})`}
+                      </button>
+                    </>
                   )}
                   <div className="relative">
                     <input
@@ -987,15 +1033,26 @@ export default function AdminArchivePage() {
                             </span>
                           </td>
                           <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              title="Restore Dues Record"
-                              onClick={() => setRestoreDueTarget(d)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-amber-800 shadow-2xs transition hover:bg-amber-100 cursor-pointer"
-                            >
-                              <ArchiveRestore className="h-3.5 w-3.5 text-amber-600" />
-                              Restore
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                title="Restore Dues Record"
+                                onClick={() => setRestoreDueTarget(d)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-amber-800 shadow-2xs transition hover:bg-amber-100 cursor-pointer"
+                              >
+                                <ArchiveRestore className="h-3.5 w-3.5 text-amber-600" />
+                                Restore
+                              </button>
+                              <button
+                                type="button"
+                                title="Delete Permanently"
+                                onClick={() => setDeleteDueTarget(d)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 shadow-2xs transition hover:bg-rose-50 cursor-pointer"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+                                Delete
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1043,6 +1100,96 @@ export default function AdminArchivePage() {
                 className="flex-1 rounded-xl bg-green-mid px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-green-dark disabled:opacity-60 transition cursor-pointer"
               >
                 {restoringDue ? "Restoring…" : "Yes, Restore"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE DUE PERMANENTLY MODAL ────────────────────────────── */}
+      {deleteDueTarget && (
+        <div
+          className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          onClick={() => !deletingDue && setDeleteDueTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100">
+                <AlertTriangle className="h-5 w-5 text-rose-600" />
+              </span>
+              <h3 className="font-serif text-lg font-bold text-rose-700">Delete Permanently?</h3>
+            </div>
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 leading-relaxed mb-3">
+              ⚠️ This action <strong>cannot be undone</strong>. The archived dues record for{" "}
+              <strong>{deleteDueTarget.residentName}</strong> ({deleteDueTarget.dueMonth} &bull; {formatPHP(deleteDueTarget.amountDue)}) will be permanently deleted from the database.
+            </div>
+            <p className="text-xs text-muted leading-relaxed">
+              Only delete duplicate or invalid dues records created by mistake. Once deleted, this record cannot be recovered or restored.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteDueTarget(null)}
+                disabled={deletingDue}
+                className="btn-ghost flex-1 justify-center !py-2 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteDue(deleteDueTarget)}
+                disabled={deletingDue}
+                className="flex-1 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-700 disabled:opacity-60 transition cursor-pointer"
+              >
+                {deletingDue ? "Deleting…" : "Delete Permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── BULK DELETE DUES MODAL ───────────────────────────────────── */}
+      {deleteBulkDuesModalOpen && (
+        <div
+          className="fixed inset-0 z-[2500] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          onClick={() => !deletingDue && setDeleteBulkDuesModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100">
+                <AlertTriangle className="h-5 w-5 text-rose-600" />
+              </span>
+              <h3 className="font-serif text-lg font-bold text-rose-700">Delete {selectedDueIds.length} Records?</h3>
+            </div>
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 leading-relaxed mb-3">
+              ⚠️ This action <strong>cannot be undone</strong>. You are about to permanently delete{" "}
+              <strong>{selectedDueIds.length}</strong> archived monthly dues record(s) from the database.
+            </div>
+            <p className="text-xs text-muted leading-relaxed">
+              Please confirm that you want to permanently erase these records. They will not be recoverable once deleted.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteBulkDuesModalOpen(false)}
+                disabled={deletingDue}
+                className="btn-ghost flex-1 justify-center !py-2 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDeleteDues}
+                disabled={deletingDue}
+                className="flex-1 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-700 disabled:opacity-60 transition cursor-pointer"
+              >
+                {deletingDue ? "Deleting…" : `Yes, Delete (${selectedDueIds.length})`}
               </button>
             </div>
           </div>

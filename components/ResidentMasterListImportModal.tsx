@@ -390,7 +390,7 @@ export default function ResidentMasterListImportModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-4 bg-[#133E2B] text-white">
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-4 bg-[#133E2B] text-white shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white shadow-inner">
               <FileSpreadsheet className="h-5 w-5" />
@@ -744,7 +744,7 @@ export default function ResidentMasterListImportModal({
 
         {/* Modal Footer */}
         {!summary && (
-          <div className="flex items-center justify-end gap-3 border-t border-cream-2 bg-cream/30 px-6 py-3.5">
+          <div className="flex items-center justify-end gap-3 border-t border-cream-2 bg-cream/30 px-6 py-3.5 shrink-0">
             <button
               type="button"
               onClick={onClose}

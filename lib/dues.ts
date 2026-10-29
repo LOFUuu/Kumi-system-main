@@ -125,6 +125,69 @@ export function prevDueMonth(dueMonth: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+export interface PaymentAllocationResult {
+  paymentAmount: number;
+  allocatedToOutstanding: number;
+  remainingOutstanding: number;
+  allocatedToAdvance: number;
+  excessCredit: number;
+  newCarriedCredit: number;
+  advanceMonthsCovered: number;
+  statusAfterPayment: "paid" | "partially_paid" | "unpaid";
+}
+
+/**
+ * Calculates authoritative, transparent payment breakdown for both standard
+ * and advance payments according to HOA accounting rules.
+ */
+export function calculatePaymentAllocation({
+  currentOutstanding,
+  configuredMonthlyDue,
+  existingCredit = 0,
+  paymentAmount,
+}: {
+  currentOutstanding: number;
+  configuredMonthlyDue: number;
+  existingCredit?: number;
+  paymentAmount: number;
+}): PaymentAllocationResult {
+  const pAmount = Math.max(0, paymentAmount);
+  const monthlyDue = Math.max(1, configuredMonthlyDue || DEFAULT_MONTHLY_DUE);
+
+  // 1. Allocate toward any older/current outstanding obligations first
+  const allocatedToOutstanding = Math.min(currentOutstanding, pAmount);
+  const remainingOutstanding = Math.max(0, currentOutstanding - allocatedToOutstanding);
+
+  // 2. Remaining payment funds available for advance or credit
+  const remainingFunds = Math.max(0, pAmount - allocatedToOutstanding);
+
+  // 3. Full month advance coverage
+  const advanceMonthsCovered = Math.floor(remainingFunds / monthlyDue);
+  const allocatedToAdvance = advanceMonthsCovered * monthlyDue;
+
+  // 4. Excess buffer carried over as credit
+  const excessCredit = remainingFunds - allocatedToAdvance;
+  const newCarriedCredit = existingCredit + excessCredit;
+
+  let statusAfterPayment: "paid" | "partially_paid" | "unpaid" = "unpaid";
+  if (remainingOutstanding === 0 && (allocatedToOutstanding > 0 || currentOutstanding === 0)) {
+    statusAfterPayment = "paid";
+  } else if (allocatedToOutstanding > 0 && remainingOutstanding > 0) {
+    statusAfterPayment = "partially_paid";
+  }
+
+  return {
+    paymentAmount: pAmount,
+    allocatedToOutstanding,
+    remainingOutstanding,
+    allocatedToAdvance,
+    excessCredit,
+    newCarriedCredit,
+    advanceMonthsCovered,
+    statusAfterPayment,
+  };
+}
+
 // Current billing cycle string in "YYYY-MM" format based on current date
 export function getCurrentDueMonth(): string {
   const now = new Date();
@@ -147,6 +210,186 @@ export function computeDuesStatusForRecord(r: DuesRecord): DuesStatus {
     amountPaid: r.amountPaid,
     paidAt: r.paidAt,
   });
+}
+
+export interface DetailedDuesStatus {
+  paymentStatus: "paid_on_time" | "paid_late" | "advance" | "partial" | "unpaid" | "pending_verification";
+  paymentStatusLabel: string;
+  paymentBadgeClass: string;
+  balanceStatus: "fully_settled" | "outstanding" | "advance_credit" | "partially_paid";
+  balanceStatusLabel: string;
+  balanceBadgeClass: string;
+  remainingBalance: number;
+  credit: number;
+  daysLate: number;
+  daysOverdue: number;
+  daysUntilDue: number;
+  isPaid: boolean;
+  isFullySettled: boolean;
+  isOverdue: boolean;
+  isPendingVerification: boolean;
+  hasCredit: boolean;
+  formattedDueDate: string;
+  formattedPaidDate: string;
+}
+
+/**
+ * Returns a rich, accurate breakdown of both Payment Status and Balance Status.
+ * Calculates days late, days overdue, and distinguishes between payment timing and remaining balance.
+ */
+export function getDetailedDuesStatus(
+  r: DuesRecord,
+  options?: {
+    hasPendingTxn?: boolean;
+    referenceNow?: Date;
+  }
+): DetailedDuesStatus {
+  const now = options?.referenceNow || new Date();
+  const nowTime = now.getTime();
+  const amountDue = Number(r.amountDue || 0);
+  const amountPaid = Number(r.amountPaid || 0);
+  const remainingBalance = Math.max(0, amountDue - amountPaid);
+  const credit = Math.max(0, amountPaid - amountDue);
+  const isFullySettled = remainingBalance === 0;
+  const isPaid = amountPaid >= amountDue;
+  const isPendingVerification = Boolean(options?.hasPendingTxn);
+
+  const dueDateStr = r.dueDate || getCycleDueDate(r.dueMonth);
+  let dueTime = new Date(dueDateStr + "T00:00:00").getTime();
+  if (isNaN(dueTime)) {
+    dueTime = new Date(`${r.dueMonth}-28T00:00:00`).getTime();
+  }
+
+  let formattedDueDate = "End of month";
+  try {
+    formattedDueDate = new Date(dueDateStr + "T00:00:00").toLocaleDateString("en-PH", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    formattedDueDate = dueDateStr;
+  }
+
+  let formattedPaidDate = "—";
+  let paidTime = 0;
+  if (r.paidAt) {
+    try {
+      formattedPaidDate = new Date(r.paidAt + "T00:00:00").toLocaleDateString("en-PH", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+      paidTime = new Date(r.paidAt + "T00:00:00").getTime();
+    } catch {
+      formattedPaidDate = r.paidAt;
+    }
+  }
+
+  const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+  const daysLate = r.paidAt && paidTime > dueTime
+    ? Math.max(1, Math.round((paidTime - dueTime) / (1000 * 60 * 60 * 24)))
+    : 0;
+
+  const daysOverdue = !isPaid && nowMidnight > dueTime
+    ? Math.max(1, Math.round((nowMidnight - dueTime) / (1000 * 60 * 60 * 24)))
+    : 0;
+
+  const daysUntilDue = !isPaid && nowMidnight <= dueTime
+    ? Math.max(0, Math.round((dueTime - nowMidnight) / (1000 * 60 * 60 * 24)))
+    : 0;
+
+  const isOverdue = daysOverdue > 0;
+
+  // Determine Balance Status
+  let balanceStatus: DetailedDuesStatus["balanceStatus"] = "outstanding";
+  let balanceStatusLabel = `₱${remainingBalance.toFixed(2)} Balance`;
+  let balanceBadgeClass = "bg-rose-50 text-rose-700 border-rose-200/80";
+
+  if (isFullySettled && credit === 0) {
+    balanceStatus = "fully_settled";
+    balanceStatusLabel = "Fully Settled";
+    balanceBadgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200/80";
+  } else if (isFullySettled && credit > 0) {
+    balanceStatus = "advance_credit";
+    balanceStatusLabel = `Credit (+₱${credit.toFixed(2)})`;
+    balanceBadgeClass = "bg-sky-50 text-sky-700 border-sky-200/80";
+  } else if (amountPaid > 0 && remainingBalance > 0) {
+    balanceStatus = "partially_paid";
+    balanceStatusLabel = `Partially Paid (₱${remainingBalance.toFixed(2)} left)`;
+    balanceBadgeClass = "bg-amber-50 text-amber-700 border-amber-200/80";
+  } else {
+    balanceStatus = "outstanding";
+    balanceStatusLabel = `Outstanding (₱${remainingBalance.toFixed(2)})`;
+    balanceBadgeClass = "bg-rose-50 text-rose-700 border-rose-200/80";
+  }
+
+  // Determine Payment Status
+  let paymentStatus: DetailedDuesStatus["paymentStatus"] = "unpaid";
+  let paymentStatusLabel = "Unpaid";
+  let paymentBadgeClass = "bg-rose-50 text-rose-700 border-rose-200/80";
+
+  if (isPendingVerification) {
+    paymentStatus = "pending_verification";
+    paymentStatusLabel = "Pending Verification";
+    paymentBadgeClass = "bg-sky-50 text-sky-700 border-sky-200/80";
+  } else if (amountPaid <= 0) {
+    paymentStatus = "unpaid";
+    if (isOverdue) {
+      paymentStatusLabel = `Unpaid (${daysOverdue}d overdue)`;
+      paymentBadgeClass = "bg-rose-50 text-rose-700 border-rose-200/80";
+    } else if (daysUntilDue > 0) {
+      paymentStatusLabel = `Unpaid (Due in ${daysUntilDue}d)`;
+      paymentBadgeClass = "bg-amber-50 text-amber-800 border-amber-200/80";
+    } else {
+      paymentStatusLabel = "Unpaid (Due Today)";
+      paymentBadgeClass = "bg-amber-50 text-amber-800 border-amber-200/80";
+    }
+  } else if (amountPaid < amountDue) {
+    paymentStatus = "partial";
+    paymentStatusLabel = "Partial Payment";
+    paymentBadgeClass = "bg-amber-50 text-amber-800 border-amber-200/80";
+  } else {
+    // Fully Paid: determine if Advance, On Time, or Paid Late
+    const [y, m] = r.dueMonth.split("-").map(Number);
+    const cycleStart = new Date(y, (m || 1) - 1, 1).getTime();
+
+    if (r.paidAt && paidTime < cycleStart) {
+      paymentStatus = "advance";
+      paymentStatusLabel = "Advance Payment";
+      paymentBadgeClass = "bg-indigo-50 text-indigo-700 border-indigo-200/80";
+    } else if (daysLate > 0) {
+      paymentStatus = "paid_late";
+      paymentStatusLabel = `Paid Late (${daysLate} days late)`;
+      paymentBadgeClass = "bg-amber-50 text-amber-800 border-amber-200/80";
+    } else {
+      paymentStatus = "paid_on_time";
+      paymentStatusLabel = "Paid On Time";
+      paymentBadgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200/80";
+    }
+  }
+
+  return {
+    paymentStatus,
+    paymentStatusLabel,
+    paymentBadgeClass,
+    balanceStatus,
+    balanceStatusLabel,
+    balanceBadgeClass,
+    remainingBalance,
+    credit,
+    daysLate,
+    daysOverdue,
+    daysUntilDue,
+    isPaid,
+    isFullySettled,
+    isOverdue,
+    isPendingVerification,
+    hasCredit: credit > 0,
+    formattedDueDate,
+    formattedPaidDate,
+  };
 }
 
 /** Clean currency strings like "₱100.00", "Php 100", "$100", "100" -> 100 */
@@ -179,12 +422,21 @@ export function parseExcelDate(val: unknown): string | undefined {
   return undefined;
 }
 
+export type ImportMatchClassification =
+  | "MATCHED"
+  | "NO ACCOUNT FOUND"
+  | "DUPLICATE"
+  | "INVALID"
+  | "REVIEW REQUIRED";
+
 export interface ParsedExcelDuesRow {
   raw: Record<string, any>;
   residentId?: number;
   matchedUser?: User;
   matchStatus: "matched" | "unmatched";
+  classification: ImportMatchClassification;
   residentName: string;
+  email?: string;
   blockNo: string;
   lotNo: string;
   billingMonth: string;
@@ -310,34 +562,77 @@ export function parseDuesRow(
     }
   }
 
+  // 1b. Check for Email if provided
+  const emailRaw =
+    row["Email"] ??
+    row["email"] ??
+    row["Email Address"] ??
+    row["email_address"] ??
+    row["e-mail"];
+  let cleanEmail: string | undefined = undefined;
+  if (emailRaw !== undefined && emailRaw !== null && String(emailRaw).trim()) {
+    cleanEmail = String(emailRaw).trim().toLowerCase();
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      errors.push(`Invalid email format: "${emailRaw}"`);
+    }
+  }
+
   const cleanRowBlock = cleanUnitToken(rawBlock);
   const cleanRowLot = cleanUnitToken(rawLot);
   const rowNormName = normalizeName(residentName);
 
   // ── Automated Entity Lookup / Cross-Referencing ────────────────────────────
   let matchedUser: User | undefined = undefined;
+  let isAmbiguous = false;
+
+  // Criteria 0: Direct authoritative Email match (if provided)
+  if (cleanEmail && errors.length === 0) {
+    const emailMatches = users.filter(
+      (u) => u.email && u.email.trim().toLowerCase() === cleanEmail
+    );
+    if (emailMatches.length === 1) {
+      matchedUser = emailMatches[0];
+    } else if (emailMatches.length > 1) {
+      isAmbiguous = true;
+      matchedUser = emailMatches[0];
+    }
+  }
 
   // Criteria A: Direct ID match
-  if (residentId !== undefined) {
-    matchedUser = users.find(
+  if (!matchedUser && residentId !== undefined) {
+    const idMatches = users.filter(
       (u) =>
         Number(u.id) === residentId ||
         String(u.id) === String(residentId) ||
         String((u as any)._id) === String(residentId)
     );
+    if (idMatches.length === 1) {
+      matchedUser = idMatches[0];
+    } else if (idMatches.length > 1) {
+      isAmbiguous = true;
+      matchedUser = idMatches[0];
+    }
   }
 
   // Criteria B: Exact normalized Name match
   if (!matchedUser && rowNormName) {
-    matchedUser = users.find((u) => {
+    const nameMatches = users.filter((u) => {
       const uNorm = normalizeName(u.fullName);
       return uNorm === rowNormName || (u.email && u.email.toLowerCase() === rowNormName);
     });
+    if (nameMatches.length === 1) {
+      matchedUser = nameMatches[0];
+    } else if (nameMatches.length > 1) {
+      isAmbiguous = true;
+      matchedUser = nameMatches[0];
+    }
   }
 
   // Criteria C: Name + Unit/Block code combination (e.g. Jose Reyes - C-03 / 11)
   if (!matchedUser && rowNormName) {
-    matchedUser = users.find((u) => {
+    const comboMatches = users.filter((u) => {
       const uNorm = normalizeName(u.fullName);
       const nameOverlaps =
         uNorm.includes(rowNormName) ||
@@ -350,26 +645,36 @@ export function parseDuesRow(
       const uBlock = cleanUnitToken(u.blockNo);
       const uLot = cleanUnitToken(u.lotNo);
 
-      // Matches block and lot or matching unit
       const blockMatches = !cleanRowBlock || cleanRowBlock === uBlock;
       const lotMatches = !cleanRowLot || cleanRowLot === uLot;
 
       return blockMatches && lotMatches;
     });
+    if (comboMatches.length === 1) {
+      matchedUser = comboMatches[0];
+    } else if (comboMatches.length > 1) {
+      isAmbiguous = true;
+      matchedUser = comboMatches[0];
+    }
   }
 
   // Criteria D: Unit match with partial name confirmation
   if (!matchedUser && cleanRowBlock && cleanRowLot) {
-    matchedUser = users.find((u) => {
+    const unitMatches = users.filter((u) => {
       const uBlock = cleanUnitToken(u.blockNo);
       const uLot = cleanUnitToken(u.lotNo);
       if (uBlock !== cleanRowBlock || uLot !== cleanRowLot) return false;
 
-      // Ensure at least one token of name matches so we don't match a completely different person
       if (!rowNormName) return true;
       const uTokens = normalizeName(u.fullName).split(" ");
       return rowNormName.split(" ").some((t) => t.length >= 3 && uTokens.includes(t));
     });
+    if (unitMatches.length === 1) {
+      matchedUser = unitMatches[0];
+    } else if (unitMatches.length > 1) {
+      isAmbiguous = true;
+      matchedUser = unitMatches[0];
+    }
   }
 
   const finalResidentName =
@@ -488,12 +793,26 @@ export function parseDuesRow(
     errors.push("Missing resident name / ID");
   }
 
+  // 6. Determine 5-Tier Import Classification
+  let classification: ImportMatchClassification;
+  if (errors.length > 0) {
+    classification = "INVALID";
+  } else if (isAmbiguous) {
+    classification = "REVIEW REQUIRED";
+  } else if (matchedUser) {
+    classification = "MATCHED";
+  } else {
+    classification = "NO ACCOUNT FOUND";
+  }
+
   return {
     raw: row,
     residentId: matchedUser?.id || residentId,
     matchedUser,
     matchStatus: matchedUser ? "matched" : "unmatched",
+    classification,
     residentName: finalResidentName,
+    email: cleanEmail || matchedUser?.email,
     blockNo: String(blockNo),
     lotNo: String(lotNo),
     billingMonth: billingMonthName,
@@ -508,5 +827,32 @@ export function parseDuesRow(
     isValid: errors.length === 0,
     errors,
   };
+}
+
+/** Parse full batch of rows with duplicate detection */
+export function parseDuesBatch(
+  rawRows: Record<string, any>[],
+  users: User[]
+): ParsedExcelDuesRow[] {
+  const seenCycleKeys = new Map<string, number>();
+
+  const parsed = rawRows.map((row) => parseDuesRow(row, users));
+
+  // Detect duplicates within the import file
+  for (let i = 0; i < parsed.length; i++) {
+    const item = parsed[i];
+    if (!item.isValid) continue;
+
+    const key = `${normalizeName(item.residentName)}|${item.dueMonth}`;
+    if (seenCycleKeys.has(key)) {
+      item.classification = "DUPLICATE";
+      item.isValid = false;
+      item.errors.push(`Duplicate billing entry for ${item.residentName} in ${item.dueMonth}`);
+    } else {
+      seenCycleKeys.set(key, i);
+    }
+  }
+
+  return parsed;
 }
 

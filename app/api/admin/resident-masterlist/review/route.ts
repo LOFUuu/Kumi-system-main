@@ -4,6 +4,7 @@ import { User, ResidentMasterList, RoleAuditLog } from "@/models";
 import { getAuthenticatedUser } from "@/lib/server-auth";
 import { isHowaRole } from "@/lib/role";
 import * as maria from "@/lib/mariadb-service";
+import { userFilter } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -27,9 +28,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ records: unclaimed });
     }
 
-    const user = await User.findOne({
-      $or: [{ _id: Number(userId) }, { _id: userId }, { id: Number(userId) }],
-    } as any).lean();
+    const filter = userFilter(userId);
+    let user: any = await User.findOne(filter as any).lean();
+    if (!user) {
+      try {
+        user = await maria.getUserByIdMariaDB(userId);
+      } catch {}
+    }
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -62,7 +67,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       user: {
-        id: (user as any)._id,
+        id: (user as any)._id ?? (user as any).id,
         fullName: (user as any).fullName,
         email: (user as any).email,
         role: (user as any).role,
@@ -97,12 +102,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const numId = Number(userId);
-    const filter = Number.isFinite(numId)
-      ? { $or: [{ _id: numId }, { id: numId }, { _id: String(userId) }] }
-      : { _id: userId };
+    const filter = userFilter(userId);
+    let user: any = await User.findOne(filter as any).lean();
+    if (!user) {
+      try {
+        user = await maria.getUserByIdMariaDB(userId);
+      } catch {}
+    }
 
-    const user = await User.findOne(filter as any).lean();
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -132,7 +139,7 @@ export async function POST(req: NextRequest) {
 
       // Audit log entry
       await RoleAuditLog.create({
-        userId: (user as any)._id,
+        userId: (user as any)._id ?? (user as any).id ?? userId,
         userEmail: (user as any).email,
         oldRole: (user as any).role || "non_resident",
         newRole: "resident",

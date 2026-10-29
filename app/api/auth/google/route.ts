@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const TOKEN_INFO_URL = "https://oauth2.googleapis.com/tokeninfo";
-const ADMIN_EMAIL = "mabuhay2000phase5@gmail.com";
+const DEFAULT_ADMIN_EMAIL = "mabuhay2000phase5@gmail.com";
 
 interface GoogleProfile {
   aud?: string;
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const isAdminEmail = email === ADMIN_EMAIL;
+  const isDefaultAdminEmail = email === DEFAULT_ADMIN_EMAIL;
 
   try {
     // Find-or-create the portal user tied to this email. Google verifies the
@@ -81,11 +81,11 @@ export async function POST(req: NextRequest) {
     let user = await getUserByEmailForAuth(email);
     if (!user) {
       const fullName = profile.name?.trim() || email.split("@")[0] || "Resident";
-      const assignedRole = isAdminEmail ? "admin" : "non_resident";
+      const assignedRole = isDefaultAdminEmail ? "admin" : "non_resident";
       user = await createUser({ fullName, email, role: assignedRole, emailVerified: true });
     } else {
-      // If this is the authorized admin email, ensure the user role is updated to admin
-      if (isAdminEmail && user.role !== "admin") {
+      // If this is the default admin email, ensure the user role is bootstrapped to admin
+      if (isDefaultAdminEmail && user.role !== "admin") {
         const updated = await updateUserById(user.id, { role: "admin" });
         if (updated) {
           user = updated;
@@ -98,9 +98,9 @@ export async function POST(req: NextRequest) {
       await setEmailVerified(email, true);
     }
 
-    // RULES FOR ROLES: Automatic resident detection by NAME against residentmasterlist
+    // RULES FOR ROLES: Automatic resident detection by EMAIL and NAME against residentmasterlist
     // Only runs for non_resident accounts. Admin and super admin accounts are never touched.
-    if (user && user.role === "non_resident" && !isAdminEmail) {
+    if (user && user.role === "non_resident" && !isDefaultAdminEmail) {
       try {
         const { matchAndPromoteUser } = await import("@/lib/name-matcher");
         const matchRes = await matchAndPromoteUser(user.id, user.fullName, "google");

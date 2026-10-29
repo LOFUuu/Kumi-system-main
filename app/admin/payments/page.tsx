@@ -1149,6 +1149,33 @@ function PaymentsContent() {
                 />
               </div>
 
+              {/* Standard Monthly Due Configuration (Dues Category) */}
+              {settingsActiveCategory === "dues" && (
+                <div>
+                  <label className="field-label text-xs font-bold">
+                    Standard Monthly HOA Due (PHP) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-green-mid">
+                      ₱
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={activeSettingsConfig.monthlyDue ?? 100}
+                      onChange={(e) =>
+                        handleSettingsFieldChange("monthlyDue", Number(e.target.value) || 100)
+                      }
+                      placeholder="100.00"
+                      className="field pl-8 text-xs py-2.5 font-bold text-green-dark"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted mt-1">
+                    Standard monthly fee applied to homeowners for newly generated billing cycles. Default is ₱100.00.
+                  </p>
+                </div>
+              )}
+
               {/* Status Toggle */}
               <div className="flex items-center justify-between rounded-xl border border-cream-2 bg-cream/30 p-3.5">
                 <div>

@@ -1,6 +1,6 @@
 import dbConnect from "./mongoose";
 import { User, ResidentMasterList, RoleAuditLog } from "@/models";
-import { updateUserById } from "./db";
+import { updateUserById, userFilter, getUserById } from "./db";
 import { isOnlineMode } from "./db-router";
 import * as maria from "./mariadb-service";
 
@@ -84,6 +84,12 @@ export interface MatchResult {
  * Matches a user against the resident master list and performs server-side promotion if eligible.
  * Guaranteed to never fail the calling auth flow (safely wrapped).
  * Guaranteed to never downgrade admin or counselor accounts.
+ *
+ * Matching Priority Order:
+ * 1. Verified Email Address against ResidentMasterList.email
+ * 2. Exact Normalized Name match against ResidentMasterList.normalizedName
+ *    (Disambiguated by block/lot if multiple records exist)
+ * 3. Partial/Middle name variation heuristic (flagged for admin review)
  */
 export async function matchAndPromoteUser(
   userId: number | string,
@@ -98,13 +104,15 @@ export async function matchAndPromoteUser(
 
     await dbConnect();
 
-    // Fetch user from DB
-    const numId = Number(userId);
-    const filter = Number.isFinite(numId)
-      ? { $or: [{ _id: numId }, { id: numId }, { _id: String(userId) }] }
-      : { _id: userId };
+    // Fetch user from DB using resilient multi-field filter
+    const filter = userFilter(userId);
+    let userDoc: any = await User.findOne(filter as any).lean();
+    if (!userDoc) {
+      try {
+        userDoc = await maria.getUserByIdMariaDB(userId);
+      } catch {}
+    }
 
-    const userDoc = await User.findOne(filter as any).lean();
     if (!userDoc) {
       return { matched: false, promoted: false, needsReview: false, reason: "User not found" };
     }
@@ -114,18 +122,109 @@ export async function matchAndPromoteUser(
       return { matched: false, promoted: false, needsReview: false, reason: "Protected administrative role" };
     }
 
-    const norm = normalizeResidentName(fullName || (userDoc as any).fullName);
+    // ──────────────────────────────────────────────────────────────────────────
+    // PRIORITY 1: EMAIL MATCHING
+    // ──────────────────────────────────────────────────────────────────────────
+    const userEmail = typeof userDoc.email === "string" ? userDoc.email.trim().toLowerCase() : "";
+    if (userEmail) {
+      const escapedEmail = escapeRegex(userEmail);
+      const emailMatches = await ResidentMasterList.find({
+        email: { $regex: new RegExp(`^\\s*${escapedEmail}\\s*$`, "i") },
+      }).lean();
+
+      if (emailMatches.length >= 1) {
+        // Find unclaimed or already linked to this user
+        const targetMatch =
+          emailMatches.find(
+            (m) =>
+              m.status === "unclaimed" ||
+              String(m.linkedUserId) === String(userDoc._id ?? userId)
+          ) || emailMatches[0];
+
+        if (
+          targetMatch.status === "unclaimed" ||
+          String(targetMatch.linkedUserId) === String(userDoc._id ?? userId)
+        ) {
+          const updateData: Record<string, unknown> = {
+            role: "resident",
+            needsReview: false,
+            needsReviewReason: null,
+          };
+
+          if (targetMatch.block && !userDoc.blockNo) updateData.blockNo = targetMatch.block;
+          if (targetMatch.lot && !userDoc.lotNo) updateData.lotNo = targetMatch.lot;
+          if (targetMatch.phone && !userDoc.phone) updateData.phone = targetMatch.phone;
+
+          await User.updateOne(filter as any, { $set: updateData });
+
+          await ResidentMasterList.updateOne(
+            { _id: targetMatch._id },
+            {
+              $set: {
+                status: "claimed",
+                linkedUserId: userDoc._id ?? userId,
+              },
+            }
+          );
+
+          await RoleAuditLog.create({
+            userId: userDoc._id ?? userId,
+            userEmail: userDoc.email,
+            oldRole: userDoc.role || "non_resident",
+            newRole: "resident",
+            matchedRecordId: targetMatch._id,
+            matchedName: targetMatch.fullName,
+            source,
+            timestamp: new Date(),
+            details: `Automatically promoted by verified master list email match ("${targetMatch.email}")`,
+          });
+
+          try {
+            maria.updateUserByIdMariaDB(userId, {
+              role: "resident",
+              blockNo: (updateData.blockNo as string) || userDoc.blockNo,
+              lotNo: (updateData.lotNo as string) || userDoc.lotNo,
+              phone: (updateData.phone as string) || userDoc.phone,
+            }).catch(() => {});
+          } catch {}
+
+          return {
+            matched: true,
+            promoted: true,
+            needsReview: false,
+            record: targetMatch,
+          };
+        }
+      }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // PRIORITY 2: EXACT NAME MATCHING
+    // ──────────────────────────────────────────────────────────────────────────
+    const norm = normalizeResidentName(fullName || userDoc.fullName);
     if (!norm) {
       return { matched: false, promoted: false, needsReview: false, reason: "Empty normalized name" };
     }
 
     // Search residentmasterlist by normalizedName
-    const exactMatches = await ResidentMasterList.find({ normalizedName: norm }).lean();
+    let exactMatches = await ResidentMasterList.find({ normalizedName: norm }).lean();
+
+    // If multiple records match by name, check if block & lot disambiguates them
+    if (exactMatches.length > 1 && (userDoc.blockNo || userDoc.lotNo)) {
+      const narrowed = exactMatches.filter((m) => {
+        const blockMatch = !userDoc.blockNo || String(m.block).trim() === String(userDoc.blockNo).trim();
+        const lotMatch = !userDoc.lotNo || String(m.lot).trim() === String(userDoc.lotNo).trim();
+        return blockMatch && lotMatch;
+      });
+      if (narrowed.length === 1) {
+        exactMatches = narrowed;
+      }
+    }
 
     if (exactMatches.length === 1) {
       const match = exactMatches[0];
 
-      if (match.status === "unclaimed") {
+      if (match.status === "unclaimed" || String(match.linkedUserId) === String(userDoc._id ?? userId)) {
         // EXACT SINGLE UNCLAIMED MATCH -> PROMOTE TO RESIDENT
         const updateData: Record<string, unknown> = {
           role: "resident",
@@ -134,11 +233,14 @@ export async function matchAndPromoteUser(
         };
 
         // Copy block & lot if present in master list and not already set on user
-        if (match.block && !(userDoc as any).blockNo) {
+        if (match.block && !userDoc.blockNo) {
           updateData.blockNo = match.block;
         }
-        if (match.lot && !(userDoc as any).lotNo) {
+        if (match.lot && !userDoc.lotNo) {
           updateData.lotNo = match.lot;
+        }
+        if (match.phone && !userDoc.phone) {
+          updateData.phone = match.phone;
         }
 
         // Apply update in Mongo
@@ -150,16 +252,16 @@ export async function matchAndPromoteUser(
           {
             $set: {
               status: "claimed",
-              linkedUserId: (userDoc as any)._id ?? userId,
+              linkedUserId: userDoc._id ?? userId,
             },
           }
         );
 
         // Record in audit log
         await RoleAuditLog.create({
-          userId: (userDoc as any)._id ?? userId,
-          userEmail: (userDoc as any).email,
-          oldRole: (userDoc as any).role || "non_resident",
+          userId: userDoc._id ?? userId,
+          userEmail: userDoc.email,
+          oldRole: userDoc.role || "non_resident",
           newRole: "resident",
           matchedRecordId: match._id,
           matchedName: match.fullName,
@@ -172,8 +274,9 @@ export async function matchAndPromoteUser(
         try {
           maria.updateUserByIdMariaDB(userId, {
             role: "resident",
-            blockNo: (updateData.blockNo as string) || (userDoc as any).blockNo,
-            lotNo: (updateData.lotNo as string) || (userDoc as any).lotNo,
+            blockNo: (updateData.blockNo as string) || userDoc.blockNo,
+            lotNo: (updateData.lotNo as string) || userDoc.lotNo,
+            phone: (updateData.phone as string) || userDoc.phone,
           }).catch(() => {});
         } catch {}
 

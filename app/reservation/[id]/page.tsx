@@ -120,14 +120,34 @@ function BookingForm() {
     }
   }, [loading, user, router]);
 
+  // Auto-fill user details when authenticated user is loaded
+  useEffect(() => {
+    if (user) {
+      if (user.fullName) setName((prev) => (prev ? prev : user.fullName || ""));
+      if (user.phone) setPhone((prev) => (prev ? prev : user.phone || ""));
+    }
+  }, [user]);
+
   // Load amenity details and payment configs
   useEffect(() => {
     if (!Number.isFinite(id)) return;
-    api.amenities().then((list) => {
-      const a = list.find((x) => x.id === id);
-      setNotFound(!a);
-      if (a) setAmenity(a);
-    });
+    api
+      .amenity(id)
+      .then((res) => {
+        if (res.amenity) {
+          setNotFound(false);
+          setAmenity(res.amenity);
+        } else {
+          setNotFound(true);
+        }
+      })
+      .catch(() => {
+        api.amenities().then((list) => {
+          const a = list.find((x) => x.id === id);
+          setNotFound(!a);
+          if (a) setAmenity(a);
+        });
+      });
     api.paymentConfig("amenity").then(setGcashConfig).catch(() => {});
   }, [id]);
 
@@ -174,6 +194,33 @@ function BookingForm() {
   const dateBlocked = currentDateStatus
     ? currentDateStatus.status === "booked"
     : blocked.includes(date);
+
+  const effectiveName = (name.trim() || user?.fullName || "").trim();
+  const effectivePhone = (phone.trim() || user?.phone || "").trim();
+  const effectivePax = parseInt(paxInput.trim(), 10);
+
+  const missingRequirements: string[] = [];
+  if (!effectiveName) {
+    missingRequirements.push("Full Name is required");
+  }
+  if (!effectivePhone) {
+    missingRequirements.push("Contact Phone Number is required (e.g. 09XX XXX XXXX)");
+  } else {
+    const rawDigits = effectivePhone.replace(/\D/g, "");
+    if (rawDigits.length < 10) {
+      missingRequirements.push("Valid 11-digit phone number (e.g. 0917 123 4567)");
+    }
+  }
+  if (!date) {
+    missingRequirements.push("Booking Date must be selected");
+  } else if (dateBlocked) {
+    missingRequirements.push("Selected date & session is unavailable/booked — please select another date");
+  }
+  if (!paxInput.trim() || isNaN(effectivePax) || effectivePax < 1) {
+    missingRequirements.push("Number of persons (min. 1 pax)");
+  } else if (amenity && effectivePax > amenity.maxCapacity) {
+    missingRequirements.push(`Number of persons cannot exceed maximum capacity (${amenity.maxCapacity} pax)`);
+  }
 
   // Handle selecting a recommended date card
   const handleSelectRecommendation = (rec: RecommendationCard) => {
@@ -255,12 +302,14 @@ function BookingForm() {
     }
 
     const effectivePhone = (phone || user?.phone || "").trim();
-    if (effectivePhone) {
-      const phoneErr = validatePhone(effectivePhone, { label: "Phone number" });
-      if (phoneErr) {
-        setError(phoneErr);
-        return;
-      }
+    if (!effectivePhone) {
+      setError("Please enter your contact phone number to proceed with reservation.");
+      return;
+    }
+    const phoneErr = validatePhone(effectivePhone, { required: true, label: "Phone number" });
+    if (phoneErr) {
+      setError(phoneErr);
+      return;
     }
 
     if (notes.trim()) {
@@ -389,11 +438,29 @@ function BookingForm() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="field-label">Full Name *</label>
-                <input className="field" required value={name || user?.fullName || ""} onChange={(e) => setName(e.target.value)} placeholder="Juan dela Cruz" />
+                <input
+                  className="field"
+                  required
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    setError("");
+                  }}
+                  placeholder="Juan dela Cruz"
+                />
               </div>
               <div>
-                <label className="field-label">Phone</label>
-                <input className="field" value={phone || user?.phone || ""} onChange={(e) => setPhone(sanitizePhoneInput(e.target.value))} placeholder="09XX XXX XXXX" />
+                <label className="field-label">Phone *</label>
+                <input
+                  className="field"
+                  required
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(sanitizePhoneInput(e.target.value));
+                    setError("");
+                  }}
+                  placeholder="09XX XXX XXXX"
+                />
               </div>
             </div>
           </div>
@@ -735,10 +802,51 @@ function BookingForm() {
             </div>
           </div>
 
+          {/* Missing Details / Booking Incomplete Alert Warning Box */}
+          {(missingRequirements.length > 0 || error || dateBlocked) && (
+            <div className="rounded-2xl border-2 border-amber-300 bg-amber-50/95 p-4 shadow-sm animate-fade-in text-amber-950">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <strong className="text-xs font-bold uppercase tracking-wider text-amber-800">
+                      Incomplete Reservation Details
+                    </strong>
+                    <span className="text-[11px] font-semibold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full">
+                      Action Required
+                    </span>
+                  </div>
+
+                  {error && (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-xs font-semibold text-rose-800">
+                      {error}
+                    </div>
+                  )}
+
+                  {missingRequirements.length > 0 && (
+                    <div className="text-xs text-amber-900">
+                      <p className="font-semibold text-amber-950 mb-1">
+                        Please provide the required details before proceeding:
+                      </p>
+                      <ul className="space-y-1 text-xs text-amber-800 font-medium">
+                        {missingRequirements.map((req, idx) => (
+                          <li key={idx} className="flex items-center gap-1.5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+                            <span>{req}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <button
             type="submit"
-            disabled={submitting || dateBlocked}
-            className="btn-primary w-full py-4 text-center text-base font-bold shadow-md hover:shadow-lg transition disabled:opacity-50"
+            disabled={submitting || dateBlocked || missingRequirements.length > 0}
+            className="btn-primary w-full py-4 text-center text-base font-bold shadow-md hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? "Processing Reservation..." : `Proceed with Reservation · ${formatPHP(downpayment)} Downpayment`}
           </button>

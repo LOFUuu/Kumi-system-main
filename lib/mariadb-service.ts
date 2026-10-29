@@ -496,6 +496,11 @@ export async function getAmenitiesMariaDB(): Promise<AmenityType[]> {
     image: r.image || "",
     lat: r.lat,
     lng: r.lng,
+    pricingModel: r.pricingModel || "per_head",
+    basePrice: Number(r.basePrice || 0),
+    pricePerPerson: Number(r.pricePerPerson || 0),
+    includedGuests: Number(r.includedGuests || 1),
+    extraGuestFee: Number(r.extraGuestFee || 0),
   }));
 }
 
@@ -518,6 +523,11 @@ export async function getAmenityMariaDB(id: number | string): Promise<AmenityTyp
     image: r.image || "",
     lat: r.lat,
     lng: r.lng,
+    pricingModel: r.pricingModel || "per_head",
+    basePrice: Number(r.basePrice || 0),
+    pricePerPerson: Number(r.pricePerPerson || 0),
+    includedGuests: Number(r.includedGuests || 1),
+    extraGuestFee: Number(r.extraGuestFee || 0),
   };
 }
 
@@ -528,9 +538,12 @@ export async function createAmenityMariaDB(data: any): Promise<AmenityType> {
     id = (maxRow[0]?.maxId || 0) + 1;
   }
   await mariaQuery(
-    `INSERT INTO amenities (id, name, description, maxCapacity, rateWalkin, rateWhole, ratePrivate, downpayment, downpaymentPrivate, isActive, isArchived, image, lat, lng)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE name=VALUES(name), isActive=VALUES(isActive)`,
+    `INSERT INTO amenities (
+      id, name, description, maxCapacity, rateWalkin, rateWhole, ratePrivate, 
+      downpayment, downpaymentPrivate, isActive, isArchived, image, lat, lng,
+      pricingModel, basePrice, pricePerPerson, includedGuests, extraGuestFee
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE name=VALUES(name), isActive=VALUES(isActive), pricingModel=VALUES(pricingModel)`,
     [
       id,
       data.name || "",
@@ -545,6 +558,11 @@ export async function createAmenityMariaDB(data: any): Promise<AmenityType> {
       data.image || "",
       data.lat || 0,
       data.lng || 0,
+      data.pricingModel || "per_head",
+      Number(data.basePrice) || 0,
+      Number(data.pricePerPerson) || 0,
+      Number(data.includedGuests) || 1,
+      Number(data.extraGuestFee) || 0,
     ]
   );
   const result = await getAmenityMariaDB(id);
@@ -559,6 +577,8 @@ export async function updateAmenityMariaDB(id: number | string, data: any): Prom
     rateWalkin: "rateWalkin", rateWhole: "rateWhole", ratePrivate: "ratePrivate",
     downpayment: "downpayment", downpaymentPrivate: "downpaymentPrivate",
     isActive: "isActive", isArchived: "isArchived", image: "image", lat: "lat", lng: "lng",
+    pricingModel: "pricingModel", basePrice: "basePrice", pricePerPerson: "pricePerPerson",
+    includedGuests: "includedGuests", extraGuestFee: "extraGuestFee",
   };
   for (const [key, col] of Object.entries(mappings)) {
     if (data[key] !== undefined) {
@@ -655,6 +675,12 @@ export async function deleteAnnouncementMariaDB(id: number | string): Promise<bo
 // RESERVATIONS
 // ==========================================
 function rowToReservation(r: any): ReservationType {
+  let breakdown = undefined;
+  if (r.pricingBreakdown) {
+    try {
+      breakdown = typeof r.pricingBreakdown === "string" ? JSON.parse(r.pricingBreakdown) : r.pricingBreakdown;
+    } catch {}
+  }
   return {
     id: r.id,
     amenityId: r.amenityId,
@@ -673,6 +699,11 @@ function rowToReservation(r: any): ReservationType {
     approvedAt: r.approvedAt || undefined,
     gcashRef: r.gcashRef || undefined,
     receiptPath: r.receiptPath || undefined,
+    pricingModel: r.pricingModel || "per_head",
+    pricingBreakdown: breakdown,
+    cancelledAt: toDateString(r.cancelledAt),
+    cancelledBy: r.cancelledBy || undefined,
+    cancelReason: r.cancelReason || undefined,
     isArchived: Boolean(r.isArchived),
     archiveReason: r.archiveReason || undefined,
     archivedAt: toDateString(r.archivedAt),
@@ -761,12 +792,16 @@ export async function createReservationMariaDB(data: any): Promise<ReservationTy
     id = (maxRow[0]?.maxId || 0) + 1;
   }
 
+  const breakdownJson = data.pricingBreakdown
+    ? (typeof data.pricingBreakdown === "string" ? data.pricingBreakdown : JSON.stringify(data.pricingBreakdown))
+    : null;
+
   await mariaQuery(
     `INSERT INTO reservations (
       id, amenityId, amenityName, residentName, phone, bookingType, reservationType,
       date, paxCount, downpayment, totalAmount, status, notes, userEmail, approvedAt,
-      gcashRef, receiptPath, isArchived
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      gcashRef, receiptPath, pricingModel, pricingBreakdown, cancelledAt, cancelledBy, cancelReason, isArchived
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     [
       id,
       data.amenityId || null,
@@ -785,31 +820,17 @@ export async function createReservationMariaDB(data: any): Promise<ReservationTy
       data.approvedAt || null,
       data.gcashRef || null,
       data.receiptPath || null,
+      data.pricingModel || "per_head",
+      breakdownJson,
+      data.cancelledAt ? new Date(data.cancelledAt) : null,
+      data.cancelledBy || null,
+      data.cancelReason || null,
     ]
   );
 
   const resRows = await mariaQuery<any[]>(`SELECT * FROM reservations WHERE id = ?`, [id]);
   const r = resRows[0];
-  const created: ReservationType = {
-    id: r.id,
-    amenityId: r.amenityId,
-    amenityName: r.amenityName || "",
-    residentName: r.residentName || "",
-    phone: r.phone || undefined,
-    bookingType: r.bookingType,
-    reservationType: r.reservationType,
-    date: r.date,
-    paxCount: r.paxCount,
-    downpayment: Number(r.downpayment),
-    totalAmount: Number(r.totalAmount),
-    status: r.status,
-    notes: r.notes || undefined,
-    userEmail: r.userEmail || undefined,
-    approvedAt: r.approvedAt || undefined,
-    gcashRef: r.gcashRef || undefined,
-    receiptPath: r.receiptPath || undefined,
-    isArchived: Boolean(r.isArchived),
-  };
+  const created: ReservationType = rowToReservation(r);
 
   await enqueueSync("reservations", id, "INSERT", created);
   return created;
@@ -825,8 +846,17 @@ export async function updateReservationMariaDB(id: number | string, data: any): 
     approvedAt: "approvedAt",
     gcashRef: "gcashRef",
     receiptPath: "receiptPath",
+    pricingModel: "pricingModel",
+    pricingBreakdown: "pricingBreakdown",
+    cancelledAt: "cancelledAt",
+    cancelledBy: "cancelledBy",
+    cancelReason: "cancelReason",
     isArchived: "isArchived",
     archiveReason: "archiveReason",
+    totalAmount: "totalAmount",
+    downpayment: "downpayment",
+    phone: "phone",
+    paxCount: "paxCount",
   };
 
   for (const [key, col] of Object.entries(mappings)) {
@@ -834,6 +864,12 @@ export async function updateReservationMariaDB(id: number | string, data: any): 
       fields.push(`\`${col}\` = ?`);
       let val = data[key];
       if (typeof val === "boolean") val = val ? 1 : 0;
+      if (key === "pricingBreakdown" && val && typeof val === "object") {
+        val = JSON.stringify(val);
+      }
+      if (key === "cancelledAt" && val) {
+        val = new Date(val);
+      }
       params.push(val);
     }
   }
@@ -845,27 +881,7 @@ export async function updateReservationMariaDB(id: number | string, data: any): 
 
   const resRows = await mariaQuery<any[]>(`SELECT * FROM reservations WHERE id = ?`, [Number(id)]);
   if (!resRows.length) return null;
-  const r = resRows[0];
-  const updated: ReservationType = {
-    id: r.id,
-    amenityId: r.amenityId,
-    amenityName: r.amenityName || "",
-    residentName: r.residentName || "",
-    phone: r.phone || undefined,
-    bookingType: r.bookingType,
-    reservationType: r.reservationType,
-    date: r.date,
-    paxCount: r.paxCount,
-    downpayment: Number(r.downpayment),
-    totalAmount: Number(r.totalAmount),
-    status: r.status,
-    notes: r.notes || undefined,
-    userEmail: r.userEmail || undefined,
-    approvedAt: r.approvedAt || undefined,
-    gcashRef: r.gcashRef || undefined,
-    receiptPath: r.receiptPath || undefined,
-    isArchived: Boolean(r.isArchived),
-  };
+  const updated: ReservationType = rowToReservation(resRows[0]);
 
   await enqueueSync("reservations", Number(id), "UPDATE", updated);
   return updated;
@@ -996,6 +1012,24 @@ export async function updateDuesRecordMariaDB(id: number | string, data: any): P
 
   await enqueueSync("dues", Number(id), "UPDATE", updated);
   return updated;
+}
+
+export async function deleteDuesRecordMariaDB(id: number | string): Promise<boolean> {
+  const numId = Number(id);
+  await mariaQuery(`DELETE FROM dues WHERE id = ?`, [numId]);
+  await enqueueSync("dues", numId, "DELETE", { id: numId });
+  return true;
+}
+
+export async function deleteDuesRecordsMariaDB(ids: (number | string)[]): Promise<number> {
+  const numIds = ids.map(Number).filter((n) => !isNaN(n));
+  if (numIds.length === 0) return 0;
+  const placeholders = numIds.map(() => "?").join(",");
+  await mariaQuery(`DELETE FROM dues WHERE id IN (${placeholders})`, numIds);
+  for (const numId of numIds) {
+    await enqueueSync("dues", numId, "DELETE", { id: numId });
+  }
+  return numIds.length;
 }
 
 // ==========================================

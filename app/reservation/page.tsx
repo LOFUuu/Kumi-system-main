@@ -178,14 +178,34 @@ function ReservationHubContent() {
                       <Users className="h-3.5 w-3.5 text-[#3b634c]" />
                       Max {a.maxCapacity} pax
                     </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf3ee] px-3 py-1.5 font-medium text-[#22442e]">
-                      <Coins className="h-3.5 w-3.5 text-[#3b634c]" />
-                      Public {formatPHP(a.rateWalkin)}/head
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf3ee] px-3 py-1.5 font-medium text-[#22442e]">
-                      <User className="h-3.5 w-3.5 text-[#3b634c]" />
-                      Private {formatPHP(a.ratePrivate)}/hr
-                    </span>
+                    {a.pricingModel === "fixed" ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf3ee] px-3 py-1.5 font-medium text-[#22442e]">
+                        <Coins className="h-3.5 w-3.5 text-[#3b634c]" />
+                        Fixed {formatPHP(a.basePrice ?? a.ratePrivate ?? 0)} flat
+                      </span>
+                    ) : a.pricingModel === "base_plus_extra" ? (
+                      <>
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf3ee] px-3 py-1.5 font-medium text-[#22442e]">
+                          <Coins className="h-3.5 w-3.5 text-[#3b634c]" />
+                          Base {formatPHP(a.basePrice ?? a.ratePrivate ?? 0)} ({a.includedGuests ?? 5} pax)
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf3ee] px-3 py-1.5 font-medium text-[#22442e]">
+                          <User className="h-3.5 w-3.5 text-[#3b634c]" />
+                          +{formatPHP(a.extraGuestFee ?? 150)}/extra pax
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf3ee] px-3 py-1.5 font-medium text-[#22442e]">
+                          <Coins className="h-3.5 w-3.5 text-[#3b634c]" />
+                          Public {formatPHP(a.pricePerPerson || a.rateWalkin)}/head
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf3ee] px-3 py-1.5 font-medium text-[#22442e]">
+                          <User className="h-3.5 w-3.5 text-[#3b634c]" />
+                          Private {formatPHP(a.ratePrivate)} flat
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 

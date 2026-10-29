@@ -45,13 +45,26 @@ export async function POST(
     return NextResponse.json({ error: "Dues record not found." }, { status: 404 });
   }
 
+  const userRole = req.headers.get("x-user-role") || "";
+  const autoApprove = Boolean(body.autoApprove || userRole === "admin");
   const paidAt = String(body.paidAt || new Date().toISOString().slice(0, 10));
-  const amountPaid = record.amountPaid + amount;
-  const amountDue = record.amountDue;
-  const creditBalance = Math.max(0, amountPaid - amountDue);
-  const status = computeDuesStatus({ dueMonth: record.dueMonth, dueDate: record.dueDate, amountDue, amountPaid, paidAt });
 
-  await updateDuesRecord(id, { amountPaid, creditBalance, paidAt, status });
+  let amountPaid = record.amountPaid;
+  let creditBalance = record.creditBalance || 0;
+  let duesStatus = record.status;
+
+  if (autoApprove) {
+    amountPaid = record.amountPaid + amount;
+    creditBalance = Math.max(0, amountPaid - record.amountDue);
+    duesStatus = computeDuesStatus({
+      dueMonth: record.dueMonth,
+      dueDate: record.dueDate,
+      amountDue: record.amountDue,
+      amountPaid,
+      paidAt,
+    });
+    await updateDuesRecord(id, { amountPaid, creditBalance, paidAt, status: duesStatus });
+  }
 
   const txn = await createTransaction({
     residentName: record.residentName,
@@ -62,8 +75,11 @@ export async function POST(
     paymentMethod: String(body.paymentMethod || "gcash") === "cash" ? "cash" : "gcash",
     gcashRef,
     receiptPath: receiptPath || undefined,
-    status: "pending",
+    status: autoApprove ? "approved" : "pending",
     createdAt: paidAt,
+    advanceForMonth: body.advanceForMonth ? String(body.advanceForMonth) : undefined,
+    allocatedAmount: body.allocatedAmount != null ? Number(body.allocatedAmount) : undefined,
+    creditAmount: body.creditAmount != null ? Number(body.creditAmount) : undefined,
   });
 
   // Notify Admins and User
@@ -100,7 +116,8 @@ export async function POST(
   }
 
   return NextResponse.json({
-    dues: { ...record, amountPaid, creditBalance, paidAt, status },
+    dues: { ...record, amountPaid, creditBalance, paidAt, status: duesStatus },
     transactionId: txn.id,
+    pendingVerification: !autoApprove,
   });
 }

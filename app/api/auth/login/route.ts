@@ -35,13 +35,57 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
   }
 
-  const user = await getUserByEmailForAuth(email);
+  let user: AuthUser | null = null;
+  try {
+    user = await getUserByEmailForAuth(email);
+  } catch (dbErr: any) {
+    console.error("[Login] Database query error:", dbErr);
+    return NextResponse.json(
+      { error: "Database service temporarily unavailable. Please check your connection and try again." },
+      { status: 503 }
+    );
+  }
 
   if (!user) {
+    // Check if the resident exists in the HOA Resident Master List, but hasn't registered / set up an account password yet
+    try {
+      const { ResidentMasterList } = await import("@/models");
+      const escaped = email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const masterRecord = await ResidentMasterList.findOne({
+        email: { $regex: new RegExp(`^\\s*${escaped}\\s*$`, "i") },
+      }).lean();
+
+      if (masterRecord) {
+        return NextResponse.json(
+          {
+            error: `Hello ${masterRecord.fullName}, your administrative record is verified in the Resident Master List! However, you have not set up your portal login password yet. Please click 'Create Account' to complete registration and activate your resident access.`,
+            isMasterListResident: true,
+            email,
+          },
+          { status: 403 }
+        );
+      }
+    } catch (e) {
+      console.warn("[Login] ResidentMasterList check warning:", (e as Error)?.message);
+    }
+
     return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
   }
 
-  // AUTH-ISSUE-02 FIX: Do NOT automatically set or accept passwords for accounts without a passwordHash.
+  if ((user as any).isArchived) {
+    return NextResponse.json(
+      { error: "This account has been archived. Please contact the administration." },
+      { status: 403 }
+    );
+  }
+
+  if (user.isActive === false) {
+    return NextResponse.json(
+      { error: "This account has been deactivated. Please contact the administration." },
+      { status: 403 }
+    );
+  }
+
   // Google-registered accounts or accounts without a password set MUST sign in via Google or use password reset.
   if (!user.passwordHash) {
     return NextResponse.json(
@@ -61,8 +105,9 @@ export async function POST(req: NextRequest) {
     user.emailVerified = true;
   }
 
-  const ADMIN_EMAIL = "mabuhay2000phase5@gmail.com";
-  if (email === ADMIN_EMAIL && user.role !== "admin") {
+  // Default seed admin bootstrapping (preserves all existing admin accounts without restricting succession)
+  const DEFAULT_ADMIN_EMAIL = "mabuhay2000phase5@gmail.com";
+  if (email === DEFAULT_ADMIN_EMAIL && user.role !== "admin") {
     const { updateUserById } = await import("@/lib/db");
     const updated = await updateUserById(user.id, { role: "admin" });
     if (updated) {

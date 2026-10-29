@@ -185,7 +185,9 @@ export default function AdminAmenitiesPage() {
             validateAmount(formData.pricePerPerson, "Price per person"),
             validateAmount(formData.rateWhole, "Night session rate")
           ),
-      validateAmount(formData.downpayment, "Downpayment")
+      validateAmount(formData.ratePrivate, "Private flat rate"),
+      validateAmount(formData.downpayment, "Downpayment"),
+      validateAmount(formData.downpaymentPrivate, "Private downpayment")
     );
 
     if (err) {
@@ -756,8 +758,8 @@ export default function AdminAmenitiesPage() {
                     )}
                   </div>
 
-                  {/* Capacity & Downpayment Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {/* Capacity, Rates & Downpayment Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div>
                       <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
                         Max Capacity (Pax) *
@@ -771,6 +773,25 @@ export default function AdminAmenitiesPage() {
                         onChange={(e) =>
                           setFormData({ ...formData, maxCapacity: Number(e.target.value) || 0 })
                         }
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-green-dark mb-1">
+                        Private Flat Rate (₱)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        className="field"
+                        value={formData.ratePrivate}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 0;
+                          setFormData({
+                            ...formData,
+                            ratePrivate: val,
+                            ...(formData.pricingModel === "fixed" ? { basePrice: val } : {}),
+                          });
+                        }}
                       />
                     </div>
                     <div>

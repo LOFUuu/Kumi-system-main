@@ -130,6 +130,7 @@ export const api = {
 
 
   amenities: () => getJSON<Amenity[]>("/api/amenities"),
+  amenity: (id: number | string) => getJSON<{ amenity: Amenity }>(`/api/amenities/${id}`),
   archivedAmenities: () => getJSON<Amenity[]>("/api/amenities/archived"),
   amenityCreate: (payload: Partial<Amenity>) =>
     send<{ amenity: Amenity }>("/api/amenities", "POST", payload, howaHeaders()),
@@ -215,6 +216,10 @@ export const api = {
     send<{ ok: boolean; count: number; message: string }>("/api/dues", "POST", { action: "bulk-archive", ids, reason }, howaHeaders()),
   unarchiveDues: (ids: number[]) =>
     send<{ ok: boolean; count: number; message: string }>("/api/dues", "POST", { action: "bulk-unarchive", ids }, howaHeaders()),
+  unarchiveMonth: (dueMonth: string) =>
+    send<{ ok: boolean; count: number; message: string }>("/api/dues", "POST", { action: "unarchive-month", dueMonth }, howaHeaders()),
+  deleteDues: (ids: number[]) =>
+    send<{ ok: boolean; count: number; message: string }>("/api/dues", "DELETE", { ids }, howaHeaders()),
   transactions: (filter?: { isArchived?: boolean; includeArchived?: boolean; refType?: string; status?: string }) => {
     const q = new URLSearchParams();
     if (filter?.isArchived !== undefined) q.set("isArchived", String(filter.isArchived));
@@ -256,8 +261,10 @@ export const api = {
       };
       message: string;
     }>("/api/dues/import", "POST", { records }, howaHeaders()),
-  generateDues: (dueMonth?: string) =>
-    send<{ ok: boolean; createdCount: number; dues: DuesRecord[] }>("/api/dues", "POST", { action: "generate", dueMonth }, howaHeaders()),
+  generateDues: (dueMonth?: string, amountDue?: number) =>
+    send<{ ok: boolean; createdCount: number; dues: DuesRecord[] }>("/api/dues", "POST", { action: "generate", dueMonth, amountDue }, howaHeaders()),
+  resetDemoDues: (residentIdentifier: string, targetMonth?: string, amountDue?: number) =>
+    send<{ ok: boolean; result: any; dues: DuesRecord[] }>("/api/dues", "POST", { action: "reset-demo", residentIdentifier, targetMonth, amountDue }, howaHeaders()),
   createDue: (payload: Record<string, unknown>) =>
     send<{ ok: boolean; record: DuesRecord }>("/api/dues", "POST", payload, howaHeaders()),
   transactionUpdate: (id: number, payload: Record<string, unknown>) =>
@@ -432,4 +439,18 @@ export const api = {
       payload,
       howaHeaders("resident")
     ),
+
+  /** Admin: presidential / administrative succession handover */
+  transferSuccession: (payload: {
+    successorUserId: string | number;
+    outgoingAdminRole?: "resident" | "counselor" | "admin";
+    outgoingNewRole?: "resident" | "counselor" | "admin";
+    reason?: string;
+  }) =>
+    send<{
+      ok: boolean;
+      message: string;
+      successor: { id: string | number; fullName: string; email: string; role: string };
+      outgoingAdmin: { id: string | number; fullName: string; email: string; role: string };
+    }>("/api/admin/succession", "POST", payload, howaHeaders("admin")),
 };

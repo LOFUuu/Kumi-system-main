@@ -28,15 +28,23 @@ import {
   X,
   Archive,
   ArchiveRestore,
+  Printer,
+  AlertTriangle,
+  Trash2,
+  ShieldCheck,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
+import StatementOfAccountModal from "@/components/StatementOfAccountModal";
+import GenerateBillingCycleModal from "@/components/GenerateBillingCycleModal";
 import {
   computeDuesStatusForRecord,
   creditFor,
   outstandingFor,
   parseDuesRow,
+  parseDuesBatch,
   type ParsedExcelDuesRow,
+  type ImportMatchClassification,
   MONTH_NAMES,
   MONTH_ABBR,
 } from "@/lib/dues";
@@ -381,6 +389,31 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const matchedCount = useMemo(
+    () => parsedRows.filter((r) => r.classification === "MATCHED").length,
+    [parsedRows]
+  );
+  const noAccountCount = useMemo(
+    () => parsedRows.filter((r) => r.classification === "NO ACCOUNT FOUND").length,
+    [parsedRows]
+  );
+  const duplicateCount = useMemo(
+    () => parsedRows.filter((r) => r.classification === "DUPLICATE").length,
+    [parsedRows]
+  );
+  const invalidCount = useMemo(
+    () => parsedRows.filter((r) => r.classification === "INVALID").length,
+    [parsedRows]
+  );
+  const reviewCount = useMemo(
+    () => parsedRows.filter((r) => r.classification === "REVIEW REQUIRED").length,
+    [parsedRows]
+  );
+  const validCount = useMemo(
+    () => parsedRows.filter((r) => r.isValid).length,
+    [parsedRows]
+  );
+
   const processFile = async (selectedFile: File) => {
     setErrorMsg("");
     setResultSummary(null);
@@ -402,7 +435,7 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
         throw new Error("No data rows found in the Excel sheet.");
       }
 
-      const rows = rawJson.map((row) => parseDuesRow(row, users));
+      const rows = parseDuesBatch(rawJson, users);
       setParsedRows(rows);
       setStep("preview"); // Move strictly to Preview screen
     } catch (err: any) {
@@ -438,12 +471,18 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
   };
 
   const handleImport = async () => {
-    if (parsedRows.length === 0) return;
+    const validRows = parsedRows.filter(
+      (r) => r.isValid && r.classification !== "INVALID" && r.classification !== "DUPLICATE"
+    );
+    if (validRows.length === 0) {
+      setErrorMsg("No valid records to import. Please resolve invalid or duplicate rows first.");
+      return;
+    }
     setImporting(true);
     setErrorMsg("");
 
     try {
-      const payload = parsedRows.map((r) => ({
+      const payload = validRows.map((r) => ({
         residentId: r.residentId,
         residentName: r.residentName,
         blockNo: r.blockNo,
@@ -461,11 +500,11 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
 
       const res = await api.importDues(payload);
       setResultSummary({
-        total: res.summary.total,
+        total: parsedRows.length,
         imported: res.summary.imported,
         updated: res.summary.updated,
-        duplicates: res.summary.duplicates,
-        message: res.message,
+        duplicates: duplicateCount + (res.summary.duplicates || 0),
+        message: `Processed ${validRows.length} valid records (${res.summary.imported} new, ${res.summary.updated} updated). ${parsedRows.length - validRows.length} skipped. Login accounts were preserved without modification.`,
       });
       // Transition strictly to success state after database write
       setStep("success");
@@ -545,9 +584,6 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
     XLSX.utils.book_append_sheet(wb, ws, "Monthly Dues");
     XLSX.writeFile(wb, "Mabuhay_Homes_Dues_Import_Template.xlsx");
   };
-
-  const matchedCount = parsedRows.filter((r) => r.matchStatus === "matched").length;
-  const unmatchedCount = parsedRows.length - matchedCount;
 
   return (
     <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
@@ -671,23 +707,47 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
                 </button>
               </div>
 
-              {/* Matching Summary Metrics */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-xl border border-cream-2 bg-white p-3 text-center shadow-2xs">
-                  <div className="text-[10px] uppercase font-bold text-muted">Total Rows</div>
-                  <div className="text-lg font-bold text-green-dark">{parsedRows.length}</div>
+              {/* 5-Tier Matching Summary Metrics */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                <div className="rounded-xl border border-cream-2 bg-white p-2.5 text-center shadow-2xs">
+                  <div className="text-[9px] uppercase font-bold text-muted">Total Rows</div>
+                  <div className="text-base font-bold text-green-dark">{parsedRows.length}</div>
+                  <div className="text-[9px] text-emerald-600 font-medium">{validCount} valid</div>
                 </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-center shadow-2xs">
-                  <div className="text-[10px] uppercase font-bold text-emerald-700">Matched / Existing</div>
-                  <div className="text-lg font-bold text-emerald-700 flex items-center justify-center gap-1">
-                    <UserCheck className="h-4 w-4" /> {matchedCount}
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2.5 text-center shadow-2xs">
+                  <div className="text-[9px] uppercase font-bold text-emerald-700">Matched Accounts</div>
+                  <div className="text-base font-bold text-emerald-700 flex items-center justify-center gap-1">
+                    <UserCheck className="h-3.5 w-3.5" /> {matchedCount}
                   </div>
+                  <div className="text-[9px] text-emerald-600">Safely linked</div>
                 </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-center shadow-2xs">
-                  <div className="text-[10px] uppercase font-bold text-amber-700">New / Unmatched</div>
-                  <div className="text-lg font-bold text-amber-700 flex items-center justify-center gap-1">
-                    <Info className="h-4 w-4" /> {unmatchedCount}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-2.5 text-center shadow-2xs">
+                  <div className="text-[9px] uppercase font-bold text-slate-700">No Account Found</div>
+                  <div className="text-base font-bold text-slate-700 flex items-center justify-center gap-1">
+                    <Info className="h-3.5 w-3.5" /> {noAccountCount}
                   </div>
+                  <div className="text-[9px] text-slate-500">Admin record only</div>
+                </div>
+                <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-2.5 text-center shadow-2xs">
+                  <div className="text-[9px] uppercase font-bold text-orange-700">Duplicate Rows</div>
+                  <div className="text-base font-bold text-orange-700 flex items-center justify-center gap-1">
+                    <AlertTriangle className="h-3.5 w-3.5" /> {duplicateCount}
+                  </div>
+                  <div className="text-[9px] text-orange-600">Auto-skipped</div>
+                </div>
+                <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-2.5 text-center shadow-2xs">
+                  <div className="text-[9px] uppercase font-bold text-rose-700">Invalid Rows</div>
+                  <div className="text-base font-bold text-rose-700 flex items-center justify-center gap-1">
+                    <AlertCircle className="h-3.5 w-3.5" /> {invalidCount}
+                  </div>
+                  <div className="text-[9px] text-rose-600">Missing/malformed</div>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2.5 text-center shadow-2xs">
+                  <div className="text-[9px] uppercase font-bold text-amber-700">Review Required</div>
+                  <div className="text-base font-bold text-amber-700 flex items-center justify-center gap-1">
+                    <Sparkles className="h-3.5 w-3.5" /> {reviewCount}
+                  </div>
+                  <div className="text-[9px] text-amber-600">Ambiguous match</div>
                 </div>
               </div>
 
@@ -705,7 +765,7 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
                     <thead className="sticky top-0 bg-cream text-[10px] uppercase font-bold text-muted z-10">
                       <tr>
                         <th className="p-2.5">Resident</th>
-                        <th className="p-2.5">Match Status</th>
+                        <th className="p-2.5">Match Classification</th>
                         <th className="p-2.5">Period</th>
                         <th className="p-2.5">Due</th>
                         <th className="p-2.5">Paid</th>
@@ -722,15 +782,32 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
                                 {r.blockNo ? `Block ${r.blockNo}` : ""} {r.lotNo ? `/ Lot ${r.lotNo}` : ""}
                               </span>
                             )}
+                            {r.email && (
+                              <span className="block text-[10px] font-normal text-muted/70">
+                                {r.email}
+                              </span>
+                            )}
                           </td>
                           <td className="p-2.5">
-                            {r.matchStatus === "matched" ? (
+                            {r.classification === "MATCHED" ? (
                               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
-                                <UserCheck className="h-3 w-3" /> Matched / Existing
+                                <UserCheck className="h-3 w-3" /> MATCHED
+                              </span>
+                            ) : r.classification === "NO ACCOUNT FOUND" ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700 border border-slate-200">
+                                <Info className="h-3 w-3" /> NO ACCOUNT FOUND
+                              </span>
+                            ) : r.classification === "DUPLICATE" ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-bold text-orange-700 border border-orange-200">
+                                <AlertTriangle className="h-3 w-3" /> DUPLICATE
+                              </span>
+                            ) : r.classification === "INVALID" ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700 border border-rose-200" title={r.errors.join(", ")}>
+                                <AlertCircle className="h-3 w-3" /> INVALID
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
-                                <Info className="h-3 w-3" /> New / Unmatched
+                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200">
+                                <Sparkles className="h-3 w-3" /> REVIEW REQUIRED
                               </span>
                             )}
                           </td>
@@ -868,6 +945,7 @@ function ExcelImportModal({ users, onClose, onSuccess }: ExcelImportModalProps) 
 interface ResidentHistoryModalProps {
   residentName: string;
   dues: DuesRecord[];
+  users?: User[];
   onClose: () => void;
   onRefresh: () => void;
 }
@@ -875,9 +953,11 @@ interface ResidentHistoryModalProps {
 function ResidentHistoryModal({
   residentName,
   dues,
+  users = [],
   onClose,
   onRefresh,
 }: ResidentHistoryModalProps) {
+  const [showSoa, setShowSoa] = useState(false);
   const residentDues = useMemo(() => {
     return dues
       .filter((d) => d.residentName === residentName)
@@ -885,6 +965,16 @@ function ResidentHistoryModal({
   }, [dues, residentName]);
 
   const residentInfo = residentDues[0];
+  const matchedUser = users.find(
+    (u) =>
+      u.fullName.toLowerCase() === residentName.toLowerCase() ||
+      (residentInfo?.residentId && u.id === residentInfo.residentId) ||
+      (residentInfo?.blockNo &&
+        residentInfo?.lotNo &&
+        String(u.blockNo) === String(residentInfo.blockNo) &&
+        String(u.lotNo) === String(residentInfo.lotNo))
+  );
+
   const totalPaid = residentDues.reduce((s, d) => s + d.amountPaid, 0);
   const totalUnpaid = residentDues.reduce((s, d) => s + outstandingFor(d), 0);
   const totalCredit = residentDues.reduce(
@@ -917,12 +1007,23 @@ function ResidentHistoryModal({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-cream text-muted hover:text-green-dark transition"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSoa(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-1.5 text-xs font-bold shadow-sm transition cursor-pointer"
+              title="Generate and print official Statement of Account"
+            >
+              <Printer className="h-4 w-4" />
+              <span>Print Official SOA</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-cream text-muted hover:text-green-dark transition cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Stats Row */}
@@ -1028,7 +1129,15 @@ function ResidentHistoryModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end border-t border-cream-2 px-6 py-3 bg-cream/20">
+        <div className="flex items-center justify-between border-t border-cream-2 px-6 py-3 bg-cream/20">
+          <button
+            type="button"
+            onClick={() => setShowSoa(true)}
+            className="flex items-center gap-1.5 rounded-xl border border-cream-2 bg-white px-3.5 py-2 text-xs font-bold text-green-dark hover:bg-cream transition cursor-pointer"
+          >
+            <Printer className="h-4 w-4 text-emerald-700" />
+            <span>Generate / Print Statement of Account (SOA)</span>
+          </button>
           <button
             onClick={onClose}
             className="rounded-xl border border-cream-2 bg-white px-4 py-2 text-xs font-semibold text-muted hover:bg-cream transition"
@@ -1037,6 +1146,21 @@ function ResidentHistoryModal({
           </button>
         </div>
       </div>
+
+      {/* Official Statement of Account (SOA) Modal */}
+      <StatementOfAccountModal
+        isOpen={showSoa}
+        onClose={() => setShowSoa(false)}
+        user={
+          matchedUser || {
+            fullName: residentName,
+            residentId: residentInfo?.residentId,
+            blockNo: residentInfo?.blockNo,
+            lotNo: residentInfo?.lotNo,
+          }
+        }
+        dues={residentDues}
+      />
     </div>
   );
 }
@@ -1054,6 +1178,7 @@ export default function AdminDuesPage() {
   // Archive modal & actions state
   const [archiveModalOpen, setArchiveModalOpen] = useState(false);
   const [targetDuesToArchive, setTargetDuesToArchive] = useState<DuesRecord[]>([]);
+  const [targetDuesToDelete, setTargetDuesToDelete] = useState<DuesRecord[]>([]);
   const [archiveReason, setArchiveReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<{
@@ -1068,6 +1193,7 @@ export default function AdminDuesPage() {
 
   // Modals
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [selectedResidentHistory, setSelectedResidentHistory] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -1120,10 +1246,16 @@ export default function AdminDuesPage() {
     }
   }, [actionFeedback]);
 
-  // Recorded months for badges
+  // Recorded months for badges (both active and archived)
   const recordedMonths = useMemo(() => {
-    return Array.from(new Set(dues.map((d) => d.dueMonth).filter(Boolean)));
-  }, [dues]);
+    return Array.from(
+      new Set(
+        [...dues, ...archivedDues]
+          .map((d) => (d.dueMonth || "").slice(0, 7))
+          .filter(Boolean)
+      )
+    );
+  }, [dues, archivedDues]);
 
   const resetFilters = () => {
     setMonthFilter("");
@@ -1138,10 +1270,12 @@ export default function AdminDuesPage() {
     return currentRecords.filter((d) => {
       let matchMonth = true;
       if (monthFilter && monthFilter !== "all") {
+        const dMonthNorm = (d.dueMonth || "").slice(0, 7);
+        const filterNorm = monthFilter.slice(0, 7);
         if (monthFilter.length === 4) {
-          matchMonth = d.dueMonth.startsWith(monthFilter);
+          matchMonth = (d.dueMonth || "").startsWith(monthFilter);
         } else {
-          matchMonth = d.dueMonth === monthFilter;
+          matchMonth = dMonthNorm === filterNorm;
         }
       }
 
@@ -1265,14 +1399,83 @@ export default function AdminDuesPage() {
     }
   };
 
-  // Scope for summary statistics (calculated on ACTIVE dues only)
-  const scope = useMemo(() => {
-    if (!monthFilter || monthFilter === "all") return dues;
-    if (monthFilter.length === 4) {
-      return dues.filter((d) => d.dueMonth.startsWith(monthFilter));
+  // Permanently delete archived records
+  const handleConfirmDeleteRecords = async () => {
+    if (targetDuesToDelete.length === 0) return;
+    const ids = targetDuesToDelete.map((d) => d.id);
+    setActionLoading(true);
+    setActionFeedback(null);
+    try {
+      const res = await api.deleteDues(ids);
+      if (res.ok) {
+        setActionFeedback({
+          type: "success",
+          message: res.message || `Permanently deleted ${ids.length} dues record(s).`,
+        });
+        setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+        setTargetDuesToDelete([]);
+        await loadData();
+      } else {
+        setActionFeedback({
+          type: "error",
+          message: res.message || "Failed to delete records.",
+        });
+      }
+    } catch (err: any) {
+      setActionFeedback({
+        type: "error",
+        message: err?.message || "An error occurred while deleting records.",
+      });
+    } finally {
+      setActionLoading(false);
     }
-    return dues.filter((d) => d.dueMonth === monthFilter);
-  }, [dues, monthFilter]);
+  };
+
+  // Restore all records for selected month
+  const handleRestoreSelectedMonth = async () => {
+    if (!monthFilter) return;
+    setActionLoading(true);
+    setActionFeedback(null);
+    try {
+      const res = await api.unarchiveMonth(monthFilter);
+      if (res.ok) {
+        setActionFeedback({
+          type: "success",
+          message: res.message || `Successfully restored records for ${fmtMonth(monthFilter)} to active ledger.`,
+        });
+        await loadData();
+      } else {
+        setActionFeedback({
+          type: "error",
+          message: res.message || "Failed to restore records for the selected month.",
+        });
+      }
+    } catch (err: any) {
+      setActionFeedback({
+        type: "error",
+        message: err?.message || "An error occurred while restoring records.",
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const archivedCountForSelectedMonth = useMemo(() => {
+    if (!monthFilter || monthFilter === "all") return 0;
+    const filterNorm = monthFilter.slice(0, 7);
+    return archivedDues.filter((d) => (d.dueMonth || "").slice(0, 7) === filterNorm).length;
+  }, [archivedDues, monthFilter]);
+
+  // Scope for summary statistics (calculated on current tab records: active or archived)
+  const scope = useMemo(() => {
+    const list = currentRecords;
+    if (!monthFilter || monthFilter === "all") return list;
+    const filterNorm = monthFilter.slice(0, 7);
+    if (monthFilter.length === 4) {
+      return list.filter((d) => (d.dueMonth || "").startsWith(monthFilter));
+    }
+    return list.filter((d) => (d.dueMonth || "").slice(0, 7) === filterNorm);
+  }, [currentRecords, monthFilter]);
 
   const totalExpected = scope.reduce((s, d) => s + d.amountDue, 0);
   const totalPaid = scope.reduce(
@@ -1344,6 +1547,14 @@ export default function AdminDuesPage() {
 
         {/* Action Header Button */}
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowGenerateModal(true)}
+            className="flex items-center gap-2 rounded-xl bg-green-dark text-white px-4 py-2.5 text-xs font-bold shadow-md hover:bg-green-mid hover:scale-105 transition cursor-pointer"
+          >
+            <CalendarDays className="h-4 w-4 text-emerald-300" />
+            <span>Start / Generate Billing Cycle</span>
+          </button>
           <a
             href="/admin/amenities/archive"
             className="flex items-center gap-1.5 rounded-xl border border-cream-2 bg-white px-3.5 py-2.5 text-xs font-bold text-muted hover:text-green-dark hover:bg-cream transition shadow-xs"
@@ -1524,15 +1735,29 @@ export default function AdminDuesPage() {
                     Archive Selected ({selectedIds.length})
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleRestoreRecords(selectedIds)}
-                    disabled={actionLoading}
-                    className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm transition cursor-pointer disabled:opacity-50"
-                  >
-                    <ArchiveRestore className="h-3.5 w-3.5" />
-                    Restore Selected ({selectedIds.length})
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleRestoreRecords(selectedIds)}
+                      disabled={actionLoading}
+                      className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm transition cursor-pointer disabled:opacity-50"
+                    >
+                      <ArchiveRestore className="h-3.5 w-3.5" />
+                      Restore Selected ({selectedIds.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const toDelete = archivedDues.filter((d) => selectedIds.includes(d.id));
+                        setTargetDuesToDelete(toDelete);
+                      }}
+                      disabled={actionLoading}
+                      className="flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm transition cursor-pointer disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete Selected ({selectedIds.length})
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -1642,23 +1867,54 @@ export default function AdminDuesPage() {
                         colSpan={9}
                         className="py-12 text-center text-sm text-muted"
                       >
-                        No {activeTab === "archived" ? "archived" : ""} dues records found for {fmtMonth(monthFilter)}.
-                        <div className="mt-2 flex items-center justify-center gap-3">
-                          <button
-                            onClick={() => setMonthFilter("")}
-                            className="text-xs font-bold text-green-mid hover:underline"
-                          >
-                            View All Time Records →
-                          </button>
-                          {activeTab === "active" && (
-                            <button
-                              onClick={() => setShowImportModal(true)}
-                              className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1"
-                            >
-                              <FileSpreadsheet className="h-3.5 w-3.5" /> Import Excel Database
-                            </button>
-                          )}
-                        </div>
+                        {activeTab === "active" && archivedCountForSelectedMonth > 0 ? (
+                          <div className="mx-auto max-w-md rounded-2xl border border-amber-200 bg-amber-50/80 p-5 shadow-xs text-center">
+                            <Archive className="mx-auto h-7 w-7 text-amber-600 mb-2" />
+                            <h5 className="font-serif text-base font-bold text-amber-900">
+                              {archivedCountForSelectedMonth} dues record{archivedCountForSelectedMonth > 1 ? "s" : ""} for {fmtMonth(monthFilter)} {archivedCountForSelectedMonth > 1 ? "are" : "is"} in Archived Dues
+                            </h5>
+                            <p className="mt-1 text-xs text-amber-700">
+                              These records are archived and hidden from the active ledger. You can inspect them in Archived Dues or restore them to the active ledger with one click.
+                            </p>
+                            <div className="mt-3 flex items-center justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setActiveTab("archived")}
+                                className="rounded-xl border border-amber-300 bg-white px-3.5 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100 transition shadow-2xs cursor-pointer"
+                              >
+                                View Archived ({archivedCountForSelectedMonth})
+                              </button>
+                              <button
+                                type="button"
+                                disabled={actionLoading}
+                                onClick={handleRestoreSelectedMonth}
+                                className="btn-green !px-3.5 !py-1.5 text-xs font-bold shadow-2xs cursor-pointer disabled:opacity-50"
+                              >
+                                {actionLoading ? "Restoring…" : `Restore to Active Ledger`}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            No {activeTab === "archived" ? "archived" : ""} dues records found for {fmtMonth(monthFilter)}.
+                            <div className="mt-2 flex items-center justify-center gap-3">
+                              <button
+                                onClick={() => setMonthFilter("")}
+                                className="text-xs font-bold text-green-mid hover:underline cursor-pointer"
+                              >
+                                View All Time Records →
+                              </button>
+                              {activeTab === "active" && (
+                                <button
+                                  onClick={() => setShowImportModal(true)}
+                                  className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                  <FileSpreadsheet className="h-3.5 w-3.5" /> Import Excel Database
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ) : (
@@ -1762,14 +2018,24 @@ export default function AdminDuesPage() {
                                   <Archive className="h-3.5 w-3.5" />
                                 </button>
                               ) : (
-                                <button
-                                  type="button"
-                                  title="Restore this record to active dues"
-                                  onClick={() => handleRestoreRecords([d.id])}
-                                  className="rounded-lg border border-cream-2 bg-white p-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200 transition shadow-2xs cursor-pointer"
-                                >
-                                  <ArchiveRestore className="h-3.5 w-3.5" />
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    title="Restore this record to active dues"
+                                    onClick={() => handleRestoreRecords([d.id])}
+                                    className="rounded-lg border border-cream-2 bg-white p-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200 transition shadow-2xs cursor-pointer"
+                                  >
+                                    <ArchiveRestore className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Permanently delete this archived record"
+                                    onClick={() => setTargetDuesToDelete([d])}
+                                    className="rounded-lg border border-cream-2 bg-white p-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition shadow-2xs cursor-pointer"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </>
                               )}
                             </div>
                           </td>
@@ -1947,6 +2213,7 @@ export default function AdminDuesPage() {
         <ResidentHistoryModal
           residentName={selectedResidentHistory}
           dues={[...dues, ...archivedDues]}
+          users={users}
           onClose={() => setSelectedResidentHistory(null)}
           onRefresh={loadData}
         />
@@ -2030,6 +2297,74 @@ export default function AdminDuesPage() {
           </div>
         </div>
       )}
+
+      {/* ── Permanent Delete Modal ────────────────────────────────────── */}
+      {targetDuesToDelete.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          onClick={() => !actionLoading && setTargetDuesToDelete([])}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100">
+                <AlertTriangle className="h-5 w-5 text-rose-600" />
+              </span>
+              <div>
+                <h3 className="font-serif text-lg font-bold text-rose-700">
+                  Delete Permanently?
+                </h3>
+                <p className="text-xs text-muted">
+                  {targetDuesToDelete.length === 1
+                    ? `Deleting dues record for ${targetDuesToDelete[0].residentName} (${fmtMonth(targetDuesToDelete[0].dueMonth)})`
+                    : `Deleting ${targetDuesToDelete.length} selected dues records`}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 leading-relaxed mb-4">
+              ⚠️ This action <strong>cannot be undone</strong>. {targetDuesToDelete.length === 1 ? "This archived monthly dues record" : `These ${targetDuesToDelete.length} archived monthly dues records`} will be permanently erased from the database.
+            </div>
+
+            <p className="text-xs text-muted leading-relaxed mb-5">
+              Please confirm that you want to delete this record permanently. Only use this for duplicate entries or errors created by mistake.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-cream-2">
+              <button
+                type="button"
+                onClick={() => setTargetDuesToDelete([])}
+                disabled={actionLoading}
+                className="rounded-xl border border-cream-2 bg-white px-4 py-2 text-xs font-semibold text-muted hover:bg-cream transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteRecords}
+                disabled={actionLoading}
+                className="flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {actionLoading ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+                {actionLoading ? "Deleting…" : targetDuesToDelete.length === 1 ? "Yes, Delete Record" : `Yes, Delete (${targetDuesToDelete.length})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Initialize Billing Cycle Modal */}
+      <GenerateBillingCycleModal
+        isOpen={showGenerateModal}
+        onClose={() => setShowGenerateModal(false)}
+        onSuccess={loadData}
+      />
     </div>
   );
 }

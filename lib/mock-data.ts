@@ -365,8 +365,9 @@ export interface DuesRecord {
   amountPaid: number;
   paidAt?: string;        // ISO date the last payment was recorded
   creditBalance: number;  // overpayment carried over to the next cycle
+  appliedCredit?: number; // credit applied to this billing cycle from previous overpayments
   status: DuesStatus;
-  source?: "imported" | "system" | "manual";
+  source?: "imported" | "system" | "manual" | "advance_payment";
   billingMonth?: string;  // e.g. "September" or "2026-09"
   billingYear?: number;   // e.g. 2026
   isArchived?: boolean;
@@ -394,6 +395,7 @@ export interface GcashPayment {
 export interface PaymentConfig {
   id?: string;
   category: "amenity" | "dues";
+  monthlyDue?: number;
   accountName: string;
   accountNumber: string;
   qrCodeUrl?: string;
@@ -414,6 +416,9 @@ export interface Transaction {
   paymentMethod: "cash" | "gcash";
   gcashRef?: string;
   receiptPath?: string;
+  advanceForMonth?: string;
+  allocatedAmount?: number;
+  creditAmount?: number;
   status: "pending" | "approved" | "voided";
   createdAt: string;
   payment?: GcashPayment;
@@ -477,7 +482,10 @@ export const formatPHP = (n: number) =>
 // Compute the standard per-head rate for a public booking. Residents get a
 // flat 20% discount; non-residents pay the full rate.
 export const getRate = (amenity: Amenity, bookingType: "day" | "night", isResident: boolean) => {
-  const base = amenity.pricePerPerson || (bookingType === "night" ? amenity.rateWhole : amenity.rateWalkin);
+  const base =
+    bookingType === "night"
+      ? (amenity.rateWhole || amenity.pricePerPerson || amenity.rateWalkin || 0)
+      : (amenity.pricePerPerson || amenity.rateWalkin || 0);
   return isResident ? Math.round(base * (1 - RESIDENT_DISCOUNT)) : base;
 };
 
@@ -611,11 +619,9 @@ export const getBookingBreakdown = (
 
   // Default: Per-Head Pricing Model
   const rawPerHead =
-    amenity.pricePerPerson !== undefined && amenity.pricePerPerson > 0
-      ? amenity.pricePerPerson
-      : bookingType === "night"
-      ? amenity.rateWhole
-      : amenity.rateWalkin;
+    bookingType === "night"
+      ? (amenity.rateWhole || amenity.pricePerPerson || amenity.rateWalkin || 0)
+      : (amenity.pricePerPerson || amenity.rateWalkin || 0);
 
   const perHead = isResident ? Math.round(rawPerHead * (1 - RESIDENT_DISCOUNT)) : rawPerHead;
   const totalAmount = perHead * guestCount;
